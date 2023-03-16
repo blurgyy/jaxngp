@@ -51,6 +51,7 @@
           pillow
           ipdb
           sympy
+          colorama
 
           jaxlib-bin
           jax

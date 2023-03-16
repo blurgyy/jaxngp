@@ -1,0 +1,70 @@
+from typing import Literal
+import flax.linen as nn
+from flax.linen.dtypes import Dtype
+import jax
+
+from models.encoders import HashGridEncoder2D, frequency_encoding_2d
+from utils.common import find_smallest_prime_larger_or_equal_than
+
+
+class ImageFitter(nn.Module):
+    # TODO:
+    #   Parameterize input/output dimensions.
+    #   For now, input is considered 2D and output is 3D.
+    #
+    # in_dim: int
+    # out_dim: int
+    encoding: Literal["hashgrid", "frequency"]
+    encoding_dtype: Dtype
+
+    @nn.compact
+    def __call__(self, uv: jax.Array):
+        """
+        Inputs:
+            uv [..., in_dim]: coordinates in $R^\\text{in_dim}$.
+
+        Returns:
+            rgb [..., 3]: predicted color for each input uv coordinate (normalized in range [0, 1]).
+        """
+        if self.encoding == "hashgrid":
+            # [L, uv.shape[0]]
+            x = HashGridEncoder2D(
+                L=16,
+                # ~1Mi entries per level
+                T=find_smallest_prime_larger_or_equal_than(2**20),
+                F=2,
+                N_min=16,
+                N_max=2**19,  # 524288
+                param_dtype=self.encoding_dtype,
+            )(uv)
+        elif self.encoding == "frequency":
+            x = frequency_encoding_2d(uv, 10)
+        else:
+            raise ValueError("Unexpected encoding type '{}'".format(self.encoding))
+
+        DenseLayer = lambda dim, name: nn.Dense(
+                features=dim,
+                name=name,
+                # the paper uses glorot initialization, in practice glorot initialization converges
+                # to a better result than kaiming initialization, though the gap is small.
+                kernel_init=nn.initializers.glorot_uniform(),
+                bias_init=nn.initializers.zeros,
+                param_dtype=x.dtype
+            )
+        # feed to the MLP
+        x = DenseLayer(128, name="linear1")(x)
+        x = nn.relu(x)
+        x = DenseLayer(128, name="linear2")(x)
+        x = nn.relu(x)
+
+        if self.encoding == "frequency":
+            x = nn.relu(DenseLayer(256, name="linear3")(x))
+            x = nn.relu(DenseLayer(512, name="linear4")(x))
+            x = nn.relu(DenseLayer(512, name="linear5")(x))
+            x = nn.relu(DenseLayer(512, name="linear6")(x))
+            x = nn.relu(DenseLayer(512, name="linear7")(x))
+
+        x = nn.Dense(3, name="color_predictor", param_dtype=x.dtype)(x)
+        rgb = nn.sigmoid(x)
+
+        return rgb
