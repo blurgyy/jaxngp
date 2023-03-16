@@ -2,11 +2,13 @@
 
 import logging
 import random
-from typing import Callable, Tuple
+from typing import Any, Callable, Iterable, Optional, Tuple, Union
 
 import chex
 import colorama
 from colorama import Back, Fore, Style
+import jax
+from jax._src.lib import xla_client as xc
 import jax.random as jran
 import numpy as np
 import sympy
@@ -18,6 +20,30 @@ tqdm_format = _tqdm_format \
     .replace("HI", Fore.CYAN) \
     .replace("SBRIGHT", Style.BRIGHT) \
     .replace("RESET", Style.RESET_ALL)
+
+
+def jit_jaxfn_with(
+        # kwargs copied from `jax.jit` source
+        static_argnums: Union[int, Iterable[int], None] = None,
+        static_argnames: Union[str, Iterable[str], None] = None,
+        device: Optional[xc.Device] = None,
+        backend: Optional[str] = None,
+        donate_argnums: Union[int, Iterable[int]] = (),
+        inline: bool = False,
+        keep_unused: bool = False,
+        abstracted_axes: Optional[Any] = None,
+    ):
+    return lambda fn: jax.jit(
+            fn,
+            static_argnums=static_argnums,
+            static_argnames=static_argnames,
+            device=device,
+            backend=backend,
+            donate_argnums=donate_argnums,
+            inline=inline,
+            keep_unused=keep_unused,
+            abstracted_axes=abstracted_axes,
+        )
 
 
 def setup_logging(

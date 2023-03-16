@@ -1,3 +1,4 @@
+import functools
 import math
 
 import chex
@@ -7,19 +8,33 @@ import jax
 import jax.numpy as jnp
 import jax.random as jran
 
-from utils.common import find_smallest_prime_larger_or_equal_than
+from utils.common import find_smallest_prime_larger_or_equal_than, jit_jaxfn_with
 
 
-vert_offsets_2d = jnp.asarray([
-    [0, 0],
-    [0, 1],
-    [1, 0],
-    [1, 1],
-])
+cell_vert_offsets = {
+    2: jnp.asarray([
+        [0, 0],
+        [0, 1],
+        [1, 0],
+        [1, 1],
+    ]),
+    3: jnp.asarray([
+        [0, 0, 0],
+        [0, 0, 1],
+        [0, 1, 0],
+        [0, 1, 1],
+        [1, 0, 0],
+        [1, 0, 1],
+        [1, 1, 0],
+        [1, 1, 1],
+    ]),
+}
 
 
-class HashGridEncoder2D(nn.Module):
-    # Lets use the same notations as in the paper
+# TODO: enforce types used in arrays
+class HashGridEncoder(nn.Module):
+    dim: int
+    # Let's use the same notations as in the paper
 
     # Number of levels (16).
     L: int
@@ -36,7 +51,7 @@ class HashGridEncoder2D(nn.Module):
     param_dtype: Dtype = jnp.float32
 
     @nn.compact
-    def __call__(self, uv: jax.Array):
+    def __call__(self, pos: jax.Array) -> jax.Array:
         # Equation(3)
         # Essentially, it is $(n_max / n_min) ** (1/(L - 1))$
         b = math.exp((math.log(self.N_max) - math.log(self.N_min)) / (self.L - 1))
@@ -49,9 +64,9 @@ class HashGridEncoder2D(nn.Module):
             n_entries = (res + 1) ** 2
 
             if n_entries <= self.T:
-                indexing_methods.append(jax.vmap(self.onebyone, in_axes=(0,None, None)))
+                indexing_methods.append(jax.vmap(self.onebyone, in_axes=(0, None, None, None)))
             else:
-                indexing_methods.append(jax.vmap(self.hashing, in_axes=(0, None, None)))
+                indexing_methods.append(jax.vmap(self.hashing, in_axes=(0, None, None, None)))
                 n_entries = self.T
 
             offsets.append(offsets[-1] + n_entries)
@@ -67,137 +82,164 @@ class HashGridEncoder2D(nn.Module):
             self.param_dtype,
         )
 
-        # [
-        #   (indices_0, uv_scaled_0, vert_uv_0),
-        #   (indices_1, uv_scaled_1, vert_uv_1),
+        # A list-like object, contents are: [
+        #   (indices_0, pos_scaled_0, vert_pos_0),
+        #   (indices_1, pos_scaled_1, vert_pos_1),
         #   ...
-        #   (indices_{L-1}, uv_scaled_{L-1}, vert_uv_{L-1})
-        # ]
-        indices_vertuvs_tuples = jax.tree_map(
-            lambda index_fn, res: index_fn(uv, res, self.T),
+        #   (indices_{L-1}, pos_scaled_{L-1}, vert_pos_{L-1})
+        # ], where:
+        # indices [L, pos.shape[0], 2**dim] (int):
+        #   indices in hash table
+        # pos_scaled [L, pos.shape[0], 2**dim] (float):
+        #   query points' coordinates scaled to each hierarchies (float)
+        # vert_pos [L, pos.shape[0], 2**dim, dim] (int):
+        #   vertex coordinates of the enclosing grid cell's vertices (2**dim in total) of each
+        #   query point
+        indices_posscaled_vertpos_tuples = jax.tree_map(
+            lambda index_fn, res: index_fn(pos, self.dim, res, self.T),
             indexing_methods,
             resolutions,
         )
 
-        # the indices and vertex coordinates of the enclosing grid's 4 vertices of each query point
-        indices, uvs_scaled, vert_uvs = zip(*indices_vertuvs_tuples)
+        indices, pos_scaled, vert_pos = map(jnp.asarray, zip(*indices_posscaled_vertpos_tuples))
 
-        # [L, uv.shape[0], 4]
-        indices = jnp.asarray(indices)
-        # [L, uv.shape[0], 2]
-        uvs_scaled = jnp.asarray(uvs_scaled)
-        # [L, uv.shape[0], 4, 2]
-        vert_uvs = jnp.asarray(vert_uvs)
-        # add offsets for each level
+        # add offsets for each hash grid level
         indices += jnp.asarray(offsets[:-1]).reshape((self.L, 1, 1))
 
-        # [L, uv.shape[0], 4, F]
+        # [L, pos.shape[0], 2**dim, F]
         vert_latents = latents[indices]
-        # [L, uv.shape[0], 4]
+        # [L, pos.shape[0], 2**dim]
         # NOTE:
         #   need to set out_axes=1 to keep the output batch dimension on the 1-th axis
-        vert_weights = jax.vmap(self.lerp_weights, in_axes=(1, 1), out_axes=1)(uvs_scaled, vert_uvs)
+        vert_weights = jax.vmap(self.lerp_weights, in_axes=(1, 1, None), out_axes=1)(pos_scaled, vert_pos, self.dim)
 
-        # [L, uv.shape[0], F]
+        # [L, pos.shape[0], F]
         encodings = (vert_latents * vert_weights[..., None]).sum(axis=-2)
-        # [uv.shape[0], L*F]
+        # [pos.shape[0], L*F]
         encodings = encodings.transpose(1, 0, 2).reshape(-1, self.L * self.F)
         return encodings
 
 
     @staticmethod
-    @jax.jit
-    def lerp_weights(uv_scaled, vert_uv):
-        chex.assert_type([uv_scaled, vert_uv], [float, int])
-        # uv_scaled: [L, ..., 2]
-        # vert_uv: [L, ..., 4, 2]
-        # [L, ..., 2]
-        pos_offset = uv_scaled[..., None, :] - vert_uv[..., 0:1, :]
-        # [L, ..., 4, 2]
+    @jit_jaxfn_with(static_argnames=["dim"])
+    def lerp_weights(pos_scaled: jax.Array, vert_pos: jax.Array, dim: int):
+        """
+        Inputs:
+            pos_scaled [L, ..., dim]: coordinates of query points, scaled to the hierarchy in question
+            vert_pos [L, ..., 2**dim, dim]: integer coordinates of the grid cells' vertices that enclose each of `pos_scaled`
+            dim int: space dimension
+
+        Returns:
+            weights [L, ..., 2**dim]: linear interpolation weights w.r.t. each cell vertex
+        """
+        chex.assert_type([pos_scaled, vert_pos, dim], [float, int, int])
+        chex.assert_scalar(dim)
+        # [L, ..., 1, dim]
+        pos_offset = pos_scaled[..., None, :] - vert_pos[..., 0:1, :]
+        # [L, ..., 2**dim, dim]
         widths = jnp.clip(
-            # vert_offsets_2d: [4, 2]
-            (1 - vert_offsets_2d) + (2 * vert_offsets_2d - 1) * pos_offset,
+            # cell_vert_offsets: [2**dim, 2]
+            (1 - cell_vert_offsets[dim]) + (2 * cell_vert_offsets[dim] - 1) * pos_offset,
             0,
             1,
         )
-        # [L, ..., 4]
+        # [L, ..., 2**dim]
         return jnp.prod(widths, axis=-1)
 
 
     @staticmethod
-    @jax.jit  # does this jit matter?
-    def onebyone(uv: jax.Array, res: int, T: int):
+    @jit_jaxfn_with(static_argnames=["dim", "res", "T"])
+    def onebyone(pos: jax.Array, dim: int, res: int, T: int):
         """
         Inputs:
-            res int
-            uv [..., 2]
+            res int: resolution of the hierarchy in question
+            pos [..., dim]: spatial positions of the query points
+
         Returns:
-            indices [..., 4]
-            vert_uv [..., 4, 2]
+            indices [..., 2**dim]: indices of the grid cell's vertices in the hash table
+            vert_pos [..., 2**dim, dim]: positions of the grid cell's vertices in the input space
         """
-        chex.assert_type(uv, float)
-        # [..., 2]
-        uv_scaled = uv * res
-        # [..., 2]
-        uv_floored = jnp.floor(uv_scaled).astype(int)
-        # [..., 4, 2]
-        vert_uv = uv_floored[..., None, :] + vert_offsets_2d
-        # [..., 4]
-        return vert_uv[..., 0] * res + vert_uv[..., 1], uv_scaled, vert_uv
+        chex.assert_type([pos, dim, res, T], [float, int, int, int])
+        chex.assert_scalar(dim)
+        chex.assert_scalar(res)
+        chex.assert_scalar(T)
+        # [..., dim]
+        pos_scaled = pos * res
+        # [..., dim]
+        pos_floored = jnp.floor(pos_scaled).astype(int)
+        # [..., 2**dim, dim]
+        vert_pos = pos_floored[..., None, :] + cell_vert_offsets[dim]
+        # [..., 2**dim]
+        indices = functools.reduce(
+            lambda prev, d: prev * res + vert_pos[..., d],
+            range(dim),
+            1,
+        )
+        return indices, pos_scaled, vert_pos
 
 
     @staticmethod
-    @jax.jit  # does this jit matter?
-    def hashing(uv: jax.Array, res: int, T: int):
+    @jit_jaxfn_with(static_argnames=["dim", "res", "T"])
+    def hashing(pos: jax.Array, dim: int, res: int, T: int):
         """
         Inputs:
-            res int
-            uv [..., 2]
+            res int: resolution of the hierarchy in question
+            pos [..., dim]: spatial positions of the query points
+
         Returns:
-            indices [..., 4]
-            vert_uv [..., 4, 2]
+            indices [..., 2**dim]: indices of the grid cell's vertices in the hash table
+            vert_pos [..., 2**dim, dim]: positions of the grid cell's vertices in the input space
         """
-        chex.assert_type(uv, float)
-        # [..., 2]
-        uv_scaled = uv * res
-        # [..., 2]
-        uv_floored = jnp.floor(uv_scaled).astype(int)
-        # [..., 4, 2]
-        vert_uv = uv_floored[..., None, :] + vert_offsets_2d
+        chex.assert_type([pos, dim, res, T], [float, int, int, int])
+        chex.assert_scalar(dim)
+        chex.assert_scalar(res)
+        chex.assert_scalar(T)
+        # [..., dim]
+        pos_scaled = pos * res
+        # [..., dim]
+        pos_floored = jnp.floor(pos_scaled).astype(int)
+        # [..., 2**dim, dim]
+        vert_pos = pos_floored[..., None, :] + cell_vert_offsets[dim]
         # NOTE:
         #   don't use too large primes (e.g. >= 2**20), because some larger images can easily have
         #   axes with more than 2**11(=2048) pixels, and jax represents integers as int32 by
         #   default, overflows could happen and increase hash collisions.
-        primes = (1, find_smallest_prime_larger_or_equal_than(2**17))
-        # [..., 4]
-        indices = jnp.bitwise_xor(
-            vert_uv[..., 0] * primes[0],
-            vert_uv[..., 1] * primes[1],
+        primes = (
+            1,
+            find_smallest_prime_larger_or_equal_than(1<<17),
+            find_smallest_prime_larger_or_equal_than(1<<18),
         )
-        return jnp.mod(indices, T), uv_scaled, vert_uv
+        # [..., 2**dim]
+        indices = functools.reduce(
+            lambda prev, d: jnp.bitwise_xor(prev, vert_pos[..., d] * primes[d]),
+            range(dim),
+            0,
+        )
+        return jnp.mod(indices, T), pos_scaled, vert_pos
 
 
-def _frequency_encoding_2d(uv: jax.Array, L: int):
+def _frequency_encoding(pos: jax.Array, dim: int, L: int):
     """
     Frequency encoding from Equation(4) of the NeRF paper, except the encoded frequency orders are
     different.
 
     Inuts:
-        uv [..., 2]: 2D coordinates to be frequency-encoded
+        pos [..., dim]: `dim`-d coordinates to be frequency-encoded
+        dim int: input dimension
         L [L]: number of frequencies
 
     Returns:
-        encodings [..., 4*L]: frequency-encoded coordinates
+        encodings [..., 2*dim*L]: frequency-encoded coordinates
     """
-    # [..., 2, L]: 2^{l} * pi * p
-    A = jnp.exp2(jnp.arange(L)) * jnp.pi * uv[..., None]
-    # [..., 2, L], [..., 2, L]
+    # [..., dim, L]: 2^{l} * pi * p
+    A = jnp.exp2(jnp.arange(L)) * jnp.pi * pos[..., None]
+    # [..., dim, L], [..., dim, L]
     senc, cenc = jnp.sin(A), jnp.cos(A)
-    # [..., 2*L], [..., 2*L]
-    senc, cenc = senc.reshape(*A.shape[:-2], 2*L), cenc.reshape(*A.shape[:-2], 2*L)
-    # [..., 4*L]
+    # [..., dim*L], [..., dim*L]
+    senc, cenc = senc.reshape(*A.shape[:-2], dim*L), cenc.reshape(*A.shape[:-2], dim*L)
+    # [..., 2*dim*L]
     encodings = jnp.concatenate([senc, cenc], axis=-1)
     return encodings
 
-_frequency_encoding_2d = jax.jit(_frequency_encoding_2d, static_argnums=(1,))
-frequency_encoding_2d = jax.vmap(_frequency_encoding_2d, in_axes=(0, None))
+_frequency_encoding = jax.jit(_frequency_encoding, static_argnums=(1, 2))
+frequency_encoding = jax.vmap(_frequency_encoding, in_axes=(0, None, None))
