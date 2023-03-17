@@ -2,7 +2,19 @@
 
 import logging
 import random
-from typing import Any, Callable, Hashable, Iterable, Optional, Sequence, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Hashable,
+    Iterable,
+    Literal,
+    Optional,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+    get_args,
+)
 
 import chex
 import colorama
@@ -13,6 +25,11 @@ import jax.random as jran
 import numpy as np
 import sympy
 import tensorflow as tf
+
+
+PositionalEncodingType = Literal["frequency", "hashgrid"]
+DirectionalEncodingType = Literal["sh"]
+ActivationType = Literal["exponential", "sigmoid"]
 
 
 _tqdm_format = "SBRIGHT{desc}RESET: HI{percentage:3.0f}%RESET {n_fmt}/{total_fmt} [{elapsed}<HI{remaining}RESET, {rate_fmt}]"
@@ -45,6 +62,12 @@ def vmap_jaxfn_with(
             axis_size=axis_size,
             spmd_axis_name=spmd_axis_name,
         )
+
+
+def mkValueError(desc, value, type):
+    variants = get_args(type)
+    assert value not in variants
+    return ValueError("Unexpected {}: '{}', expected one of [{}]".format(desc, value, "|".join(variants)))
 
 
 def jit_jaxfn_with(

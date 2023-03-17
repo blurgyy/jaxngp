@@ -1,4 +1,5 @@
 from typing import Literal
+import chex
 
 import flax.linen as nn
 from flax.linen.dtypes import Dtype
@@ -17,11 +18,13 @@ class ImageFitter(nn.Module):
     def __call__(self, uv: jax.Array) -> jax.Array:
         """
         Inputs:
-            uv [..., 2]: coordinates in $\R^2$ (normalized in range [0, 1]).
+            uv [..., 2]: coordinates in $\\R^2$ (normalized in range [0, 1]).
 
         Returns:
             rgb [..., 3]: predicted color for each input uv coordinate (normalized in range [0, 1]).
         """
+        chex.assert_axis_dimension(uv, -1, 2)
+
         if self.encoding == "hashgrid":
             # [..., L*F]
             x = HashGridEncoder(
