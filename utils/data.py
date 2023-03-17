@@ -16,6 +16,7 @@ def image_fit_collate_fn(batch):
 class SampledPixelsDataset(Dataset):
     image: np.ndarray  # [H, W, C]
     loop: int
+    use_white_bg: bool = True
 
     def __init__(
             self,
@@ -33,7 +34,10 @@ class SampledPixelsDataset(Dataset):
         else:
             raise ValueError("Unexpected image source type '{}'".format(type(image)))
 
-        self.image = self.image[..., :3] * (self.image[..., -1:] / 255)
+        alpha = self.image[..., -1:] / 255
+        self.image = self.image[..., :3] * alpha
+        if self.use_white_bg:
+            self.image += 255 * (1 - alpha)
 
         self.loop = loop
         self.normalizer_fn = self.to_unit_cube
