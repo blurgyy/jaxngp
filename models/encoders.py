@@ -240,6 +240,15 @@ class FrequencyEncoder(Encoder):
     # number of frequencies
     L: int
 
+    # NOTE:
+    #   adding @nn.compact makes this not directly callable (CallCompactUnboundModuleError)
+    #   See: <https://flax.readthedocs.io/en/latest/api_reference/flax.errors.html#flax.errors.CallCompactUnboundModuleError>
+    #
+    # @nn.compact
+    # TODO:
+    #   using a function for this (vmap, then jit the vmapped function) seems to be faster (~47ms vs
+    #   ~57ms)
+    @nn.jit  # use nn.jit instead of jax.jit because first argument is a Module
     def __call__(self, pos: jax.Array) -> jax.Array:
         """
         Inuts:
