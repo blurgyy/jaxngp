@@ -22,7 +22,7 @@ class ImageFitter(nn.Module):
             rgb [..., 3]: predicted color for each input uv coordinate (normalized in range [0, 1]).
         """
         if self.encoding == "hashgrid":
-            # [L, uv.shape[0]]
+            # [..., L*F]
             x = HashGridEncoder(
                 dim=2,
                 L=16,
@@ -34,6 +34,7 @@ class ImageFitter(nn.Module):
                 param_dtype=self.encoding_dtype,
             )(uv)
         elif self.encoding == "frequency":
+            # [..., dim*L]
             x = FrequencyEncoder(dim=2, L=10)(uv)
         else:
             raise ValueError("Unexpected encoding type '{}'".format(self.encoding))
