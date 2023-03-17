@@ -223,6 +223,11 @@ class HashGridEncoder(Encoder):
 
 
 class FrequencyEncoder(Encoder):
+    """
+        Frequency encoding from Equation(4) of the NeRF paper, except the encoded frequency orders
+        are different.
+    """
+
     # input dimension
     dim: int
     # number of frequencies
@@ -230,9 +235,6 @@ class FrequencyEncoder(Encoder):
 
     def __call__(self, pos: jax.Array) -> jax.Array:
         """
-        Frequency encoding from Equation(4) of the NeRF paper, except the encoded frequency orders are
-        different.
-
         Inuts:
             pos [..., dim]: `dim`-d coordinates to be frequency-encoded
 
