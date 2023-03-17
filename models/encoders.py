@@ -56,6 +56,8 @@ class HashGridEncoder(Encoder):
 
     @nn.compact
     def __call__(self, pos: jax.Array) -> jax.Array:
+        chex.assert_axis_dimension(pos, -1, self.dim)
+
         # Equation(3)
         # Essentially, it is $(n_max / n_min) ** (1/(L - 1))$
         b = math.exp((math.log(self.N_max) - math.log(self.N_min)) / (self.L - 1))
@@ -137,6 +139,9 @@ class HashGridEncoder(Encoder):
             weights [L, ..., 2**dim]: linear interpolation weights w.r.t. each cell vertex
         """
         chex.assert_type([pos_scaled, vert_pos, dim], [float, int, int])
+        chex.assert_axis_dimension(pos_scaled, -1, dim)
+        chex.assert_axis_dimension(vert_pos, -2, 2**dim)
+        chex.assert_axis_dimension(vert_pos, -1, dim)
         chex.assert_scalar(dim)
         # [L, ..., 1, dim]
         pos_offset = pos_scaled[..., None, :] - vert_pos[..., 0:1, :]
@@ -164,6 +169,7 @@ class HashGridEncoder(Encoder):
             vert_pos [..., 2**dim, dim]: positions of the grid cell's vertices in the input space
         """
         chex.assert_type([pos, dim, res, T], [float, int, int, int])
+        chex.assert_axis_dimension(pos, -1, dim)
         chex.assert_scalar(dim)
         chex.assert_scalar(res)
         chex.assert_scalar(T)
@@ -195,6 +201,7 @@ class HashGridEncoder(Encoder):
             vert_pos [..., 2**dim, dim]: positions of the grid cell's vertices in the input space
         """
         chex.assert_type([pos, dim, res, T], [float, int, int, int])
+        chex.assert_axis_dimension(pos, -1, dim)
         chex.assert_scalar(dim)
         chex.assert_scalar(res)
         chex.assert_scalar(T)
@@ -241,6 +248,7 @@ class FrequencyEncoder(Encoder):
         Returns:
             encodings [..., 2*dim*L]: frequency-encoded coordinates
         """
+        chex.assert_axis_dimension(pos, -1, self.dim)
         # [..., dim, L]: 2^{l} * pi * p
         A = jnp.exp2(jnp.arange(self.L)) * jnp.pi * pos[..., None]
         # [..., dim, L], [..., dim, L]
