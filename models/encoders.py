@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as jran
 
-from utils.common import find_smallest_prime_larger_or_equal_than, jit_jaxfn_with
+from utils.common import find_smallest_prime_larger_or_equal_than, jit_jaxfn_with, vmap_jaxfn_with
 
 
 cell_vert_offsets = {
@@ -70,9 +70,9 @@ class HashGridEncoder(Encoder):
             n_entries = (res + 1) ** 2
 
             if n_entries <= self.T:
-                indexing_methods.append(jax.vmap(self.onebyone, in_axes=(0, None, None, None)))
+                indexing_methods.append(self.onebyone)
             else:
-                indexing_methods.append(jax.vmap(self.hashing, in_axes=(0, None, None, None)))
+                indexing_methods.append(self.hashing)
                 n_entries = self.T
 
             offsets.append(offsets[-1] + n_entries)
@@ -117,7 +117,7 @@ class HashGridEncoder(Encoder):
         # [L, pos.shape[0], 2**dim]
         # NOTE:
         #   need to set out_axes=1 to keep the output batch dimension on the 1-th axis
-        vert_weights = jax.vmap(self.lerp_weights, in_axes=(1, 1, None), out_axes=1)(pos_scaled, vert_pos, self.dim)
+        vert_weights = self.lerp_weights(pos_scaled, vert_pos, self.dim)
 
         # [L, pos.shape[0], F]
         encodings = (vert_latents * vert_weights[..., None]).sum(axis=-2)
@@ -126,8 +126,13 @@ class HashGridEncoder(Encoder):
         return encodings
 
 
+    # PERF:
+    #   Make sure to jit the vmapped function, and NOT the other way around (always use jit as the
+    #   outmost decorator).
+    #   The @staticmethod decorator here doesn't degrade performance, but can only be add at top.
     @staticmethod
     @jit_jaxfn_with(static_argnames=["dim"])
+    @vmap_jaxfn_with(in_axes=(1, 1, None), out_axes=1)
     def lerp_weights(pos_scaled: jax.Array, vert_pos: jax.Array, dim: int):
         """
         Inputs:
@@ -158,6 +163,7 @@ class HashGridEncoder(Encoder):
 
     @staticmethod
     @jit_jaxfn_with(static_argnames=["dim", "res", "T"])
+    @vmap_jaxfn_with(in_axes=(0, None, None, None))
     def onebyone(pos: jax.Array, dim: int, res: int, T: int):
         """
         Inputs:
@@ -190,6 +196,7 @@ class HashGridEncoder(Encoder):
 
     @staticmethod
     @jit_jaxfn_with(static_argnames=["dim", "res", "T"])
+    @vmap_jaxfn_with(in_axes=(0, None, None, None))
     def hashing(pos: jax.Array, dim: int, res: int, T: int):
         """
         Inputs:

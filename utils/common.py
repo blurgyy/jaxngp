@@ -2,7 +2,7 @@
 
 import logging
 import random
-from typing import Any, Callable, Iterable, Optional, Tuple, Union
+from typing import Any, Callable, Hashable, Iterable, Optional, Sequence, Tuple, Union
 
 import chex
 import colorama
@@ -20,6 +20,31 @@ tqdm_format = _tqdm_format \
     .replace("HI", Fore.CYAN) \
     .replace("SBRIGHT", Style.BRIGHT) \
     .replace("RESET", Style.RESET_ALL)
+
+
+# NOTE:
+#   Jitting a vmapped function seems to give the desired performance boost, while vmapping a jitted
+#   function might not work at all.  Except for the experiments I conducted myself, some related
+#   issues:
+# REF:
+#   * <https://github.com/google/jax/issues/6312>
+#   * <https://github.com/google/jax/issues/7449>
+def vmap_jaxfn_with(
+        # kwargs copied from `jax.vmap` source
+        in_axes: Union[int, Sequence[Any]] = 0,
+        out_axes: Any = 0,
+        axis_name: Optional[Hashable] = None,
+        axis_size: Optional[int] = None,
+        spmd_axis_name: Optional[Hashable] = None,
+    ):
+    return lambda fn: jax.vmap(
+            fn,
+            in_axes=in_axes,
+            out_axes=out_axes,
+            axis_name=axis_name,
+            axis_size=axis_size,
+            spmd_axis_name=spmd_axis_name,
+        )
 
 
 def jit_jaxfn_with(
