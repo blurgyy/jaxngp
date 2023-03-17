@@ -1,6 +1,7 @@
 # with import <nixpkgs> {};
 
-{ fetchPypi, buildPythonPackage
+{ source, buildPythonPackage
+
 , poetry-core
 , backports-cached-property
 
@@ -14,13 +15,8 @@
 , shtab
 }:
 
-buildPythonPackage rec {
-  pname = "tyro";
-  version = "0.4.2";
-  src = fetchPypi {
-    inherit pname version;
-    hash = "sha256-8UaFs/mMsQKOOiuSpNrpvkRA0YmXDqTi7IIN3TV/Ti4=";
-  };
+buildPythonPackage {
+  inherit (source) pname version src;
   format = "pyproject";
 
   nativeBuildInputs = [

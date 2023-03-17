@@ -1,0 +1,17 @@
+{
+    "tyro": {
+        "cargoLocks": null,
+        "date": null,
+        "extract": null,
+        "name": "tyro",
+        "passthru": null,
+        "pinned": false,
+        "src": {
+            "name": null,
+            "sha256": "sha256-8UaFs/mMsQKOOiuSpNrpvkRA0YmXDqTi7IIN3TV/Ti4=",
+            "type": "url",
+            "url": "https://pypi.io/packages/source/t/tyro/tyro-0.4.2.tar.gz"
+        },
+        "version": "0.4.2"
+    }
+}

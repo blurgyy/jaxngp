@@ -15,10 +15,12 @@
 
   outputs = inputs@{ self, nixpkgs, flake-utils, ... }: flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system: let
     inherit (nixpkgs) lib;
+    basePkgs = import nixpkgs { inherit system; };
   in {
     devShells = let
       pyVer = "310";
       py = "python${pyVer}";
+      depsWith = import ./deps { inherit lib; pkgs = basePkgs; };
       jaxOverlays = final: prev: {
           ${py} = prev.${py}.override {
             packageOverrides = finalScope: prevScope: {
@@ -47,7 +49,7 @@
           torchvision-bin
           tqdm
           icecream
-          (pp.callPackage ./deps/tyro {})
+          (depsWith pp).tyro
           pillow
           ipdb
           sympy

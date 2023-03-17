@@ -1,0 +1,3 @@
+[tyro]
+src.pypi = "tyro"
+fetch.pypi = "tyro"
