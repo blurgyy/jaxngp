@@ -31,8 +31,12 @@ cell_vert_offsets = {
 }
 
 
+class Encoder(nn.Module):
+    pass
+
+
 # TODO: enforce types used in arrays
-class HashGridEncoder(nn.Module):
+class HashGridEncoder(Encoder):
     dim: int
     # Let's use the same notations as in the paper
 
@@ -218,28 +222,29 @@ class HashGridEncoder(nn.Module):
         return jnp.mod(indices, T), pos_scaled, vert_pos
 
 
-def _frequency_encoding(pos: jax.Array, dim: int, L: int):
-    """
-    Frequency encoding from Equation(4) of the NeRF paper, except the encoded frequency orders are
-    different.
+class FrequencyEncoder(Encoder):
+    # input dimension
+    dim: int
+    # number of frequencies
+    L: int
 
-    Inuts:
-        pos [..., dim]: `dim`-d coordinates to be frequency-encoded
-        dim int: input dimension
-        L [L]: number of frequencies
+    def __call__(self, pos: jax.Array) -> jax.Array:
+        """
+        Frequency encoding from Equation(4) of the NeRF paper, except the encoded frequency orders are
+        different.
 
-    Returns:
-        encodings [..., 2*dim*L]: frequency-encoded coordinates
-    """
-    # [..., dim, L]: 2^{l} * pi * p
-    A = jnp.exp2(jnp.arange(L)) * jnp.pi * pos[..., None]
-    # [..., dim, L], [..., dim, L]
-    senc, cenc = jnp.sin(A), jnp.cos(A)
-    # [..., dim*L], [..., dim*L]
-    senc, cenc = senc.reshape(*A.shape[:-2], dim*L), cenc.reshape(*A.shape[:-2], dim*L)
-    # [..., 2*dim*L]
-    encodings = jnp.concatenate([senc, cenc], axis=-1)
-    return encodings
+        Inuts:
+            pos [..., dim]: `dim`-d coordinates to be frequency-encoded
 
-_frequency_encoding = jax.jit(_frequency_encoding, static_argnums=(1, 2))
-frequency_encoding = jax.vmap(_frequency_encoding, in_axes=(0, None, None))
+        Returns:
+            encodings [..., 2*dim*L]: frequency-encoded coordinates
+        """
+        # [..., dim, L]: 2^{l} * pi * p
+        A = jnp.exp2(jnp.arange(self.L)) * jnp.pi * pos[..., None]
+        # [..., dim, L], [..., dim, L]
+        senc, cenc = jnp.sin(A), jnp.cos(A)
+        # [..., dim*L], [..., dim*L]
+        senc, cenc = senc.reshape(*A.shape[:-2], self.dim*self.L), cenc.reshape(*A.shape[:-2], self.dim*self.L)
+        # [..., 2*dim*L]
+        encodings = jnp.concatenate([senc, cenc], axis=-1)
+        return encodings

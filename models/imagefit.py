@@ -4,7 +4,7 @@ import flax.linen as nn
 from flax.linen.dtypes import Dtype
 import jax
 
-from models.encoders import HashGridEncoder, frequency_encoding
+from models.encoders import FrequencyEncoder, HashGridEncoder
 from utils.common import find_smallest_prime_larger_or_equal_than
 
 
@@ -34,7 +34,7 @@ class ImageFitter(nn.Module):
                 param_dtype=self.encoding_dtype,
             )(uv)
         elif self.encoding == "frequency":
-            x = frequency_encoding(uv, 2, 10)
+            x = FrequencyEncoder(dim=2, L=10)(uv)
         else:
             raise ValueError("Unexpected encoding type '{}'".format(self.encoding))
 
