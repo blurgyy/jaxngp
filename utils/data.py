@@ -33,6 +33,8 @@ class SampledPixelsDataset(Dataset):
         else:
             raise ValueError("Unexpected image source type '{}'".format(type(image)))
 
+        self.image = self.image[..., :3] * (self.image[..., -1:] / 255)
+
         self.loop = loop
         self.normalizer_fn = self.to_unit_cube
 
