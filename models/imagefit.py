@@ -45,7 +45,9 @@ class ImageFitter(nn.Module):
                 name=name,
                 # the paper uses glorot initialization, in practice glorot initialization converges
                 # to a better result than kaiming initialization, though the gap is small.
-                kernel_init=nn.initializers.glorot_uniform(),
+                # TODO:
+                #   experiment with initializers (or not)
+                kernel_init=nn.initializers.lecun_normal(),
                 bias_init=nn.initializers.zeros,
                 param_dtype=x.dtype
             )
