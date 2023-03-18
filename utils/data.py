@@ -1,40 +1,44 @@
 #!/usr/bin/env python3
 
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Union
-from dataclasses import dataclass
 
 from PIL import Image
+import jax
+import jax.numpy as jnp
+import jax.random as jran
 import numpy as np
 import tensorflow as tf
 Dataset = tf.data.Dataset
 
 
-def to_unit_cube_2d(xys: np.ndarray, W: int, H: int):
+def to_unit_cube_2d(xys: jax.Array, W: int, H: int):
     "Normalizes coordinate (x, y) into range [0, 1], where 0<=x<W, 0<=y<H"
-    uvs = xys / np.asarray([[W-1, H-1]])
+    uvs = xys / jnp.asarray([[W-1, H-1]])
     return uvs
 
 
 @dataclass(frozen=True)
-class SampledPixelsDatasetInputs:
+class ImageData:
     H: int
     W: int
-    idcs: np.ndarray
-    rgbs: np.ndarray
+    idcs: jax.Array  # int:[H*W, 2]  original integer coordinates in range [0, W] for x and [0, H] for y
+    uvs: jax.Array  # float:[H*W, 2] normalized coordinates in range [0, 1]
+    rgbs: jax.Array  # float:[H*W, 3] normalized rgb values in range [0, 1]
 
 
-def make_sampled_pixels_dataset_inputs(
+def make_image_data(
         image: Union[np.ndarray, Image.Image, Path, str],
         use_white_bg: bool = True,
-    ):
+    ) -> ImageData:
     if isinstance(image, Image.Image):
-        image = np.asarray(image)
+        image = jnp.asarray(image)
     elif isinstance(image, (Path, str)):
-        image = np.asarray(Image.open(image))
+        image = jnp.asarray(Image.open(image))
     elif isinstance(image, np.ndarray):
-        image = image
+        image = jnp.asarray(image)
     else:
         raise ValueError("Unexpected image source type '{}'".format(type(image)))
 
@@ -47,43 +51,40 @@ def make_sampled_pixels_dataset_inputs(
             rgbs = rgbs * alpha
             rgbs += 1 - alpha
 
-    x, y = np.meshgrid(np.arange(W), np.arange(H))
+    x, y = jnp.meshgrid(jnp.arange(W), jnp.arange(H))
     x, y = x.reshape(-1, 1), y.reshape(-1, 1)
-    idcs = np.concatenate([x, y], axis=-1)
-    idcs = to_unit_cube_2d(idcs, W, H)
+    idcs = jnp.concatenate([x, y], axis=-1)
+    uvs = to_unit_cube_2d(idcs, W, H)
 
-    return SampledPixelsDatasetInputs(
+    return ImageData(
         H=H,
         W=W,
-        idcs=idcs,
-        rgbs=rgbs
+        idcs=jnp.asarray(idcs),
+        uvs=jnp.asarray(uvs),
+        rgbs=jnp.asarray(rgbs),
     )
 
 
-def make_sampled_pixels_dataset(
-        inputs: SampledPixelsDatasetInputs,
+def make_permutation_dataset(
+        key: jran.KeyArray,
+        size: int,
         shuffle: True,
-    ):
-    size = inputs.H * inputs.W
+    ) -> Dataset:
     if shuffle:
-        perm = np.random.permutation(size)
+        perm = jran.permutation(key, size)
     else:
-        perm = np.arange(size)
+        perm = jnp.arange(size)
 
-    idcs = Dataset.from_tensor_slices(inputs.idcs[perm])
-    rgb = Dataset.from_tensor_slices(inputs.rgbs[perm])
-
-    ds = Dataset.zip((idcs, rgb))
-
-    return ds
+    return Dataset.from_tensor_slices(perm)
 
 
 if __name__ == "__main__":
     from utils.common import tqdm_format
     from tqdm import tqdm
 
-    ds_in = make_sampled_pixels_dataset_inputs("./h.jpg", use_white_bg=True)
-    ds = make_sampled_pixels_dataset(ds_in, shuffle=True)
+    imdata = make_image_data("./h.jpg", use_white_bg=True)
+    K, key = jran.split(jran.PRNGKey(0xabcdef), 2)
+    ds = make_permutation_dataset(key, imdata.H*imdata.W, shuffle=True)
     print(ds.element_spec)
     # _NumpyIterator does not support len()
     print(len(ds.batch(3).as_numpy_iterator()))
