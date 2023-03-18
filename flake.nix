@@ -80,6 +80,15 @@
               extraPackages = [];
             }))
         ];
+        # REF:
+        #   <https://github.com/google/jax/issues/5723#issuecomment-1339655621>
+        XLA_FLAGS = with builtins; let
+          nvidiaDriverVersion =
+            head (match ".*Module  ([0-9\\.]+)  .*" (readFile /proc/driver/nvidia/version));
+          nvidiaDriverVersionMajor = lib.toInt (head (splitVersion nvidiaDriverVersion));
+        in lib.optionalString
+          (nvidiaDriverVersionMajor <= 470)
+          "--xla_gpu_force_compilation_parallelism=1";
         shellHook = ''
           source <(sed -Ee '/\$@/d' ${lib.getExe pkgs.nixgl.nixGLIntel})
           source <(sed -Ee '/\$@/d' ${lib.getExe pkgs.nixgl.auto.nixGLNvidia}*)
