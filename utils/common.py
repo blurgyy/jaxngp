@@ -12,7 +12,7 @@ from jax._src.lib import xla_client as xc
 import jax.random as jran
 import numpy as np
 import sympy
-import torch
+import tensorflow as tf
 
 
 _tqdm_format = "SBRIGHT{desc}RESET: HI{percentage:3.0f}%RESET {n_fmt}/{total_fmt} [{elapsed}<HI{remaining}RESET, {rate_fmt}]"
@@ -116,7 +116,7 @@ def setup_logging(
 def set_deterministic(seed: int) -> jran.KeyArray:
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
+    tf.random.set_seed(seed)
     return jran.PRNGKey(seed)
 
 

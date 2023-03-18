@@ -12,6 +12,7 @@ class ImageFitter(nn.Module):
     encoding: Literal["hashgrid", "frequency"]
     encoding_dtype: Dtype
 
+    @nn.jit
     @nn.compact
     def __call__(self, uv: jax.Array) -> jax.Array:
         """

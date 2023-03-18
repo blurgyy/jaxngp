@@ -22,31 +22,29 @@
       py = "python${pyVer}";
       depsWith = import ./deps { inherit lib; pkgs = basePkgs; };
       jaxOverlays = final: prev: {
+          # avoid rebuilding opencv4 with cuda for tensorflow-datasets
+          opencv4 = prev.opencv4.override {
+              enableCuda = false;
+            };
           ${py} = prev.${py}.override {
             packageOverrides = finalScope: prevScope: {
               jax = prevScope.jax.overridePythonAttrs (o: { doCheck = false; });
-              chex = prevScope.chex.override {
-                  jaxlib = prevScope.jaxlib-bin;
+              jaxlib = prevScope.jaxlib-bin;
+              flax = prevScope.flax.overridePythonAttrs (o: {
+                  buildInputs = o.buildInputs ++ [ prevScope.pyyaml ];
+                  doCheck = false;
+                });
+              tensorflow = prevScope.tensorflow.override {
+                  # we only use tensorflow-datasets for data loading, it does not need to be built
+                  # with cuda support (building with cuda support is too demanding).
+                  cudaSupport = false;
                 };
-              optax = prevScope.optax.override {
-                  jaxlib = prevScope.jaxlib-bin;
-                };
-              flax = (prevScope.flax.override {
-                  jaxlib = prevScope.jaxlib-bin;
-                }).overridePythonAttrs (o: {
-                    buildInputs = o.buildInputs ++ [ prevScope.pyyaml ];
-                    # tensorflow is only a check input, let's assume nixpkgs@22.11 has a working
-                    # flax pacakge and disable checks, so that tensorflow will not be built due to
-                    # nix's lazy evaluation.
-                    doCheck = false;
-                  });
             };
           };
         };
       mkPythonDeps = { pp,  extraPackages }: with pp; [
           ipython
-          pytorch-bin
-          torchvision-bin
+          tensorflow
           tqdm
           icecream
           (depsWith pp).tyro

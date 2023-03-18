@@ -1,90 +1,91 @@
 #!/usr/bin/env python3
 
+
 from pathlib import Path
 from typing import Union
+from dataclasses import dataclass
 
 from PIL import Image
 import numpy as np
-from torch.utils.data import Dataset, DataLoader
+import tensorflow as tf
+Dataset = tf.data.Dataset
 
 
-def image_fit_collate_fn(batch):
-    uvs, colors = zip(*batch)
-    return np.asarray(uvs), np.asarray(colors)
+def to_unit_cube_2d(xys: np.ndarray, W: int, H: int):
+    "Normalizes coordinate (x, y) into range [0, 1], where 0<=x<W, 0<=y<H"
+    uvs = xys / np.asarray([[W-1, H-1]])
+    return uvs
 
 
-class SampledPixelsDataset(Dataset):
-    image: np.ndarray  # [H, W, C]
-    loop: int
-    use_white_bg: bool = True
-
-    def __init__(
-            self,
-            image: Union[Image.Image, Path, np.ndarray],
-            loop: int,
-        ):
-        super().__init__()
-
-        if isinstance(image, Image.Image):
-            self.image = np.asarray(image)
-        elif isinstance(image, Path):
-            self.image = np.asarray(Image.open(image))
-        elif isinstance(image, np.ndarray):
-            self.image = image
-        else:
-            raise ValueError("Unexpected image source type '{}'".format(type(image)))
-
-        if self.image.shape[-1] == 4:
-            alpha = self.image[..., -1:] / 255
-            self.image = self.image[..., :3] * alpha
-            if self.use_white_bg:
-                self.image += 255 * (1 - alpha)
-
-        self.loop = loop
-        self.normalizer_fn = self.to_unit_cube
-
-    def __len__(self) -> int:
-        return self.loop * self.image.shape[0] * self.image.shape[1]
-
-    def __getitem__(self, index):
-        H, W = self.image.shape[:2]
-        index %= H * W
-        x, y = index % W, index // W
-        return self.normalizer_fn(W, H, x, y), self.image[y, x] / 255
-
-    @staticmethod
-    def to_canonical_cube(W: int, H: int, x: int, y: int):
-        """Normalizes coordinate (x, y) into range [-1, 1], where 0<=x<W, 0<=y<H"""
-        # assertion disabled: slow for un-jitted functions
-        # chex.assert_type([W, H, x, y], [int] * 4)
-        u = x / (W - 1) * 2 - 1
-        v = y / (H - 1) * 2 - 1
-        return (u, v)
-
-    @staticmethod
-    def to_unit_cube(W: int, H: int, x: int, y: int):
-        """Normalizes coordinate (x, y) into range [0, 1], where 0<=x<W, 0<=y<H"""
-        # assertion disabled: slow for un-jitted functions
-        # chex.assert_type([W, H, x, y], [int] * 4)
-        u = x / (W - 1)
-        v = y / (H - 1)
-        return (u, v)
+@dataclass(frozen=True)
+class SampledPixelsDatasetInputs:
+    H: int
+    W: int
+    idcs: np.ndarray
+    rgbs: np.ndarray
 
 
-class ImageFitLoader(DataLoader):
-    def __init__(
-            self,
-            dataset: SampledPixelsDataset,
-            batch_size: int,
-            num_workers: int,
-            shuffle: bool=True,
-            drop_last: bool=False,
-        ):
-        super().__init__(
-            dataset=dataset,
-            batch_size=batch_size,
-            shuffle=shuffle,
-            num_workers=num_workers,
-            drop_last=drop_last,
-            collate_fn=image_fit_collate_fn,
-        )
+def make_sampled_pixels_dataset_inputs(
+        image: Union[np.ndarray, Image.Image, Path, str],
+        use_white_bg: bool = True,
+    ):
+    if isinstance(image, Image.Image):
+        image = np.asarray(image)
+    elif isinstance(image, (Path, str)):
+        image = np.asarray(Image.open(image))
+    elif isinstance(image, np.ndarray):
+        image = image
+    else:
+        raise ValueError("Unexpected image source type '{}'".format(type(image)))
+
+    H, W, C = image.shape
+    rgbs = image.reshape(H*W, C) / 255
+    if C == 4:
+        if rgbs.shape[-1] == 4:
+            alpha = rgbs[..., -1:]
+            rgbs = rgbs[..., :3] * alpha
+            if use_white_bg:
+                rgbs += 1 - alpha
+
+    x, y = np.meshgrid(np.arange(W), np.arange(H))
+    x, y = x.reshape(-1, 1), y.reshape(-1, 1)
+    idcs = np.concatenate([x, y], axis=-1)
+    idcs = to_unit_cube_2d(idcs, W, H)
+
+    return SampledPixelsDatasetInputs(
+        H=H,
+        W=W,
+        idcs=idcs,
+        rgbs=rgbs
+    )
+
+
+def make_sampled_pixels_dataset(
+        inputs: SampledPixelsDatasetInputs,
+        shuffle: True,
+    ):
+    size = inputs.H * inputs.W
+    if shuffle:
+        perm = np.random.permutation(size)
+    else:
+        perm = np.arange(size)
+
+    idcs = Dataset.from_tensor_slices(inputs.idcs[perm])
+    rgb = Dataset.from_tensor_slices(inputs.rgbs[perm])
+
+    ds = Dataset.zip((idcs, rgb))
+
+    return ds
+
+
+if __name__ == "__main__":
+    from utils.common import tqdm_format
+    from tqdm import tqdm
+
+    ds_in = make_sampled_pixels_dataset_inputs("./h.jpg", use_white_bg=True)
+    ds = make_sampled_pixels_dataset(ds_in, shuffle=True)
+    print(ds.element_spec)
+    # _NumpyIterator does not support len()
+    print(len(ds.batch(3).as_numpy_iterator()))
+    for x in tqdm(ds.batch(4).as_numpy_iterator(), bar_format=tqdm_format):
+        pass

@@ -5,7 +5,6 @@ from typing import Literal
 
 from PIL import Image
 from flax.training.train_state import TrainState
-from icecream import ic
 import jax
 import jax.numpy as jnp
 import jax.random as jran
@@ -40,12 +39,13 @@ def train_step(state: TrainState, x, y):
 
 
 def train_epoch(
-        loader: data.ImageFitLoader,
+        dataset: data.Dataset,
+        total_batches: int,
         state: TrainState,
         ep_log: int,
     ):
     loss = 0
-    for uvs, colors in tqdm(loader, desc="ep#{:03d}".format(ep_log), bar_format=common.tqdm_format):
+    for uvs, colors in tqdm(dataset, total=total_batches, desc="ep#{:03d}".format(ep_log), bar_format=common.tqdm_format):
         state, metrics = train_step(state, uvs, colors)
         loss += metrics["loss"]
     return loss, state
@@ -71,7 +71,7 @@ def eval(
     # output image.
     x, y = jnp.meshgrid(jnp.arange(W), jnp.arange(H))
     all_xys = jnp.concatenate([x.reshape(-1, 1), y.reshape(-1, 1)], axis=-1)
-    all_uvs = all_xys / jnp.asarray([[W-1, H-1]])
+    all_uvs = data.to_unit_cube_2d(all_xys, W=W, H=H)
     chunk_size = 2**20
     debug("evaluating with chunk_size={} (totally {} batches to eval)".format(chunk_size,
                                                                               all_uvs.shape[0] // chunk_size))
@@ -145,22 +145,29 @@ def main(
     )
 
     # data
-    dataset = data.SampledPixelsDataset(
+    in_image = np.asarray(Image.open(in_image))
+    dataset_inputs = data.make_sampled_pixels_dataset_inputs(
         image=in_image,
-        loop=args.data.loop,
-    )
-    loader = data.ImageFitLoader(
-        dataset=dataset,
-        batch_size=args.train.bs,
-        num_workers=args.data.n_workers,
+        use_white_bg=True,
     )
 
     for ep in range(args.train.n_epochs):
         ep_log = ep + 1
-        loss, state = train_epoch(loader, state, ep_log)
+        dataset = data.make_sampled_pixels_dataset(
+            inputs=dataset_inputs,
+            shuffle=True
+        )\
+            .batch(args.train.bs, drop_remainder=True)\
+            .repeat(args.data.loop)
+        loss, state = train_epoch(
+            dataset=dataset.as_numpy_iterator(),
+            total_batches=len(dataset),
+            state=state,
+            ep_log=ep_log,
+        )
         info("epoch#{:03d}: loss={}".format(ep_log, loss))
 
-        image = np.asarray(Image.new("RGB", dataset.image.shape[:2][::-1]))
+        image = np.asarray(Image.new("RGB", in_image.shape[:2][::-1]))
         image = eval(image, state)
         debug("saving image of shape {} to {}".format(image.shape, out_path))
         Image.fromarray(np.asarray(image)).save(out_path)

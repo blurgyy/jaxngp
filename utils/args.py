@@ -54,7 +54,7 @@ class ImageFitArgs:
         # In our case, setting the batch size to a larger number hinders data loading performance,
         # and thus causes the GPU not being fully occupied.  On the other hand, setting the batch
         # size to a smaller one utilizes the GPU fully, but the iterations per second capped at
-        # ~532it/s. setting bs to 2^{10} with 2 extra data loader workers achieves a satisfing
+        # some rate which results in lower throughput. setting bs to 2^{10} achieves a satisfing
         # tradeoff here.
         bs=2**10,
         n_epochs=32,

@@ -54,6 +54,7 @@ class HashGridEncoder(Encoder):
 
     param_dtype: Dtype = jnp.float32
 
+    @nn.jit
     @nn.compact
     def __call__(self, pos: jax.Array) -> jax.Array:
         chex.assert_axis_dimension(pos, -1, self.dim)
