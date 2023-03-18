@@ -170,7 +170,7 @@ def main(
             state=state,
             ep_log=ep_log,
         )
-        info("epoch#{:03d}: loss={}".format(ep_log, loss))
+        info("epoch#{:03d}: per-pixel loss={:.2e}".format(ep_log, loss / (image_data.H * image_data.W)))
 
         image = np.asarray(Image.new("RGB", in_image.shape[:2][::-1]))
         image = eval(image, image_data, state)
