@@ -33,7 +33,7 @@ def train_step(state: TrainState, x, y):
     loss, grads = loss_grad_fn(state.params, x, y)
     state = state.apply_gradients(grads=grads)
     metrics = {
-        "loss": loss,
+        "loss": loss * x.shape[0],
     }
     return state, metrics
 

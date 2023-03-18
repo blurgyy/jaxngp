@@ -41,11 +41,11 @@ def make_sampled_pixels_dataset_inputs(
     H, W, C = image.shape
     rgbs = image.reshape(H*W, C) / 255
     if C == 4:
-        if rgbs.shape[-1] == 4:
-            alpha = rgbs[..., -1:]
-            rgbs = rgbs[..., :3] * alpha
-            if use_white_bg:
-                rgbs += 1 - alpha
+        alpha = rgbs[..., -1:]
+        rgbs = rgbs[..., :3]
+        if use_white_bg:
+            rgbs = rgbs * alpha
+            rgbs += 1 - alpha
 
     x, y = np.meshgrid(np.arange(W), np.arange(H))
     x, y = x.reshape(-1, 1), y.reshape(-1, 1)
