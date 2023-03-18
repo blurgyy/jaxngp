@@ -51,6 +51,12 @@ def train_epoch(
     return loss, state
 
 
+@jax.jit
+def eval_step(state, x):
+    preds = state.apply_fn({"params": state.params}, x)
+    return preds
+
+
 def eval(
         image_array,
         state: TrainState,
@@ -72,13 +78,14 @@ def eval(
     x, y = jnp.meshgrid(jnp.arange(W), jnp.arange(H))
     all_xys = jnp.concatenate([x.reshape(-1, 1), y.reshape(-1, 1)], axis=-1)
     all_uvs = data.to_unit_cube_2d(all_xys, W=W, H=H)
-    chunk_size = 2**20
-    debug("evaluating with chunk_size={} (totally {} batches to eval)".format(chunk_size,
-                                                                              all_uvs.shape[0] // chunk_size))
-    for beg in tqdm(range(0, all_uvs.shape[0], chunk_size), desc="evaluating", bar_format=common.tqdm_format):
-        uv = all_uvs[beg:beg+chunk_size]
-        preds = state.apply_fn({"params": state.params}, uv)
-        xy = all_xys[beg:beg+chunk_size]
+    chunk_size = 2**15
+    n_chunk = all_uvs.shape[0] // chunk_size
+    uvs = jnp.array_split(all_uvs, n_chunk)
+    xys = jnp.array_split(all_xys, n_chunk)
+    debug("evaluating with chunk_size={} (totally {} batches to eval)".format(chunk_size, n_chunk))
+    for uv, xy in tqdm(zip(uvs, xys), total=n_chunk, desc="evaluating", bar_format=common.tqdm_format):
+        # preds = state.apply_fn({"params": state.params}, uv)
+        preds = eval_step(state, uv)
         image_array = set_pixels(image_array, xy, preds)
 
     return image_array
