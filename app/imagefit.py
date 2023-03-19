@@ -63,13 +63,16 @@ def eval(
         image_metadata: data.ImageMetadata,
         state: TrainState,
     ):
-    H, W, C = image_array.shape
+    H, W = image_array.shape[:2]
 
     @common.jit_jaxfn_with(static_argnames=["chunk_size"])
     def get_perms(chunk_size: int) -> list[jax.Array]:
         all_perms = jnp.arange(H*W)
-        n_chunk = H*W // chunk_size
-        perms = jnp.array_split(all_perms, n_chunk)
+        if chunk_size >= H*W:
+            n_chunks = 1
+        else:
+            n_chunks = H*W // chunk_size
+        perms = jnp.array_split(all_perms, n_chunks)
         return perms
 
     for perm in tqdm(get_perms(chunk_size=2**15), desc="evaluating", bar_format=common.tqdm_format):
