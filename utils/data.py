@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
-
-from dataclasses import dataclass
+from flax.struct import dataclass
 from pathlib import Path
 from typing import Union
 
@@ -29,7 +28,7 @@ def set_pixels(imgarr: jax.Array, xys: jax.Array, selected: jax.Array, preds: ja
     return interm.reshape(H, W, C)
 
 
-@dataclass(frozen=True)
+@dataclass
 class ImageMetadata:
     H: int
     W: int

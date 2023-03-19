@@ -1,7 +1,7 @@
-from dataclasses import dataclass
+from flax.struct import dataclass
 from typing import Literal, Optional
 
-@dataclass(frozen=True)
+@dataclass
 class CommonArgs:
     # log level
     logging: Literal["DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL"] = "INFO"
@@ -10,7 +10,7 @@ class CommonArgs:
     # random seed
     seed: int = 1_000_000_007
 
-@dataclass(frozen=True)
+@dataclass
 class DataArgs:
     # number of workers used in dataloaders
     n_workers: int
@@ -18,7 +18,7 @@ class DataArgs:
     # dataloader overhead.
     loop: int
 
-@dataclass(frozen=True)
+@dataclass
 class TrainingArgs:
     # learning rate
     lr: float
@@ -31,7 +31,7 @@ class TrainingArgs:
     n_epochs: int
 
 
-@dataclass(frozen=True)
+@dataclass
 class ImageFitArgs:
     common: CommonArgs=CommonArgs(
         prec=32,
