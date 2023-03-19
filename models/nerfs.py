@@ -30,6 +30,9 @@ class NeRF(nn.Module):
     density_activation: Callable
     rgb_activation: Callable
 
+    # TODO:
+    #   * input "dir" does not need to be batched
+    #   * use vmap
     @nn.compact
     def __call__(self, xyz: jax.Array, dir: jax.Array) -> Tuple[jax.Array, jax.Array]:
         """
@@ -47,8 +50,8 @@ class NeRF(nn.Module):
         dir_enc = self.direction_encoder(dir)
 
         x = self.density_mlp(pos_enc)
-        # [...]
-        density = x[..., 0]
+        # [..., 1]
+        density = x[..., 0:1]
 
         # [..., 3]
         # rgb = self.rgb_mlp(jnp.concatenate([x[..., 1:], dir_enc], axis=-1)) 
