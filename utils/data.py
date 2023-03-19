@@ -20,11 +20,20 @@ def to_unit_cube_2d(xys: jax.Array, W: int, H: int):
     return uvs
 
 
+@jax.jit
+def set_pixels(imgarr: jax.Array, xys: jax.Array, selected: jax.Array, preds: jax.Array) -> jax.Array:
+    H, W, C = imgarr.shape
+    interm = imgarr.reshape(H*W, C)
+    idcs = xys[selected, 1] * W + xys[selected, 0]
+    interm = interm.at[idcs].set(jnp.clip(preds * 255, 0, 255).astype(jnp.uint8))
+    return interm.reshape(H, W, C)
+
+
 @dataclass(frozen=True)
-class ImageData:
+class ImageMetadata:
     H: int
     W: int
-    idcs: jax.Array  # int:[H*W, 2]  original integer coordinates in range [0, W] for x and [0, H] for y
+    xys: jax.Array  # int:[H*W, 2]  original integer coordinates in range [0, W] for x and [0, H] for y
     uvs: jax.Array  # float:[H*W, 2] normalized coordinates in range [0, 1]
     rgbs: jax.Array  # float:[H*W, 3] normalized rgb values in range [0, 1]
 
@@ -32,7 +41,7 @@ class ImageData:
 def make_image_data(
         image: Union[np.ndarray, Image.Image, Path, str],
         use_white_bg: bool = True,
-    ) -> ImageData:
+    ) -> ImageMetadata:
     if isinstance(image, Image.Image):
         image = jnp.asarray(image)
     elif isinstance(image, (Path, str)):
@@ -53,13 +62,13 @@ def make_image_data(
 
     x, y = jnp.meshgrid(jnp.arange(W), jnp.arange(H))
     x, y = x.reshape(-1, 1), y.reshape(-1, 1)
-    idcs = jnp.concatenate([x, y], axis=-1)
-    uvs = to_unit_cube_2d(idcs, W, H)
+    xys = jnp.concatenate([x, y], axis=-1)
+    uvs = to_unit_cube_2d(xys, W, H)
 
-    return ImageData(
+    return ImageMetadata(
         H=H,
         W=W,
-        idcs=jnp.asarray(idcs),
+        xys=jnp.asarray(xys),
         uvs=jnp.asarray(uvs),
         rgbs=jnp.asarray(rgbs),
     )

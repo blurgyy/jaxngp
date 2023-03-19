@@ -39,7 +39,7 @@ def train_step(state: TrainState, uvs, rgbs, perm):
 
 
 def train_epoch(
-        data: data.ImageData,
+        image_metadata: data.ImageMetadata,
         permutation: data.Dataset,
         total_batches: int,
         state: TrainState,
@@ -47,7 +47,7 @@ def train_epoch(
     ):
     loss = 0
     for perm in tqdm(permutation, total=total_batches, desc="ep#{:03d}".format(ep_log), bar_format=common.tqdm_format):
-        state, metrics = train_step(state, data.uvs, data.rgbs, perm)
+        state, metrics = train_step(state, image_metadata.uvs, image_metadata.rgbs, perm)
         loss += metrics["loss"]
     return loss, state
 
@@ -60,17 +60,11 @@ def eval_step(state, uvs, perm):
 
 def eval(
         image_array,
-        data: data.ImageData,
+        image_metadata: data.ImageMetadata,
         state: TrainState,
     ):
     H, W, C = image_array.shape
 
-    @jax.jit
-    def set_pixels(imgarr, idcs, perm, preds):
-        interm = imgarr.reshape(H*W, C)
-        idcs = idcs[perm, 1] * W + idcs[perm, 0]
-        interm = interm.at[idcs].set(jnp.clip(preds * 255, 0, 255).astype(jnp.uint8))
-        return interm.reshape(H, W, C)
     @common.jit_jaxfn_with(static_argnames=["chunk_size"])
     def get_perms(chunk_size: int) -> list[jax.Array]:
         all_perms = jnp.arange(H*W)
@@ -80,8 +74,8 @@ def eval(
 
     for perm in tqdm(get_perms(chunk_size=2**15), desc="evaluating", bar_format=common.tqdm_format):
         # preds = state.apply_fn({"params": state.params}, uv)
-        preds = eval_step(state, data.uvs, perm)
-        image_array = set_pixels(image_array, data.idcs, perm, preds)
+        preds = eval_step(state, image_metadata.uvs, perm)
+        image_array = data.set_pixels(image_array, image_metadata.xys, perm, preds)
 
     return image_array
 
@@ -148,7 +142,7 @@ def main(
 
     # data
     in_image = np.asarray(Image.open(in_image))
-    image_data = data.make_image_data(
+    image_metadata = data.make_image_data(
         image=in_image,
         use_white_bg=True,
     )
@@ -158,22 +152,22 @@ def main(
         K, key = jran.split(K, 2)
         permutation = data.make_permutation_dataset(
             key,
-            size=image_data.W * image_data.H,
+            size=image_metadata.W * image_metadata.H,
             shuffle=True
         )\
             .batch(args.train.bs, drop_remainder=True)\
             .repeat(args.data.loop)
         loss, state = train_epoch(
-            data=image_data,
+            image_metadata=image_metadata,
             permutation=permutation.as_numpy_iterator(),
             total_batches=len(permutation),
             state=state,
             ep_log=ep_log,
         )
-        info("epoch#{:03d}: per-pixel loss={:.2e}".format(ep_log, loss / (image_data.H * image_data.W)))
+        info("epoch#{:03d}: per-pixel loss={:.2e}".format(ep_log, loss / (image_metadata.H * image_metadata.W)))
 
         image = np.asarray(Image.new("RGB", in_image.shape[:2][::-1]))
-        image = eval(image, image_data, state)
+        image = eval(image, image_metadata, state)
         debug("saving image of shape {} to {}".format(image.shape, out_path))
         Image.fromarray(np.asarray(image)).save(out_path)
 
