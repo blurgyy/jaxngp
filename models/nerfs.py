@@ -190,13 +190,13 @@ def make_nerf_ngp() -> NeRF:
     )
 
 
-def make_test_cube(width: int) -> NeRF:
+def make_test_cube(width: int, density: float=0.01) -> NeRF:
     @jax.jit
     @jax.vmap
     def cube_density_fn(x: jax.Array) -> jax.Array:
-        density = (abs(x).max(axis=-1, keepdims=True) <= width/2).astype(float)
+        mask = (abs(x).max(axis=-1, keepdims=True) <= width/2).astype(float)
         # concatenate input xyz for use in later rgb querying
-        return jnp.concatenate([density, x], axis=-1)
+        return jnp.concatenate([density * mask, x], axis=-1)
 
     @jax.jit
     @jax.vmap
