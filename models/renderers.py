@@ -2,53 +2,21 @@ from typing import Callable, Tuple
 
 import chex
 from flax.core.scope import FrozenVariableDict
-from flax.struct import dataclass
 import jax
 import jax.numpy as jnp
 from tqdm import tqdm
 
 from utils.common import jit_jaxfn_with, tqdm_format, vmap_jaxfn_with
 from utils.data import set_pixels
-
-
-@dataclass
-class PinholeCamera:
-    # resolutions
-    W: int
-    H: int
-
-    # clipping plane distance, must be positive
-    near: float
-    far: float
-
-    # focal length
-    focal: float
-
-
-@dataclass
-class RigidTransformation:
-    # [3, 3] rotatio matrix
-    rotation: jax.Array
-    # [3] translation vector
-    translation: jax.Array
-
-
-@dataclass
-class SampleMetadata:
-    transmittance: float
-    rgb: jax.Array
-
-
-@dataclass
-class RenderingOptions:
-    ray_chunk_size: int
-    # aabb [3, 2]: scene bounds on each of x, y, z axes
-    aabb: Tuple[Tuple[int, int], Tuple[int, int], Tuple[int, int]]
-
-
-@dataclass
-class RayMarchingOptions:
-    steps: int
+from utils.types import (
+    AABB,
+    DensityAndRGB,
+    PinholeCamera,
+    RayMarchingOptions,
+    RenderingOptions,
+    RigidTransformation,
+    SampleMetadata,
+)
 
 
 def integrate_rays(delta_ts: jax.Array, densities: jax.Array, rgbs: jax.Array) -> jax.Array:
@@ -90,11 +58,11 @@ def integrate_rays(delta_ts: jax.Array, densities: jax.Array, rgbs: jax.Array) -
 def march_rays(
         o_world: jax.Array,
         d_world: jax.Array,
-        aabb: Tuple[Tuple[int, int], Tuple[int, int], Tuple[int, int]],
+        aabb: AABB,
         camera: PinholeCamera,
         options: RayMarchingOptions,
         param_dict: FrozenVariableDict,
-        nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], Tuple[jax.Array, jax.Array]],
+        nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
     ) -> jax.Array:
     """
     Given a pack of rays, render the colors along them.
@@ -250,7 +218,7 @@ def render_image(
         options: RenderingOptions,
         raymarch_options: RayMarchingOptions,
         param_dict: FrozenVariableDict,
-        nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], Tuple[jax.Array, jax.Array]],
+        nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
     ) -> jax.Array:
     """
     Given a rigid transformation and a camera model, render the image as seen by the camera.
