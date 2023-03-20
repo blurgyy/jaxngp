@@ -86,7 +86,7 @@ def make_permutation_dataset(
     return Dataset.from_tensor_slices(perm)
 
 
-if __name__ == "__main__":
+def main():
     from utils.common import tqdm_format
     from tqdm import tqdm
 
@@ -98,3 +98,7 @@ if __name__ == "__main__":
     print(len(ds.batch(3).as_numpy_iterator()))
     for x in tqdm(ds.batch(4).as_numpy_iterator(), bar_format=tqdm_format):
         pass
+
+
+if __name__ == "__main__":
+    main()

@@ -216,7 +216,7 @@ def make_test_cube(width: int, density: float=0.01) -> NeRF:
     )
 
 
-if __name__ == "__main__":
+def main():
     import jax.numpy as jnp
     import jax.random as jran
 
@@ -240,3 +240,7 @@ if __name__ == "__main__":
     )
     print(density)
     print(rgb)
+
+
+if __name__ == "__main__":
+    main()
