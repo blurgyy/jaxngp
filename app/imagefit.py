@@ -145,7 +145,7 @@ def main(
 
     # data
     in_image = np.asarray(Image.open(in_image))
-    image_metadata = data.make_image_data(
+    image_metadata = data.make_image_metadata(
         image=in_image,
         use_white_bg=True,
     )

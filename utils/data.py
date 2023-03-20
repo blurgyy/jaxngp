@@ -14,7 +14,7 @@ import tensorflow as tf
 Dataset = tf.data.Dataset
 
 
-def to_unit_cube_2d(xys: jax.Array, W: int, H: int):
+def to_unit_cube_2d(xys: np.ndarray, W: int, H: int):
     "Normalizes coordinate (x, y) into range [0, 1], where 0<=x<W, 0<=y<H"
     uvs = xys / jnp.asarray([[W-1, H-1]])
     return uvs
@@ -33,12 +33,12 @@ def set_pixels(imgarr: jax.Array, xys: jax.Array, selected: jax.Array, preds: ja
 class ImageMetadata:
     H: int
     W: int
-    xys: jax.Array  # int:[H*W, 2]  original integer coordinates in range [0, W] for x and [0, H] for y
-    uvs: jax.Array  # float:[H*W, 2] normalized coordinates in range [0, 1]
-    rgbs: jax.Array  # float:[H*W, 3] normalized rgb values in range [0, 1]
+    xys: jax.Array  # int,[H*W, 2]: original integer coordinates in range [0, W] for x and [0, H] for y
+    uvs: jax.Array  # float,[H*W, 2]: normalized coordinates in range [0, 1]
+    rgbs: jax.Array  # float,[H*W, 3]: normalized rgb values in range [0, 1]
 
 
-def make_image_data(
+def make_image_metadata(
         image: Union[np.ndarray, Image.Image, Path, str],
         use_white_bg: bool = True,
     ) -> ImageMetadata:
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     from utils.common import tqdm_format
     from tqdm import tqdm
 
-    imdata = make_image_data("./h.jpg", use_white_bg=True)
+    imdata = make_image_metadata("./h.jpg", use_white_bg=True)
     K, key = jran.split(jran.PRNGKey(0xabcdef), 2)
     ds = make_permutation_dataset(key, imdata.H*imdata.W, shuffle=True)
     print(ds.element_spec)
