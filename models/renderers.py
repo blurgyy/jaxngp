@@ -160,7 +160,7 @@ def march_rays(
 
     # linearly sample `steps` points inside clipped bbox
     # [steps]
-    delta_ts = (jnp.arange(options.steps) + 1) / options.steps
+    delta_ts = jnp.arange(options.steps) / options.steps
     delta_ts *= t_end - t_start
     # [steps]
     delta_ts = t_start + (t_end - t_start) * delta_ts
