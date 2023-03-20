@@ -49,18 +49,22 @@ class RayMarchingOptions:
     steps: int
 
 
-def integrate_rays(densities: jax.Array, rgbs: jax.Array) -> jax.Array:
+def integrate_rays(delta_ts: jax.Array, densities: jax.Array, rgbs: jax.Array) -> jax.Array:
     """
     Inputs:
-        densities [steps, 1]: density values along a ray, from ray origin to 
+        delta_ts [steps, 1]: delta_ts[i] is the distance between the i-th sample and the (i-1)th
+                             sample, with delta_ts[i] being the distance between the first sample
+                             and ray origin
+        densities [steps, 1]: density values along a ray
         rgbs [steps, 3]: rgb values along a ray
 
     Returns:
         rgb [3]: integrated ray colors according to input densities and rgbs.
     """
     def reduce_sample(i: int, prev_sample: SampleMetadata):
-        transmittance = prev_sample.transmittance * jnp.exp(-densities[i])
-        rgb = prev_sample.rgb + transmittance * densities[i] * rgbs[i]
+        t = jnp.exp(-(densities[i] * delta_ts[i]))
+        transmittance = prev_sample.transmittance * t
+        rgb = prev_sample.rgb + transmittance * (1 - t) * rgbs[i]
         return SampleMetadata(
             transmittance=transmittance,
             rgb=rgb,
@@ -137,7 +141,7 @@ def march_rays(
         jnp.broadcast_to(d_world, ray_pts.shape),
     )
 
-    return integrate_rays(density, rgb)
+    return integrate_rays(jnp.broadcast_to(delta_t, (options.steps, 1)), density, rgb)
 
 
 @jit_jaxfn_with(static_argnames=["camera"])
@@ -301,7 +305,7 @@ def main():
     # ndc_o, ndc_d = make_ndc_rays(o, d, camera)
     raymarch_options = RayMarchingOptions(steps=2**10)
     render_options = RenderingOptions(ray_chunk_size=2**19)
-    nerf_fn = make_test_cube(width=1, density=0.5).apply
+    nerf_fn = make_test_cube(width=1, density=0.01).apply
 
     # R_cw = jnp.eye(3)
     # T_cw = jnp.asarray([0, 0, 5])
