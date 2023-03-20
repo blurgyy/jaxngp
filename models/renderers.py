@@ -42,6 +42,8 @@ class SampleMetadata:
 @dataclass
 class RenderingOptions:
     ray_chunk_size: int
+    # aabb [3, 2]: scene bounds on each of x, y, z axes
+    aabb: Tuple[Tuple[int, int], Tuple[int, int], Tuple[int, int]]
 
 
 @dataclass
@@ -84,10 +86,11 @@ def integrate_rays(delta_ts: jax.Array, densities: jax.Array, rgbs: jax.Array) -
 
 
 @jit_jaxfn_with(static_argnames=["options", "nerf_fn"])
-@vmap_jaxfn_with(in_axes=(0, 0, None, None, None, None))
+@vmap_jaxfn_with(in_axes=(0, 0, None, None, None, None, None))
 def march_rays(
         o_world: jax.Array,
         d_world: jax.Array,
+        aabb: Tuple[Tuple[int, int], Tuple[int, int], Tuple[int, int]],
         camera: PinholeCamera,
         options: RayMarchingOptions,
         param_dict: FrozenVariableDict,
@@ -99,6 +102,7 @@ def march_rays(
     Inputs:
         o_world [3]: ray origins, in world space
         d_world [3]: ray directions (unit vectors), in world space
+        aabb [3, 2]: scene bounds on each of x, y, z axes
         camera: camera model in-use
         options: see :class:`RayMarchingOptions`
         param_dict: :class:`NeRF` model params
@@ -125,15 +129,45 @@ def march_rays(
     # # [..., steps, 3]: `steps` sampled points along each input ray
     # sampled_points = o_world[..., None, :] + delta_t * d_world[..., None, :]
 
-    # linearly sample `steps` points from near to far bounds
+    # find a smallest non-negative `t` for each ray, such that o+td is inside the given aabb
+    tx0, tx1 = (
+        (aabb[0][0] - o_world[0]) / d_world[0],
+        (aabb[0][1] - o_world[0]) / d_world[0],
+    )
+    ty0, ty1 = (
+        (aabb[1][0] - o_world[1]) / d_world[1],
+        (aabb[1][1] - o_world[1]) / d_world[1],
+    )
+    tz0, tz1 = (
+        (aabb[2][0] - o_world[2]) / d_world[2],
+        (aabb[2][1] - o_world[2]) / d_world[2],
+    )
+    tx_start, tx_end = jnp.minimum(tx0, tx1), jnp.maximum(tx0, tx1)
+    ty_start, ty_end = jnp.minimum(ty0, ty1), jnp.maximum(ty0, ty1)
+    tz_start, tz_end = jnp.minimum(tz0, tz1), jnp.maximum(tz0, tz1)
+    t_start = jnp.maximum(
+        jnp.maximum(jnp.maximum(tx_start, ty_start), tz_start),
+        0,
+    )
+    t_end = jnp.maximum(
+        jnp.minimum(jnp.minimum(tx_end, ty_end), tz_end),
+        0,
+    )
+    # clip according to camera's near and far planes
+    t_start = jnp.maximum(camera.near, t_start)
+    t_end = jnp.minimum(camera.far, t_end)
+    o_world += 0 * d_world
+
+    # linearly sample `steps` points inside clipped bbox
     # [steps]
-    delta_t = (jnp.arange(options.steps) + 1) / options.steps
+    delta_ts = (jnp.arange(options.steps) + 1) / options.steps
+    delta_ts *= t_end - t_start
     # [steps]
-    delta_t = camera.near + (camera.far - camera.near) * delta_t
+    delta_ts = t_start + (t_end - t_start) * delta_ts
     # [steps, 1]
-    delta_t = delta_t.reshape(options.steps, 1)
+    delta_ts = delta_ts.reshape(options.steps, 1)
     # [steps, 3]
-    ray_pts = o_world[None, :] + delta_t * d_world[None, :]
+    ray_pts = o_world[None, :] + delta_ts * d_world[None, :]
 
     density, rgb = nerf_fn(
         param_dict,
@@ -141,7 +175,7 @@ def march_rays(
         jnp.broadcast_to(d_world, ray_pts.shape),
     )
 
-    return integrate_rays(jnp.broadcast_to(delta_t, (options.steps, 1)), density, rgb)
+    return integrate_rays(delta_ts, density, rgb)
 
 
 @jit_jaxfn_with(static_argnames=["camera"])
@@ -247,6 +281,7 @@ def render_image(
         rgbs = march_rays(
             o_world[idcs],
             d_world[idcs],
+            options.aabb,
             camera,
             raymarch_options,
             param_dict,
@@ -304,7 +339,10 @@ def main():
     camera = PinholeCamera(W=W, H=H, near=near, far=far*2, focal=focal)
     # ndc_o, ndc_d = make_ndc_rays(o, d, camera)
     raymarch_options = RayMarchingOptions(steps=2**10)
-    render_options = RenderingOptions(ray_chunk_size=2**19)
+    render_options = RenderingOptions(
+        ray_chunk_size=2**13,
+        aabb=((-1, 1), (-1, 1), (-1, 1)),
+    )
     nerf_fn = make_test_cube(width=1, density=0.01).apply
 
     # R_cw = jnp.eye(3)
