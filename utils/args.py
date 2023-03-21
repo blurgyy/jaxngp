@@ -106,6 +106,6 @@ class NeRFArgs:
     )
 
     rendering: RenderingOptions=RenderingOptions(
-        ray_chunk_size=2**13,
+        ray_chunk_size=2**10,
         aabb=[[-1, 1], [-1, 1], [-1, 1]],
     )
