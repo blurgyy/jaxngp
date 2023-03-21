@@ -163,11 +163,11 @@ def make_nerf(
     elif pos_enc == "hashgrid":
         position_encoder = HashGridEncoder(
             dim=3,
-            L=8,
+            L=9,
             T=find_smallest_prime_larger_or_equal_than(2**20),
             F=2,
             N_min=16,
-            N_max=2**11,
+            N_max=2**12,
             param_dtype=jnp.float32,
         )
     else:
@@ -232,6 +232,26 @@ def make_nerf_ngp(aabb: AABB) -> NeRF:
         rgb_out_dim=3,
         rgb_skip_in_layers=[],
         rgb_act="sigmoid",
+    )
+
+
+def make_debug_nerf(aabb: AABB) -> NeRF:
+    return NeRF(
+        aabb=aabb,
+        position_encoder=lambda x: x,
+        direction_encoder=lambda x: x,
+        density_mlp=PositionBasedMLP(
+            Ds=[64],
+            out_dim=16,
+            skip_in_layers=[],
+        ),
+        rgb_mlp=PositionBasedMLP(
+            Ds=[64, 64],
+            out_dim=3,
+            skip_in_layers=[],
+        ),
+        density_activation=lambda x: x,
+        rgb_activation=lambda x: x,
     )
 
 

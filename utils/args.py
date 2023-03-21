@@ -1,5 +1,8 @@
+from pathlib import Path
 from flax.struct import dataclass
 from typing import Literal, Optional
+
+from utils.types import RayMarchingOptions
 
 @dataclass
 class CommonArgs:
@@ -58,4 +61,22 @@ class ImageFitArgs:
         # tradeoff here.
         bs=2**10,
         n_epochs=32,
+    )
+
+
+@dataclass
+class NeRFArgs:
+    common: CommonArgs
+    data: DataArgs=DataArgs(
+        n_workers=0,
+        loop=1,
+    )
+    train: TrainingArgs=TrainingArgs(
+        lr=1e-2,
+        momentum=None,
+        bs=2**10,
+        n_epochs=32,
+    )
+    raymarch: RayMarchingOptions=RayMarchingOptions(
+        steps=2**10,
     )
