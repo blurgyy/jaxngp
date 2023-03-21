@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-from typing import Literal
-
 import tyro
 
 from utils import common

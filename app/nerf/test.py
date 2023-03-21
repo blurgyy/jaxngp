@@ -15,6 +15,10 @@ from utils.types import RigidTransformation
 
 
 def test(args: NeRFArgs, logger: logging.Logger):
+    if not args.test_ckpt.exists():
+        logger.warn("specified checkpoint '{}' does not exist".format(args.test_ckpt))
+        exit(1)
+
     if len(args.test_indices) == 0:
         logger.warn("got empty test indices, you might want to specify some image indices via --test-indices")
         logger.warn("proceeding anyway ...")
@@ -47,8 +51,10 @@ def test(args: NeRFArgs, logger: logging.Logger):
         use_white_bg=False,
     )
 
-    logger.info("starting testing on {} image(s)".format(len(args.test_indices)))
+    logger.info("starting testing (totally {} image(s) to test)".format(len(args.test_indices)))
     for test_i in args.test_indices:
+        if test_i < 0 or test_i >= len(test_views):
+            logger.warn("skipping out-of-bounds index {} (index should be in range [0, {}])".format(test_i, len(args.test_indices) - 1))
         logger.info("testing on image index {}".format(test_i))
         transform = RigidTransformation(
             rotation=scene_metadata_test.all_transforms[test_i, :9].reshape(3, 3),

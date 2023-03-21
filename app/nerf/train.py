@@ -119,7 +119,7 @@ def train_epoch(
 def train(args: NeRFArgs, logger: logging.Logger):
     args.exp_dir.mkdir(parents=True)
     args.exp_dir.joinpath("config.yaml").write_text(tyro.to_yaml(args))
-    logger.info("saved configurations to '{}'".format(args.exp_dir.joinpath("config.yaml")))
+    logger.info("configurations saved to '{}'".format(args.exp_dir.joinpath("config.yaml")))
 
     dtype = getattr(jnp, "float{}".format(args.common.prec))
     logger.setLevel(args.common.logging.upper())
@@ -211,7 +211,7 @@ def train(args: NeRFArgs, logger: logging.Logger):
         ckpt_name = checkpoints.save_checkpoint(args.exp_dir, state, step=ep_log, overwrite=True, keep=2**30)
         logger.info("training state of epoch {} saved to: {}".format(ep_log, ckpt_name))
 
-        # validate on 3 random camera transforms
+        # validate on `args.val_num` random camera transforms
         K, key = jran.split(K, 2)
         for val_i in jran.choice(key, jnp.arange(len(val_views)), (args.val_num,)):
             logger.info("validating on {}".format(val_views[val_i].file))
