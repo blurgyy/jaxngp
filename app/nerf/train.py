@@ -87,6 +87,7 @@ def train_step(
 
 
 def train_epoch(
+        aabb: AABB,
         scene_metadata: data.SceneMetadata,
         raymarch_options: RayMarchingOptions,
         permutation: data.Dataset,
@@ -98,7 +99,7 @@ def train_epoch(
     for perm in (pbar := tqdm(permutation, total=total_batches, desc="Training epoch#{:03d}".format(ep_log), bar_format=common.tqdm_format)):
         state, metrics = train_step(
             state,
-            scene_metadata.aabb,
+            aabb,
             scene_metadata.camera,
             scene_metadata.all_xys,
             scene_metadata.all_rgbs,
@@ -126,13 +127,10 @@ def train(args: NeRFArgs, logger: logging.Logger):
     # deterministic
     K = common.set_deterministic(args.common.seed)
 
-    # data options
-    aabb: AABB = [[-1, 1]] * 3  # nerf_synthetic uses this aabb
-
     # model parameters
     K, key = jran.split(K, 2)
     model, init_input = (
-        make_nerf_ngp(aabb=aabb),
+        make_nerf_ngp(aabb=args.aabb),
         (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
     )
     variables = model.init(key, *init_input)
@@ -158,7 +156,6 @@ def train(args: NeRFArgs, logger: logging.Logger):
     scene_metadata_train, _ = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split="train",
-        aabb=aabb,
         near=2,
         far=6,
         use_white_bg=args.use_white_bg,
@@ -172,7 +169,6 @@ def train(args: NeRFArgs, logger: logging.Logger):
     scene_metadata_val, val_views = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split="val",
-        aabb=aabb,
         near=2,
         far=6,
         use_white_bg=args.use_white_bg,
@@ -193,6 +189,7 @@ def train(args: NeRFArgs, logger: logging.Logger):
 
         try:
             loss, state = train_epoch(
+                aabb=args.aabb,
                 scene_metadata=scene_metadata_train,
                 raymarch_options=args.raymarch,
                 permutation=permutation.as_numpy_iterator(),
@@ -223,6 +220,7 @@ def train(args: NeRFArgs, logger: logging.Logger):
                 translation=scene_metadata_val.all_transforms[val_i, -3:].reshape(3),
             )
             image = render_image(
+                aabb=args.aabb,
                 camera=scene_metadata_val.camera,
                 transform_cw=val_transform,
                 options=args.rendering,

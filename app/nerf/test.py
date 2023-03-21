@@ -22,15 +22,13 @@ def test(args: NeRFArgs, logger: logging.Logger):
     dtype = getattr(jnp, "float{}".format(args.common.prec))
     logger.setLevel(args.common.logging.upper())
 
-    aabb = [[-1, 1]] * 3
-
     # deterministic
     K = common.set_deterministic(seed=args.common.seed)
 
     # model parameters
     K, key = jran.split(K, 2)
     model, init_input = (
-        make_nerf_ngp(aabb=aabb),
+        make_nerf_ngp(aabb=args.aabb),
         (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
     )
     # initialize model structure but discard parameters, as parameters are loaded later
@@ -44,7 +42,6 @@ def test(args: NeRFArgs, logger: logging.Logger):
     scene_metadata_test, test_views = make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split=args.test_split,
-        aabb=aabb,
         near=2,
         far=6,
         use_white_bg=False,
@@ -58,6 +55,7 @@ def test(args: NeRFArgs, logger: logging.Logger):
             translation=scene_metadata_test.all_transforms[test_i, -3:].reshape(3),
         )
         image = render_image(
+            aabb=args.aabb,
             camera=scene_metadata_test.camera,
             transform_cw=transform,
             options=args.rendering,

@@ -15,7 +15,7 @@ import tensorflow as tf
 from tqdm import tqdm
 
 from utils.common import mkValueError, tqdm_format
-from utils.types import AABB, PinholeCamera, RigidTransformation
+from utils.types import PinholeCamera, RigidTransformation
 Dataset = tf.data.Dataset
 
 
@@ -40,7 +40,6 @@ class ViewMetadata:
 
 @dataclass
 class SceneMetadata:
-    aabb: AABB
     # TODO:
     #   Make this `camera`'s H, W configurable and resize loaded images accordingly (specified H,W
     #   must have same aspect ratio as the loaded images).
@@ -165,7 +164,6 @@ def make_view(
 def make_nerf_synthetic_scene_metadata(
         rootdir: Union[Path, str],
         split: Literal["train", "val", "test"],
-        aabb: AABB,
         near: float,
         far: float,
         use_white_bg: bool=True,
@@ -225,7 +223,6 @@ def make_nerf_synthetic_scene_metadata(
     all_transforms = jnp.concatenate([all_Rs, all_Ts], axis=-1)
 
     scene = SceneMetadata(
-        aabb=aabb,
         camera=camera,
         all_xys=all_xys,
         all_rgbs=all_rgbs,
@@ -252,7 +249,6 @@ def main():
     sce = make_nerf_synthetic_scene_metadata(
         rootdir="data/nerf/nerf_synthetic/lego",
         split="train",
-        aabb=[[-1, 1], [-1, 1], [-1, 1]],
         near=2,
         far=6,
         use_white_bg=True,

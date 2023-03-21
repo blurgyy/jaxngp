@@ -30,8 +30,6 @@ class RayMarchingOptions:
 @dataclass
 class RenderingOptions:
     ray_chunk_size: int
-    # aabb [3, 2]: scene bounds on each of x, y, z axes
-    aabb: AABB
 
 
 @dataclass

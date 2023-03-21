@@ -4,7 +4,7 @@ from typing import List, Literal, Optional
 
 from flax.struct import dataclass
 
-from utils.types import RayMarchingOptions, RenderingOptions
+from utils.types import AABB, RayMarchingOptions, RenderingOptions
 
 @dataclass
 class CommonArgs:
@@ -108,11 +108,12 @@ class NeRFArgs:
         n_epochs=32,
     )
 
+    aabb: AABB=((-1, 1), (-1, 1), (-1, 1))
+
     raymarch: RayMarchingOptions=RayMarchingOptions(
         steps=2**10,
     )
 
     rendering: RenderingOptions=RenderingOptions(
         ray_chunk_size=2**10,
-        aabb=[[-1, 1], [-1, 1], [-1, 1]],
     )

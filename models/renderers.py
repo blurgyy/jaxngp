@@ -219,6 +219,7 @@ def get_indices_chunks(
 #
 # @jit_jaxfn_with(static_argnames=["camera", "options", "raymarch_options", "nerf_fn"])
 def render_image(
+        aabb: AABB,
         camera: PinholeCamera,
         transform_cw: RigidTransformation,
         options: RenderingOptions,
@@ -319,7 +320,6 @@ def main():
     aabb = [[-1, 1]] * 3
     render_options = RenderingOptions(
         ray_chunk_size=2**13,
-        aabb=aabb,
     )
     nerf_fn = make_test_cube(
         width=1,
@@ -351,6 +351,7 @@ def main():
         # print(R_cw, R_cw.T)
         print(jnp.linalg.det(R_cw))
         img = render_image(
+            aabb=aabb,
             camera=camera,
             transform_cw=RigidTransformation(rotation=R_cw, translation=T_cw),
             options=render_options,

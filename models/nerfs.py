@@ -109,7 +109,7 @@ class PositionBasedMLP(nn.Module):
 
     # as described in the paper
     kernel_init: Initializer=nn.initializers.glorot_uniform()
-    bias_init: Initializer=nn.initializers.zeros
+    bias_init: Initializer=nn.initializers.glorot_uniform()
 
     @nn.compact
     def __call__(self, x: jax.Array) -> jax.Array:
