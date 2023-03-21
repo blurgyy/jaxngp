@@ -1,5 +1,6 @@
+from dataclasses import field
 from pathlib import Path
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 from flax.struct import dataclass
 
@@ -86,6 +87,12 @@ class NeRFArgs:
 
     # if specified, switch to test mode and use this checkpoint
     test_ckpt: Optional[Path]=None
+
+    # which test images should be tested on, indices are 0-based
+    test_indices: List[int]=field(default_factory=list)
+
+    # which split to test on
+    test_split: Literal["train", "test", "val"]="test"
 
     common: CommonArgs=CommonArgs()
 

@@ -241,4 +241,3 @@ def train(args: NeRFArgs, logger: logging.Logger):
             dest.parent.mkdir(parents=True, exist_ok=True)
             logger.info("saving image to {}".format(dest))
             Image.fromarray(np.asarray(image)).save(dest)
-
