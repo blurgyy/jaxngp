@@ -19,38 +19,64 @@ from utils.types import (
 )
 
 
-def integrate_rays(delta_ts: jax.Array, densities: jax.Array, rgbs: jax.Array) -> jax.Array:
+def integrate_ray(delta_ts: jax.Array, densities: jax.Array, rgbs: jax.Array) -> jax.Array:
     """
     Inputs:
-        delta_ts [steps, 1]: delta_ts[i] is the distance between the i-th sample and the (i-1)th
-                             sample, with delta_ts[i] being the distance between the first sample
-                             and ray origin
+        delta_ts [steps]: delta_ts[i] is the distance between the i-th sample and the (i-1)th sample,
+                          with delta_ts[0] being the distance between the first sample and ray
+                          origin
         densities [steps, 1]: density values along a ray
         rgbs [steps, 3]: rgb values along a ray
 
     Returns:
         rgb [3]: integrated ray colors according to input densities and rgbs.
     """
-    def reduce_sample(i: int, prev_sample: SampleMetadata):
-        t = jnp.exp(-(densities[i] * delta_ts[i]))
-        transmittance = prev_sample.transmittance * t
-        rgb = prev_sample.rgb + transmittance * (1 - t) * rgbs[i]
-        return SampleMetadata(
-            transmittance=transmittance,
-            rgb=rgb,
-        )
+    # NOTE:
+    #   jax.lax.fori_loop is slower than vectorized operations (below is vectorized version)
 
-    final_sample = jax.lax.fori_loop(
-        0,
-        densities.shape[0],
-        reduce_sample,
-        SampleMetadata(
-            transmittance=jnp.asarray([1], dtype=jnp.float32),
-            rgb=jnp.zeros(3)
-        ),
+    # [steps, 1]
+    alphas = 1 - jnp.exp(-densities * delta_ts[:, None])
+    # [steps, 1]
+    weights = alphas * jnp.cumprod(1 - alphas + 1e-15, axis=0)
+    # [3]
+    final_rgb = jnp.sum(weights * rgbs, axis=0)
+    return final_rgb
+
+
+def make_near_far_from_camera_and_aabb(
+        camera: PinholeCamera,
+        aabb: AABB,  # [3, 2]
+        o: jax.Array,  # [3]
+        d: jax.Array,  # [3]
+    ):
+    # find a smallest non-negative `t` for each ray, such that o+td is inside the given aabb
+    tx0, tx1 = (
+        (aabb[0][0] - o[0]) / d[0],
+        (aabb[0][1] - o[0]) / d[0],
     )
+    ty0, ty1 = (
+        (aabb[1][0] - o[1]) / d[1],
+        (aabb[1][1] - o[1]) / d[1],
+    )
+    tz0, tz1 = (
+        (aabb[2][0] - o[2]) / d[2],
+        (aabb[2][1] - o[2]) / d[2],
+    )
+    tx_start, tx_end = jnp.minimum(tx0, tx1), jnp.maximum(tx0, tx1)
+    ty_start, ty_end = jnp.minimum(ty0, ty1), jnp.maximum(ty0, ty1)
+    tz_start, tz_end = jnp.minimum(tz0, tz1), jnp.maximum(tz0, tz1)
 
-    return final_sample.rgb
+    t_start = jnp.maximum(jnp.maximum(tx_start, ty_start), tz_start)
+    t_end = jnp.minimum(jnp.minimum(tx_end, ty_end), tz_end)
+
+    # clip to camera's near/far planes
+    t_start = jnp.clip(t_start, camera.near, None)
+    t_end = jnp.clip(t_end, None, camera.far)
+
+    # t_end should be larger than t_start for the ray to intersect with the aabb
+    t_end = jnp.clip(t_end, t_start + 1e-5, None)
+
+    return t_start, t_end
 
 
 @jit_jaxfn_with(static_argnames=["options", "nerf_fn"])
@@ -97,45 +123,19 @@ def march_rays(
     # # [..., steps, 3]: `steps` sampled points along each input ray
     # sampled_points = o_world[..., None, :] + delta_t * d_world[..., None, :]
 
-    # find a smallest non-negative `t` for each ray, such that o+td is inside the given aabb
-    tx0, tx1 = (
-        (aabb[0][0] - o_world[0]) / d_world[0],
-        (aabb[0][1] - o_world[0]) / d_world[0],
+    # skip the empty space between camera and scene bbox
+    t_start, t_end = make_near_far_from_camera_and_aabb(
+        camera=camera,
+        aabb=aabb,
+        o=o_world,
+        d=d_world
     )
-    ty0, ty1 = (
-        (aabb[1][0] - o_world[1]) / d_world[1],
-        (aabb[1][1] - o_world[1]) / d_world[1],
-    )
-    tz0, tz1 = (
-        (aabb[2][0] - o_world[2]) / d_world[2],
-        (aabb[2][1] - o_world[2]) / d_world[2],
-    )
-    tx_start, tx_end = jnp.minimum(tx0, tx1), jnp.maximum(tx0, tx1)
-    ty_start, ty_end = jnp.minimum(ty0, ty1), jnp.maximum(ty0, ty1)
-    tz_start, tz_end = jnp.minimum(tz0, tz1), jnp.maximum(tz0, tz1)
-    t_start = jnp.maximum(
-        jnp.maximum(jnp.maximum(tx_start, ty_start), tz_start),
-        0,
-    )
-    t_end = jnp.maximum(
-        jnp.minimum(jnp.minimum(tx_end, ty_end), tz_end),
-        0,
-    )
-    # clip according to camera's near and far planes
-    t_start = jnp.maximum(camera.near, t_start)
-    t_end = jnp.minimum(camera.far, t_end)
-    o_world += 0 * d_world
 
     # linearly sample `steps` points inside clipped bbox
     # [steps]
-    delta_ts = jnp.arange(options.steps) / options.steps
-    delta_ts *= t_end - t_start
-    # [steps]
-    delta_ts = t_start + (t_end - t_start) * delta_ts
-    # [steps, 1]
-    delta_ts = delta_ts.reshape(options.steps, 1)
+    z_vals = t_start + (t_end - t_start) * jnp.linspace(0, 1, options.steps)
     # [steps, 3]
-    ray_pts = o_world[None, :] + delta_ts * d_world[None, :]
+    ray_pts = o_world[None, :] + z_vals[:, None] * d_world[None, :]
 
     density, rgb = nerf_fn(
         param_dict,
@@ -143,7 +143,14 @@ def march_rays(
         jnp.broadcast_to(d_world, ray_pts.shape),
     )
 
-    return integrate_rays(delta_ts, density, rgb)
+    # [steps]
+    delta_ts = jnp.ones(options.steps) * (t_end - t_start) / options.steps
+    # first sample's distance from camera is t_start
+    delta_ts = delta_ts.at[0].set(t_start)
+    # we want to stop ray marching at last sample
+    delta_ts = delta_ts.at[-1].set(1e10)
+
+    return integrate_ray(delta_ts, density, rgb)
 
 
 @jit_jaxfn_with(static_argnames=["camera"])
@@ -184,7 +191,6 @@ def make_rays_worldspace(
     o_world = jnp.broadcast_to(transform_cw.translation, d_cam.shape)
     # [H*W, 3]
     d_world = d_cam @ transform_cw.rotation.T
-    d_world = d_world / jnp.linalg.norm(d_world, axis=-1, keepdims=True)
 
     return o_world, d_world
 
@@ -249,7 +255,7 @@ def render_image(
         rgbs = march_rays(
             o_world[idcs],
             d_world[idcs],
-            options.aabb,
+            [[-1, 1]] * 3,
             camera,
             raymarch_options,
             param_dict,
@@ -306,12 +312,20 @@ def main():
     # d /= jnp.linalg.norm(d, axis=-1, keepdims=True)
     camera = PinholeCamera(W=W, H=H, near=near, far=far*2, focal=focal)
     # ndc_o, ndc_d = make_ndc_rays(o, d, camera)
+    # WARN:
+    #   since the `test_cube`'s color is varying through space, rendering with too few steps causes
+    #   under-sampling, which results in darker appearance in rendered image.
     raymarch_options = RayMarchingOptions(steps=2**10)
+    aabb = [[-1, 1]] * 3
     render_options = RenderingOptions(
         ray_chunk_size=2**13,
-        aabb=((-1, 1), (-1, 1), (-1, 1)),
+        aabb=aabb,
     )
-    nerf_fn = make_test_cube(width=1, density=0.01).apply
+    nerf_fn = make_test_cube(
+        width=1,
+        aabb=aabb,
+        density=32,
+    ).apply
 
     # R_cw = jnp.eye(3)
     # T_cw = jnp.asarray([0, 0, 5])
