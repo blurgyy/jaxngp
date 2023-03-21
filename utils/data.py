@@ -15,7 +15,7 @@ import tensorflow as tf
 from tqdm import tqdm
 
 from utils.common import mkValueError, tqdm_format
-from utils.types import AABB, PinholeCamera, RayMarchingOptions, RigidTransformation
+from utils.types import AABB, PinholeCamera, RigidTransformation
 Dataset = tf.data.Dataset
 
 

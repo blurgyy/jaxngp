@@ -1,11 +1,9 @@
-#!/usr/bin/env python3
-
-from typing import Literal, Tuple
+import logging
+from typing import Tuple
 
 from PIL import Image
 from flax.training import checkpoints
 from flax.training.train_state import TrainState
-from icecream import ic
 import jax
 import jax.numpy as jnp
 import jax.random as jran
@@ -18,16 +16,7 @@ from models.nerfs import make_nerf_ngp
 from models.renderers import march_rays, render_image
 from utils import common, data
 from utils.args import NeRFArgs
-from utils.types import (
-    AABB,
-    PinholeCamera,
-    RayMarchingOptions,
-    RenderingOptions,
-    RigidTransformation,
-)
-
-
-logger, (debug, info, warn, err, crit) = common.setup_logging("nerf")
+from utils.types import AABB, PinholeCamera, RayMarchingOptions, RigidTransformation
 
 
 @common.jit_jaxfn_with(static_argnames=["raymarch_options"])
@@ -126,30 +115,10 @@ def train_epoch(
     return loss, state
 
 
-def main(
-        args: NeRFArgs,
-        model_summary: bool=False,
-    ):
-    if args.exp_dir.exists():
-        err("specified experiment directory '{}' already exists".format(args.exp_dir))
-        exit(2)
-    if args.train_ckpt is not None and args.test_ckpt is not None:
-        err("--train-ckpt and --test-ckpt shouldn't be used together")
-        exit(1)
-
-    # set running mode
-    run_mode: Literal["train", "test"] = "train"
-    if args.test_ckpt is not None:
-        run_mode = "test"
-        raise NotImplementedError("Testing is not implemented")
-    if args.use_white_bg:
-        raise NotImplementedError("Blending image's alpha channel in NeRF is not implemented")
-    if args.train_ckpt is not None or args.test_ckpt is not None:
-        raise NotImplementedError("Resuming/Testing are not implemented")
-
+def train(args: NeRFArgs, logger: logging.Logger):
     args.exp_dir.mkdir(parents=True)
     args.exp_dir.joinpath("config.yaml").write_text(tyro.to_yaml(args))
-    info("saved configurations to '{}'".format(args.exp_dir.joinpath("config.yaml")))
+    logger.info("saved configurations to '{}'".format(args.exp_dir.joinpath("config.yaml")))
 
     dtype = getattr(jnp, "float{}".format(args.common.prec))
     logger.setLevel(args.common.logging.upper())
@@ -167,7 +136,7 @@ def main(
         (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
     )
     variables = model.init(key, *init_input)
-    if model_summary:
+    if args.common.display_model_summary:
         print(model.tabulate(key, *init_input))
 
     # training state
@@ -188,7 +157,7 @@ def main(
     # data
     scene_metadata_train, _ = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
-        split=run_mode,
+        split="train",
         aabb=aabb,
         near=2,
         far=6,
@@ -209,7 +178,7 @@ def main(
         use_white_bg=args.use_white_bg,
     )
 
-    info("starting training")
+    logger.info("starting training")
     # training loop
     for ep in range(args.train.n_epochs):
         ep_log = ep + 1
@@ -232,23 +201,23 @@ def main(
                 ep_log=ep_log,
             )
         except KeyboardInterrupt:
-            warn("aborted at epoch {}".format(ep_log))
-            info("saving training state ... ")
+            logger.warn("aborted at epoch {}".format(ep_log))
+            logger.info("saving training state ... ")
             ckpt_name = checkpoints.save_checkpoint(args.exp_dir, state, step="ep{}aborted".format(ep_log), overwrite=True, keep=2**30)
-            info("training state of epoch {} saved to: {}".format(ep_log, ckpt_name))
-            info("exiting cleanly ...")
+            logger.info("training state of epoch {} saved to: {}".format(ep_log, ckpt_name))
+            logger.info("exiting cleanly ...")
             exit()
 
-        info("epoch#{:03d}: per-pixel loss={:.2e}".format(ep_log, loss / scene_metadata_train.all_xys.shape[0]))
+        logger.info("epoch#{:03d}: per-pixel loss={:.2e}".format(ep_log, loss / scene_metadata_train.all_xys.shape[0]))
 
-        info("saving training state ... ")
+        logger.info("saving training state ... ")
         ckpt_name = checkpoints.save_checkpoint(args.exp_dir, state, step=ep_log, overwrite=True, keep=2**30)
-        info("training state of epoch {} saved to: {}".format(ep_log, ckpt_name))
+        logger.info("training state of epoch {} saved to: {}".format(ep_log, ckpt_name))
 
         # validate on 3 random camera transforms
         K, key = jran.split(K, 2)
         for val_i in jran.choice(key, jnp.arange(len(val_views)), (args.val_num,)):
-            info("validating on {}".format(val_views[val_i].file))
+            logger.info("validating on {}".format(val_views[val_i].file))
             val_transform = RigidTransformation(
                 rotation=scene_metadata_val.all_transforms[val_i, :9].reshape(3, 3),
                 translation=scene_metadata_val.all_transforms[val_i, -3:].reshape(3),
@@ -256,10 +225,7 @@ def main(
             image = render_image(
                 camera=scene_metadata_val.camera,
                 transform_cw=val_transform,
-                options=RenderingOptions(
-                    ray_chunk_size=8 * args.train.bs,
-                    aabb=scene_metadata_train.aabb,
-                ),
+                options=args.rendering,
                 raymarch_options=args.raymarch,
                 param_dict={"params": state.params},
                 nerf_fn=state.apply_fn,
@@ -267,16 +233,12 @@ def main(
             gt_image = Image.open(val_views[val_i].file)
             gt_image = np.asarray(gt_image)
             gt_image = data.blend_alpha_channel(gt_image, use_white_bg=args.use_white_bg)
-            info("{}: psnr={}".format(val_views[val_i].file, data.psnr(gt_image, image)))
+            logger.info("{}: psnr={}".format(val_views[val_i].file, data.psnr(gt_image, image)))
             dest = args.exp_dir\
                 .joinpath("validataion")\
                 .joinpath("ep{}".format(ep_log))\
                 .joinpath("{:03d}.png".format(val_i))
             dest.parent.mkdir(parents=True, exist_ok=True)
-            info("saving image to {}".format(dest))
+            logger.info("saving image to {}".format(dest))
             Image.fromarray(np.asarray(image)).save(dest)
 
-
-if __name__ == "__main__":
-    cfg = tyro.cli(NeRFArgs)
-    main(cfg)

@@ -3,7 +3,7 @@ from typing import Literal, Optional
 
 from flax.struct import dataclass
 
-from utils.types import RayMarchingOptions
+from utils.types import RayMarchingOptions, RenderingOptions
 
 @dataclass
 class CommonArgs:
@@ -14,7 +14,7 @@ class CommonArgs:
     # random seed
     seed: int = 1_000_000_007
     # display model information after model init
-    summary: bool=False
+    display_model_summary: bool=False
 
 @dataclass
 class DataArgs:
@@ -103,4 +103,9 @@ class NeRFArgs:
 
     raymarch: RayMarchingOptions=RayMarchingOptions(
         steps=2**10,
+    )
+
+    rendering: RenderingOptions=RenderingOptions(
+        ray_chunk_size=2**13,
+        aabb=[[-1, 1], [-1, 1], [-1, 1]],
     )

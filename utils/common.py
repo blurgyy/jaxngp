@@ -4,14 +4,12 @@ import logging
 import random
 from typing import (
     Any,
-    Callable,
     Hashable,
     Iterable,
     Literal,
     Optional,
     Optional,
     Sequence,
-    Tuple,
     Union,
     get_args,
 )
@@ -97,10 +95,8 @@ def jit_jaxfn_with(
 def setup_logging(
         name: str="main",
         level: str="INFO"
-    ) -> Tuple[logging.Logger, Tuple[Callable, Callable, Callable, Callable, Callable]]:
+    ) -> logging.Logger:
     colorama.just_fix_windows_console()
-
-    fn_names = ["debug", "info", "warning", "error", "critical"]
 
     class _formatter(logging.Formatter):
         def __init__(self, datefmt):
@@ -133,7 +129,7 @@ def setup_logging(
     logger.setLevel(level)
     logger.addHandler(ch)
     logger.propagate = False
-    return logger, map(lambda fn: getattr(logger, fn), fn_names)
+    return logger
 
 
 def set_deterministic(seed: int) -> jran.KeyArray:
