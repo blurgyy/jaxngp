@@ -1,6 +1,7 @@
 from pathlib import Path
-from flax.struct import dataclass
 from typing import Literal, Optional
+
+from flax.struct import dataclass
 
 from utils.types import RayMarchingOptions
 
@@ -12,6 +13,8 @@ class CommonArgs:
     prec: int = 32
     # random seed
     seed: int = 1_000_000_007
+    # display model information after model init
+    summary: bool=False
 
 @dataclass
 class DataArgs:
@@ -66,17 +69,38 @@ class ImageFitArgs:
 
 @dataclass
 class NeRFArgs:
-    common: CommonArgs
+    # a nerf-synthetic format directory
+    data_root: Path
+
+    # experiment artifacts are saved under this directory
+    exp_dir: Path
+
+    # number of images to validate
+    val_num: int=3
+
+    # whether to treat transparent pixels as white
+    use_white_bg: bool=False
+
+    # if specified, continue training from this checkpoint
+    train_ckpt: Optional[Path]=None
+
+    # if specified, switch to test mode and use this checkpoint
+    test_ckpt: Optional[Path]=None
+
+    common: CommonArgs=CommonArgs()
+
     data: DataArgs=DataArgs(
         n_workers=0,
         loop=1,
     )
+
     train: TrainingArgs=TrainingArgs(
         lr=1e-2,
         momentum=None,
         bs=2**10,
         n_epochs=32,
     )
+
     raymarch: RayMarchingOptions=RayMarchingOptions(
         steps=2**10,
     )

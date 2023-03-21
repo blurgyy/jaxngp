@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 
-from functools import partial
-from pathlib import Path
-from typing import Literal, Optional, Tuple
+from typing import Literal, Tuple
 
 from PIL import Image
 from flax.training import checkpoints
@@ -130,35 +128,28 @@ def train_epoch(
 
 def main(
         args: NeRFArgs,
-        data_root: Path,
-
-        # experiment artifacts are saved under this directory
-        exp_dir: Path,
-
-        # number of images to validate
-        val_num: int=3,
-
-        use_white_bg: bool=False,
-        train_ckpt: Optional[Path]=None,  # if specified, continue training from this checkpoint
-        test_ckpt: Optional[Path]=None,  # if specified, switch to test mode and use this checkpoint
         model_summary: bool=False,
     ):
-    if exp_dir.exists():
-        err("specified experiment directory '{}' already exists".format(exp_dir))
+    if args.exp_dir.exists():
+        err("specified experiment directory '{}' already exists".format(args.exp_dir))
         exit(2)
-    if train_ckpt is not None and test_ckpt is not None:
+    if args.train_ckpt is not None and args.test_ckpt is not None:
         err("--train-ckpt and --test-ckpt shouldn't be used together")
         exit(1)
 
     # set running mode
     run_mode: Literal["train", "test"] = "train"
-    if test_ckpt is not None:
+    if args.test_ckpt is not None:
         run_mode = "test"
         raise NotImplementedError("Testing is not implemented")
-    if use_white_bg:
+    if args.use_white_bg:
         raise NotImplementedError("Blending image's alpha channel in NeRF is not implemented")
-    if train_ckpt is not None or test_ckpt is not None:
+    if args.train_ckpt is not None or args.test_ckpt is not None:
         raise NotImplementedError("Resuming/Testing are not implemented")
+
+    args.exp_dir.mkdir(parents=True)
+    args.exp_dir.joinpath("config.yaml").write_text(tyro.to_yaml(args))
+    info("saved configurations to '{}'".format(args.exp_dir.joinpath("config.yaml")))
 
     dtype = getattr(jnp, "float{}".format(args.common.prec))
     logger.setLevel(args.common.logging.upper())
@@ -196,12 +187,12 @@ def main(
 
     # data
     scene_metadata_train, _ = data.make_nerf_synthetic_scene_metadata(
-        rootdir=data_root,
+        rootdir=args.data_root,
         split=run_mode,
         aabb=aabb,
         near=2,
         far=6,
-        use_white_bg=use_white_bg,
+        use_white_bg=args.use_white_bg,
     )
 
     # val_transform = RigidTransformation(
@@ -210,12 +201,12 @@ def main(
     # )
 
     scene_metadata_val, val_views = data.make_nerf_synthetic_scene_metadata(
-        rootdir=data_root,
+        rootdir=args.data_root,
         split="val",
         aabb=aabb,
         near=2,
         far=6,
-        use_white_bg=use_white_bg,
+        use_white_bg=args.use_white_bg,
     )
 
     info("starting training")
@@ -243,7 +234,7 @@ def main(
         except KeyboardInterrupt:
             warn("aborted at epoch {}".format(ep_log))
             info("saving training state ... ")
-            ckpt_name = checkpoints.save_checkpoint(exp_dir, state, step="ep{}aborted".format(ep_log), overwrite=True, keep=2**30)
+            ckpt_name = checkpoints.save_checkpoint(args.exp_dir, state, step="ep{}aborted".format(ep_log), overwrite=True, keep=2**30)
             info("training state of epoch {} saved to: {}".format(ep_log, ckpt_name))
             info("exiting cleanly ...")
             exit()
@@ -251,12 +242,12 @@ def main(
         info("epoch#{:03d}: per-pixel loss={:.2e}".format(ep_log, loss / scene_metadata_train.all_xys.shape[0]))
 
         info("saving training state ... ")
-        ckpt_name = checkpoints.save_checkpoint(exp_dir, state, step=ep_log, overwrite=True, keep=2**30)
+        ckpt_name = checkpoints.save_checkpoint(args.exp_dir, state, step=ep_log, overwrite=True, keep=2**30)
         info("training state of epoch {} saved to: {}".format(ep_log, ckpt_name))
 
         # validate on 3 random camera transforms
         K, key = jran.split(K, 2)
-        for val_i in jran.choice(key, jnp.arange(len(val_views)), (val_num,)):
+        for val_i in jran.choice(key, jnp.arange(len(val_views)), (args.val_num,)):
             info("validating on {}".format(val_views[val_i].file))
             val_transform = RigidTransformation(
                 rotation=scene_metadata_val.all_transforms[val_i, :9].reshape(3, 3),
@@ -275,9 +266,9 @@ def main(
             )
             gt_image = Image.open(val_views[val_i].file)
             gt_image = np.asarray(gt_image)
-            gt_image = data.blend_alpha_channel(gt_image, use_white_bg=use_white_bg)
+            gt_image = data.blend_alpha_channel(gt_image, use_white_bg=args.use_white_bg)
             info("{}: psnr={}".format(val_views[val_i].file, data.psnr(gt_image, image)))
-            dest = exp_dir\
+            dest = args.exp_dir\
                 .joinpath("validataion")\
                 .joinpath("ep{}".format(ep_log))\
                 .joinpath("{:03d}.png".format(val_i))
@@ -287,4 +278,5 @@ def main(
 
 
 if __name__ == "__main__":
-    tyro.cli(main)
+    cfg = tyro.cli(NeRFArgs)
+    main(cfg)
