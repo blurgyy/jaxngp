@@ -38,9 +38,3 @@ class RigidTransformation:
     rotation: jax.Array
     # [3] translation vector
     translation: jax.Array
-
-
-@dataclass
-class SampleMetadata:
-    transmittance: float
-    rgb: jax.Array

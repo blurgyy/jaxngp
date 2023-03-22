@@ -15,7 +15,6 @@ from utils.types import (
     RayMarchingOptions,
     RenderingOptions,
     RigidTransformation,
-    SampleMetadata,
 )
 
 
