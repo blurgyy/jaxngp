@@ -18,7 +18,7 @@ from utils import data, common
 from utils.args import ImageFitArgs
 
 
-logger, (debug, info, warn, err, crit) = common.setup_logging("imagefit")
+logger = common.setup_logging("imagefit")
 
 
 @jax.jit
@@ -96,11 +96,11 @@ def main(
     logger.setLevel(args.common.logging.upper())
 
     if not out_path.parent.is_dir():
-        err("Output path's parent '{}' does not exist or is not a directory!".format(out_path.parent))
+        logger.err("Output path's parent '{}' does not exist or is not a directory!".format(out_path.parent))
         exit(1)
 
     if out_path.exists() and not overwrite:
-        warn("Output path '{}' exists and will be overwritten!".format(out_path))
+        logger.warn("Output path '{}' exists and will be overwritten!".format(out_path))
         try:
             r = input("Continue? [y/N] ")
             if (r.strip() + "n").lower()[0] != "y":
@@ -167,11 +167,11 @@ def main(
             state=state,
             ep_log=ep_log,
         )
-        info("epoch#{:03d}: per-pixel loss={:.2e}".format(ep_log, loss / (image_metadata.H * image_metadata.W)))
+        logger.info("epoch#{:03d}: per-pixel loss={:.2e}".format(ep_log, loss / (image_metadata.H * image_metadata.W)))
 
         image = np.asarray(Image.new("RGB", in_image.shape[:2][::-1]))
         image = eval(image, image_metadata, state)
-        debug("saving image of shape {} to {}".format(image.shape, out_path))
+        logger.debug("saving image of shape {} to {}".format(image.shape, out_path))
         Image.fromarray(np.asarray(image)).save(out_path)
 
 
