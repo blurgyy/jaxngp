@@ -22,8 +22,6 @@ def main(args: NeRFArgs):
     else:
         run_mode = "train"
 
-    if args.use_white_bg:
-        raise NotImplementedError("Blending image's alpha channel in NeRF is not implemented")
     if args.train_ckpt is not None:
         raise NotImplementedError("Resuming are not implemented")
 

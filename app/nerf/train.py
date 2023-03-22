@@ -16,7 +16,7 @@ from models.nerfs import make_nerf_ngp
 from models.renderers import march_rays, render_image
 from utils import common, data
 from utils.args import NeRFArgs
-from utils.types import AABB, PinholeCamera, RayMarchingOptions, RigidTransformation
+from utils.types import AABB, PinholeCamera, RayMarchingOptions, RenderingOptions, RigidTransformation
 
 
 @common.jit_jaxfn_with(static_argnames=["raymarch_options"])
@@ -28,6 +28,7 @@ def train_step(
         all_rgbs: jax.Array,
         all_transforms: jax.Array,
         raymarch_options: RayMarchingOptions,
+        render_options: RenderingOptions,
         perm: jax.Array
     ):
     def make_rays_worldspace() -> Tuple[jax.Array, jax.Array]:
@@ -68,6 +69,7 @@ def train_step(
             o_world,
             d_world,
             aabb,
+            render_options.use_white_bg,
             raymarch_options,
             {"params": params},
             state.apply_fn,
@@ -89,6 +91,7 @@ def train_epoch(
         aabb: AABB,
         scene_metadata: data.SceneMetadata,
         raymarch_options: RayMarchingOptions,
+        render_options: RenderingOptions,
         permutation: data.Dataset,
         total_batches: int,
         state: TrainState,
@@ -104,6 +107,7 @@ def train_epoch(
             scene_metadata.all_rgbs,
             scene_metadata.all_transforms,
             raymarch_options,
+            render_options,
             perm,
         )
         loss += metrics["loss"]
@@ -173,7 +177,7 @@ def train(args: NeRFArgs, logger: logging.Logger):
     scene_metadata_train, _ = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split="train",
-        use_white_bg=args.use_white_bg,
+        use_white_bg=args.render.use_white_bg,
     )
 
     # val_transform = RigidTransformation(
@@ -184,7 +188,7 @@ def train(args: NeRFArgs, logger: logging.Logger):
     scene_metadata_val, val_views = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split="val",
-        use_white_bg=args.use_white_bg,
+        use_white_bg=args.render.use_white_bg,
     )
 
     logger.info("starting training")
@@ -197,7 +201,7 @@ def train(args: NeRFArgs, logger: logging.Logger):
             size=scene_metadata_train.all_xys.shape[0],
             shuffle=True
         )\
-            .batch(args.train.bs, drop_remainder=True)\
+            .batch(args.render.ray_chunk_size, drop_remainder=True)\
             .repeat(args.data.loop)
 
         try:
@@ -205,6 +209,7 @@ def train(args: NeRFArgs, logger: logging.Logger):
                 aabb=aabb,
                 scene_metadata=scene_metadata_train,
                 raymarch_options=args.raymarch,
+                render_options=args.render,
                 permutation=permutation.take(args.train.n_batches).as_numpy_iterator(),
                 total_batches=args.train.n_batches,
                 state=state,
@@ -236,14 +241,15 @@ def train(args: NeRFArgs, logger: logging.Logger):
                 aabb=aabb,
                 camera=scene_metadata_val.camera,
                 transform_cw=val_transform,
-                options=args.rendering,
+                options=args.render,
                 raymarch_options=args.raymarch,
                 param_dict={"params": state.params},
                 nerf_fn=state.apply_fn,
             )
             gt_image = Image.open(val_views[val_i].file)
-            gt_image = np.asarray(gt_image)
-            gt_image = data.blend_alpha_channel(gt_image, use_white_bg=args.use_white_bg)
+            gt_image = np.asarray(gt_image) / 255
+            gt_image = data.blend_alpha_channel(gt_image, use_white_bg=args.render.use_white_bg)
+            gt_image = (gt_image * 255).astype(jnp.uint8)
             logger.info("{}: psnr={}".format(val_views[val_i].file, data.psnr(gt_image, image)))
             dest = args.exp_dir\
                 .joinpath("validataion")\

@@ -46,7 +46,7 @@ def test(args: NeRFArgs, logger: logging.Logger):
     scene_metadata_test, test_views = make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split=args.test_split,
-        use_white_bg=False,
+        use_white_bg=args.render.use_white_bg,
     )
 
     logger.info("starting testing (totally {} image(s) to test)".format(len(args.test_indices)))
@@ -62,14 +62,14 @@ def test(args: NeRFArgs, logger: logging.Logger):
             aabb=args.aabb,
             camera=scene_metadata_test.camera,
             transform_cw=transform,
-            options=args.rendering,
+            options=args.render,
             raymarch_options=args.raymarch,
             param_dict={"params": params},
             nerf_fn=model.apply,
         )
         gt_image = Image.open(test_views[test_i].file)
         gt_image = np.asarray(gt_image)
-        gt_image = data.blend_alpha_channel(gt_image, use_white_bg=args.use_white_bg)
+        gt_image = data.blend_alpha_channel(gt_image, use_white_bg=args.render.use_white_bg)
         logger.info("{}: psnr={}".format(test_views[test_i].file, data.psnr(gt_image, image)))
         dest = args.exp_dir\
             .joinpath("test")\

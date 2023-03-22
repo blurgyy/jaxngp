@@ -84,9 +84,6 @@ class NeRFArgs:
     # number of images to validate
     val_num: int=3
 
-    # whether to treat transparent pixels as white
-    use_white_bg: bool=False
-
     # if specified, continue training from this checkpoint
     train_ckpt: Optional[Path]=None
 
@@ -121,6 +118,7 @@ class NeRFArgs:
         steps=2**10,
     )
 
-    rendering: RenderingOptions=RenderingOptions(
+    render: RenderingOptions=RenderingOptions(
         ray_chunk_size=2**10,
+        use_white_bg=True,
     )

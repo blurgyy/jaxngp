@@ -18,7 +18,12 @@ from utils.types import (
 )
 
 
-def integrate_ray(delta_ts: jax.Array, densities: jax.Array, rgbs: jax.Array) -> jax.Array:
+def integrate_ray(
+        delta_ts: jax.Array,
+        densities: jax.Array,
+        rgbs: jax.Array,
+        use_white_bg: bool,
+    ) -> jax.Array:
     """
     Inputs:
         delta_ts [steps]: delta_ts[i] is the distance between the i-th sample and the (i-1)th sample,
@@ -39,6 +44,9 @@ def integrate_ray(delta_ts: jax.Array, densities: jax.Array, rgbs: jax.Array) ->
     weights = alphas * jnp.cumprod(1 - alphas + 1e-15, axis=0)
     # [3]
     final_rgb = jnp.sum(weights * rgbs, axis=0)
+
+    final_rgb += use_white_bg * (1 - jnp.sum(weights, axis=0))
+
     return final_rgb
 
 
@@ -77,11 +85,12 @@ def make_near_far_from_aabb(
 
 
 @jit_jaxfn_with(static_argnames=["options", "nerf_fn"])
-@vmap_jaxfn_with(in_axes=(0, 0, None, None, None, None))
+@vmap_jaxfn_with(in_axes=(0, 0, None, None, None, None, None))
 def march_rays(
         o_world: jax.Array,
         d_world: jax.Array,
         aabb: AABB,
+        use_white_bg: bool,
         options: RayMarchingOptions,
         param_dict: FrozenVariableDict,
         nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
@@ -144,7 +153,7 @@ def march_rays(
     # we want to stop ray marching at last sample
     delta_ts = delta_ts.at[-1].set(1e10)
 
-    return integrate_ray(delta_ts, density, rgb)
+    return integrate_ray(delta_ts, density, rgb, use_white_bg)
 
 
 @jit_jaxfn_with(static_argnames=["camera"])
@@ -251,6 +260,7 @@ def render_image(
             o_world[idcs],
             d_world[idcs],
             aabb,
+            options.use_white_bg,
             raymarch_options,
             param_dict,
             nerf_fn,
@@ -316,6 +326,7 @@ def main():
     aabb = [[-bound, bound]] * 3
     render_options = RenderingOptions(
         ray_chunk_size=2**13,
+        use_white_bg=True
     )
     nerf_fn = make_test_cube(
         width=1,

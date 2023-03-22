@@ -26,6 +26,7 @@ class RayMarchingOptions:
 @dataclass
 class RenderingOptions:
     ray_chunk_size: int
+    use_white_bg: bool
 
 
 @dataclass
