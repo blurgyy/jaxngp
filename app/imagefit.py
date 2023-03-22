@@ -162,8 +162,8 @@ def main(
             .repeat(args.data.loop)
         loss, state = train_epoch(
             image_metadata=image_metadata,
-            permutation=permutation.as_numpy_iterator(),
-            total_batches=len(permutation),
+            permutation=permutation.take(args.train.n_batches).as_numpy_iterator(),
+            total_batches=args.train.n_batches,
             state=state,
             ep_log=ep_log,
         )

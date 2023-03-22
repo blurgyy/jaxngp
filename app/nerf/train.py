@@ -209,8 +209,8 @@ def train(args: NeRFArgs, logger: logging.Logger):
                 aabb=args.aabb,
                 scene_metadata=scene_metadata_train,
                 raymarch_options=args.raymarch,
-                permutation=permutation.as_numpy_iterator(),
-                total_batches=len(permutation),
+                permutation=permutation.take(args.train.n_batches).as_numpy_iterator(),
+                total_batches=args.train.n_batches,
                 state=state,
                 ep_log=ep_log,
             )

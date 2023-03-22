@@ -34,8 +34,12 @@ class TrainingArgs:
 
     # batch size
     bs: int
+
     # training epochs
     n_epochs: int
+
+    # batches per epoch
+    n_batches: int
 
 
 @dataclass
@@ -65,6 +69,7 @@ class ImageFitArgs:
         # tradeoff here.
         bs=2**10,
         n_epochs=32,
+        n_batches=2**30,
     )
 
 
@@ -106,6 +111,7 @@ class NeRFArgs:
         momentum=None,
         bs=2**10,
         n_epochs=32,
+        n_batches=2**10,
     )
 
     aabb: AABB=((-1, 1), (-1, 1), (-1, 1))
