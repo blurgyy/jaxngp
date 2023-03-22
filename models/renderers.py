@@ -50,16 +50,16 @@ def make_near_far_from_camera_and_aabb(
     ):
     # find a smallest non-negative `t` for each ray, such that o+td is inside the given aabb
     tx0, tx1 = (
-        (aabb[0][0] - o[0]) / d[0],
-        (aabb[0][1] - o[0]) / d[0],
+        (aabb[0][0] - o[0]) / (d[0] + 1e-15),
+        (aabb[0][1] - o[0]) / (d[0] + 1e-15),
     )
     ty0, ty1 = (
-        (aabb[1][0] - o[1]) / d[1],
-        (aabb[1][1] - o[1]) / d[1],
+        (aabb[1][0] - o[1]) / (d[1] + 1e-15),
+        (aabb[1][1] - o[1]) / (d[1] + 1e-15),
     )
     tz0, tz1 = (
-        (aabb[2][0] - o[2]) / d[2],
-        (aabb[2][1] - o[2]) / d[2],
+        (aabb[2][0] - o[2]) / (d[2] + 1e-15),
+        (aabb[2][1] - o[2]) / (d[2] + 1e-15),
     )
     tx_start, tx_end = jnp.minimum(tx0, tx1), jnp.maximum(tx0, tx1)
     ty_start, ty_end = jnp.minimum(ty0, ty1), jnp.maximum(ty0, ty1)
@@ -274,6 +274,10 @@ def make_ndc_rays(
         d_world: jax.Array,
         camera: PinholeCamera,
     ) -> Tuple[jax.Array, jax.Array]:
+    raise NotImplementedError("Not using make_ndc_rays now")
+    # TODO:
+    #   add eps for every denominator in this function to avoid division by zero
+
     # shift ray origins to near plane
     t = -(camera.near + o_world[2]) / d_world[2]
     o_world = o_world + t * d_world
