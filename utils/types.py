@@ -14,10 +14,6 @@ class PinholeCamera:
     W: int
     H: int
 
-    # clipping plane distance, must be positive
-    near: float
-    far: float
-
     # focal length
     focal: float
 

@@ -4,7 +4,7 @@ from typing import List, Literal, Optional
 
 from flax.struct import dataclass
 
-from utils.types import AABB, RayMarchingOptions, RenderingOptions
+from utils.types import RayMarchingOptions, RenderingOptions
 
 @dataclass
 class CommonArgs:

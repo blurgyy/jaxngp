@@ -68,7 +68,6 @@ def train_step(
             o_world,
             d_world,
             aabb,
-            camera,
             raymarch_options,
             {"params": params},
             state.apply_fn,
@@ -174,8 +173,6 @@ def train(args: NeRFArgs, logger: logging.Logger):
     scene_metadata_train, _ = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split="train",
-        near=2,
-        far=6,
         use_white_bg=args.use_white_bg,
     )
 
@@ -187,8 +184,6 @@ def train(args: NeRFArgs, logger: logging.Logger):
     scene_metadata_val, val_views = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split="val",
-        near=2,
-        far=6,
         use_white_bg=args.use_white_bg,
     )
 

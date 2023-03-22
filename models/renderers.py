@@ -42,8 +42,7 @@ def integrate_ray(delta_ts: jax.Array, densities: jax.Array, rgbs: jax.Array) ->
     return final_rgb
 
 
-def make_near_far_from_camera_and_aabb(
-        camera: PinholeCamera,
+def make_near_far_from_aabb(
         aabb: AABB,  # [3, 2]
         o: jax.Array,  # [3]
         d: jax.Array,  # [3]
@@ -68,9 +67,8 @@ def make_near_far_from_camera_and_aabb(
     t_start = jnp.maximum(jnp.maximum(tx_start, ty_start), tz_start)
     t_end = jnp.minimum(jnp.minimum(tx_end, ty_end), tz_end)
 
-    # clip to camera's near/far planes
-    t_start = jnp.clip(t_start, camera.near, None)
-    t_end = jnp.clip(t_end, None, camera.far)
+    # t_start should be larger than zero
+    t_start = jnp.clip(t_start, 0, None)
 
     # t_end should be larger than t_start for the ray to intersect with the aabb
     t_end = jnp.clip(t_end, t_start + 1e-5, None)
@@ -79,12 +77,11 @@ def make_near_far_from_camera_and_aabb(
 
 
 @jit_jaxfn_with(static_argnames=["options", "nerf_fn"])
-@vmap_jaxfn_with(in_axes=(0, 0, None, None, None, None, None))
+@vmap_jaxfn_with(in_axes=(0, 0, None, None, None, None))
 def march_rays(
         o_world: jax.Array,
         d_world: jax.Array,
         aabb: AABB,
-        camera: PinholeCamera,
         options: RayMarchingOptions,
         param_dict: FrozenVariableDict,
         nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
@@ -96,7 +93,6 @@ def march_rays(
         o_world [3]: ray origins, in world space
         d_world [3]: ray directions (unit vectors), in world space
         aabb [3, 2]: scene bounds on each of x, y, z axes
-        camera: camera model in-use
         options: see :class:`RayMarchingOptions`
         param_dict: :class:`NeRF` model params
         nerf_fn: function that takes the param_dict, xyz, and viewing directions as inputs, and
@@ -123,8 +119,7 @@ def march_rays(
     # sampled_points = o_world[..., None, :] + delta_t * d_world[..., None, :]
 
     # skip the empty space between camera and scene bbox
-    t_start, t_end = make_near_far_from_camera_and_aabb(
-        camera=camera,
+    t_start, t_end = make_near_far_from_aabb(
         aabb=aabb,
         o=o_world,
         d=d_world
@@ -256,7 +251,6 @@ def render_image(
             o_world[idcs],
             d_world[idcs],
             aabb,
-            camera,
             raymarch_options,
             param_dict,
             nerf_fn,
@@ -306,21 +300,20 @@ def main():
 
     W, H = 1024, 1024
     focal = .5 * 800 / np.tan(d["camera_angle_x"] / 2)
-    near = 2
-    far = 6
 
     # K, key, keyy = jran.split(jran.PRNGKey(0xabcdef), 3)
 
     # o = jran.normal(key, (8, 3)) + 0.5
     # d = 99 * jran.normal(keyy, (8, 3))
     # d /= jnp.linalg.norm(d, axis=-1, keepdims=True)
-    camera = PinholeCamera(W=W, H=H, near=near, far=far*2, focal=focal)
+    camera = PinholeCamera(W=W, H=H, focal=focal)
     # ndc_o, ndc_d = make_ndc_rays(o, d, camera)
     # WARN:
     #   since the `test_cube`'s color is varying through space, rendering with too few steps causes
     #   under-sampling, which results in darker appearance in rendered image.
     raymarch_options = RayMarchingOptions(steps=2**10)
-    aabb = [[-1, 1]] * 3
+    bound = 1.5
+    aabb = [[-bound, bound]] * 3
     render_options = RenderingOptions(
         ray_chunk_size=2**13,
     )

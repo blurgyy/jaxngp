@@ -47,24 +47,32 @@ class NeRF(nn.Module):
             density [..., 1]: density (ray terminating probability) of each query points
             rgb [..., 3]: predicted color for each query point
         """
-        bbox = jnp.asarray(self.aabb)
-        xyz = (xyz - bbox[:, 0]) / (bbox[:, 1] - bbox[:, 0])
-
         def out_of_unit_cube(xyz: jax.Array, eps: float=1e-3):
             "below expression effectively tests if xyz is **outside** of the AABB [eps, 1-eps]^3"
             return jnp.signbit(xyz - eps) ^ jnp.signbit(1 - eps - xyz)
 
-        # mask for zeroing out-of-bound incides
-        oob = (
-            out_of_unit_cube(xyz[:, 0:1]) |
-            out_of_unit_cube(xyz[:, 1:2]) |
-            out_of_unit_cube(xyz[:, 2:3])
-        )
+        # scale and translate xyz coordinates into unit cube
+        bbox = jnp.asarray(self.aabb)
+        xyz = (xyz - bbox[:, 0]) / (bbox[:, 1] - bbox[:, 0])
+        # calculate mask for zeroing out-of-bound inputs, applying this mask (see below `jnp.where`
+        # calls) gives a ~2x speed boost.
+        oob = out_of_unit_cube(xyz)
+        oob = oob[:, 0:1] | oob[:, 1:2] | oob[:, 2:3]
 
         # [..., D_pos]
         pos_enc = self.position_encoder(xyz)
+        pos_enc = jnp.where(
+            oob,
+            jnp.zeros_like(pos_enc),
+            pos_enc,
+        )
         # [..., D_dir]
         dir_enc = self.direction_encoder(dir)
+        dir_enc = jnp.where(
+            oob,
+            jnp.zeros_like(dir_enc),
+            dir_enc,
+        )
 
         x = self.density_mlp(pos_enc)
         # [..., 1]
@@ -75,16 +83,6 @@ class NeRF(nn.Module):
         rgb = self.rgb_mlp(jnp.concatenate([x, dir_enc], axis=-1))
 
         density, rgb = self.density_activation(density), self.rgb_activation(rgb)
-        density = jnp.where(
-            oob,
-            jnp.zeros_like(density),
-            density,
-        )
-        rgb = jnp.where(
-            oob,
-            jnp.zeros_like(rgb),
-            rgb,
-        )
 
         return density, rgb
 
@@ -151,13 +149,15 @@ def make_nerf(
         raise NotImplementedError("Frequency encoding for NeRF is not tuned")
         position_encoder = FrequencyEncoder(dim=3, L=10)
     elif pos_enc == "hashgrid":
+        log2_min_res = 4
+        log2_max_res = 12
         position_encoder = HashGridEncoder(
             dim=3,
-            L=9,
+            L=log2_max_res - log2_min_res + 1,
             T=find_smallest_prime_larger_or_equal_than(2**20),
             F=2,
-            N_min=16,
-            N_max=2**12,
+            N_min=2**log2_min_res,
+            N_max=2**log2_max_res,
             param_dtype=jnp.float32,
         )
     else:

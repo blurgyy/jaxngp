@@ -46,8 +46,6 @@ def test(args: NeRFArgs, logger: logging.Logger):
     scene_metadata_test, test_views = make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split=args.test_split,
-        near=2,
-        far=6,
         use_white_bg=False,
     )
 

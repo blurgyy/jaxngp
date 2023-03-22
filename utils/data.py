@@ -164,8 +164,6 @@ def make_view(
 def make_nerf_synthetic_scene_metadata(
         rootdir: Union[Path, str],
         split: Literal["train", "val", "test"],
-        near: float,
-        far: float,
         use_white_bg: bool=True,
     ) -> Tuple[SceneMetadata, list[ViewMetadata]]:
     rootdir = Path(rootdir)
@@ -191,8 +189,6 @@ def make_nerf_synthetic_scene_metadata(
     camera = PinholeCamera(
         W=W,
         H=H,
-        near=near,
-        far=far,
         focal=focal,
     )
 
@@ -249,8 +245,6 @@ def main():
     sce = make_nerf_synthetic_scene_metadata(
         rootdir="data/nerf/nerf_synthetic/lego",
         split="train",
-        near=2,
-        far=6,
         use_white_bg=True,
     )
     print(sce.all_xys.shape)
