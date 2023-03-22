@@ -256,7 +256,7 @@ def render_image(
         rgbs = march_rays(
             o_world[idcs],
             d_world[idcs],
-            [[-1, 1]] * 3,
+            aabb,
             camera,
             raymarch_options,
             param_dict,
