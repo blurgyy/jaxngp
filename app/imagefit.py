@@ -167,12 +167,19 @@ def main(
             state=state,
             ep_log=ep_log,
         )
-        logger.info("epoch#{:03d}: per-pixel loss={:.2e}".format(ep_log, loss / (image_metadata.H * image_metadata.W)))
 
         image = np.asarray(Image.new("RGB", in_image.shape[:2][::-1]))
         image = eval(image, image_metadata, state)
         logger.debug("saving image of shape {} to {}".format(image.shape, out_path))
         Image.fromarray(np.asarray(image)).save(out_path)
+
+        logger.info(
+            "epoch#{:03d}: per-pixel loss={:.2e}, psnr={}".format(
+                ep_log,
+                loss / (image_metadata.H * image_metadata.W),
+                data.psnr(in_image, image),
+            )
+        )
 
 
 if __name__ == "__main__":
