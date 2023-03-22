@@ -140,8 +140,11 @@ def train(args: NeRFArgs, logger: logging.Logger):
     # training state
     state = TrainState.create(
         apply_fn=model.apply,
-        params=variables["params"],
-        tx=optax.adam(
+        # unfreeze the frozen dict so that below weight_decay mask can apply, see:
+        #   <https://github.com/deepmind/optax/issues/160>
+        #   <https://github.com/google/flax/issues/1223>
+        params=variables["params"].unfreeze(),
+        tx=optax.adamw(
             learning_rate=args.train.lr,
             b1=0.9,
             b2=0.99,
@@ -149,6 +152,20 @@ def train(args: NeRFArgs, logger: logging.Logger):
             #   the small value of 𝜖 = 10^{−15} can significantly accelerate the convergence of the
             #   hash table entries when their gradients are sparse and weak.
             eps=1e-15,
+            # In NeRF experiments, the network can converge to a reasonably low loss during the
+            # frist ~50k training steps (with 1024 rays per batch and 1024 samples per ray), but the
+            # loss becomes NaN after about 50~150k training steps.
+            # paper:
+            #   To prevent divergence after long training periods, we apply a weak L2 regularization
+            #   (factor 10^{−6}) to the neural network weights, ...
+            weight_decay=1e-6,
+            # paper:
+            #   ... to the neural network weights, but not to the hash table entries.
+            mask={
+                "density_mlp": True,
+                "rgb_mlp": True,
+                "position_encoder": False,
+            },
         ),
     )
 
