@@ -63,18 +63,8 @@ class NeRF(nn.Module):
 
         # [..., D_pos]
         pos_enc = self.position_encoder(xyz)
-        pos_enc = jnp.where(
-            oob,
-            jnp.zeros_like(pos_enc),  # if index out-of-bound, positional encoding is 0
-            pos_enc,  # all indices are passed to encoder but only in-bound indices are used
-        )
         # [..., D_dir]
         dir_enc = self.direction_encoder(dir)
-        dir_enc = jnp.where(
-            oob,
-            jnp.zeros_like(dir_enc),
-            dir_enc,
-        )
 
         x = self.density_mlp(pos_enc)
         # [..., 1]
