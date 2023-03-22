@@ -114,7 +114,8 @@ class NeRFArgs:
         n_batches=2**10,
     )
 
-    aabb: AABB=((-1, 1), (-1, 1), (-1, 1))
+    # Width of axis-aligned bounding-box
+    bound: float=1.5
 
     raymarch: RayMarchingOptions=RayMarchingOptions(
         steps=2**10,

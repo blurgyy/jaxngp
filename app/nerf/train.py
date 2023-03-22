@@ -129,8 +129,9 @@ def train(args: NeRFArgs, logger: logging.Logger):
 
     # model parameters
     K, key = jran.split(K, 2)
+    aabb = [[-args.bound, args.bound]] * 3
     model, init_input = (
-        make_nerf_ngp(aabb=args.aabb),
+        make_nerf_ngp(aabb=aabb),
         (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
     )
     variables = model.init(key, *init_input)
@@ -206,7 +207,7 @@ def train(args: NeRFArgs, logger: logging.Logger):
 
         try:
             loss, state = train_epoch(
-                aabb=args.aabb,
+                aabb=aabb,
                 scene_metadata=scene_metadata_train,
                 raymarch_options=args.raymarch,
                 permutation=permutation.take(args.train.n_batches).as_numpy_iterator(),
@@ -237,7 +238,7 @@ def train(args: NeRFArgs, logger: logging.Logger):
                 translation=scene_metadata_val.all_transforms[val_i, -3:].reshape(3),
             )
             image = render_image(
-                aabb=args.aabb,
+                aabb=aabb,
                 camera=scene_metadata_val.camera,
                 transform_cw=val_transform,
                 options=args.rendering,
