@@ -64,14 +64,14 @@ def make_near_far_from_aabb(
     ty_start, ty_end = jnp.minimum(ty0, ty1), jnp.maximum(ty0, ty1)
     tz_start, tz_end = jnp.minimum(tz0, tz1), jnp.maximum(tz0, tz1)
 
-    t_start = jnp.maximum(jnp.maximum(tx_start, ty_start), tz_start)
-    t_end = jnp.minimum(jnp.minimum(tx_end, ty_end), tz_end)
-
-    # t_start should be larger than zero
-    t_start = jnp.clip(t_start, 0, None)
-
-    # t_end should be larger than t_start for the ray to intersect with the aabb
-    t_end = jnp.clip(t_end, t_start + 1e-5, None)
+    t_start = jnp.maximum(
+        jnp.maximum(jnp.maximum(tx_start, ty_start), tz_start),  # last axis that gose inside the bbox
+        0,  # t_start should be larger than zero
+    )
+    t_end = jnp.maximum(
+        jnp.minimum(jnp.minimum(tx_end, ty_end), tz_end),  # first axis that goes out of the bbox
+        t_start + 1e-5,  # t_end should be larger than t_start for the ray to intersect with the aabb
+    )
 
     return t_start, t_end
 
