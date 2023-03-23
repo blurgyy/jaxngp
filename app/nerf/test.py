@@ -30,9 +30,10 @@ def test(args: NeRFArgs, logger: logging.Logger):
     K = common.set_deterministic(seed=args.common.seed)
 
     # model parameters
+    aabb = [[-args.bound, args.bound]] * 3
     K, key = jran.split(K, 2)
     model, init_input = (
-        make_nerf_ngp(aabb=args.aabb),
+        make_nerf_ngp(aabb=aabb),
         (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
     )
     # initialize model structure but discard parameters, as parameters are loaded later
@@ -59,7 +60,7 @@ def test(args: NeRFArgs, logger: logging.Logger):
             translation=scene_metadata_test.all_transforms[test_i, -3:].reshape(3),
         )
         image = render_image(
-            aabb=args.aabb,
+            aabb=aabb,
             camera=scene_metadata_test.camera,
             transform_cw=transform,
             options=args.render,
