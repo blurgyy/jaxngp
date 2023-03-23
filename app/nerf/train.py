@@ -231,7 +231,12 @@ def train(args: NeRFArgs, logger: logging.Logger):
 
         # validate on `args.val_num` random camera transforms
         K, key = jran.split(K, 2)
-        for val_i in jran.choice(key, jnp.arange(len(val_views)), (args.val_num,)):
+        for val_i in jran.choice(
+                key,
+                jnp.arange(len(val_views)),
+                (min(args.val_num, len(val_views)),),
+                replace=False,
+            ):
             logger.info("validating on {}".format(val_views[val_i].file))
             val_transform = RigidTransformation(
                 rotation=scene_metadata_val.all_transforms[val_i, :9].reshape(3, 3),
