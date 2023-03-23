@@ -279,9 +279,8 @@ def train(args: NeRFArgs, logger: logging.Logger):
                 nerf_fn=state.apply_fn,
             )
             gt_image = Image.open(val_views[val_i].file)
-            gt_image = np.asarray(gt_image) / 255
+            gt_image = np.asarray(gt_image)
             gt_image = data.blend_alpha_channel(gt_image, use_white_bg=args.render.use_white_bg)
-            gt_image = (gt_image * 255).astype(jnp.uint8)
             logger.info("{}: psnr={}".format(val_views[val_i].file, data.psnr(gt_image, image)))
             dest = args.exp_dir\
                 .joinpath("validataion")\
