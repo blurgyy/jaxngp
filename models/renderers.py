@@ -146,12 +146,13 @@ def march_rays(
         jnp.broadcast_to(d_world, ray_pts.shape),
     )
 
+    # [steps-1]
+    delta_ts = z_vals[1:] - z_vals[:-1]
     # [steps]
-    delta_ts = jnp.ones(options.steps) * (t_end - t_start) / options.steps
-    # first sample's distance from camera is t_start
-    delta_ts = delta_ts.at[0].set(t_start)
     # we want to stop ray marching at last sample
-    delta_ts = delta_ts.at[-1].set(1e10)
+    delta_ts = jnp.concatenate([delta_ts, 1e10 * jnp.ones_like(delta_ts[:1])])
+    # account for non-unit direction vectors
+    delta_ts *= jnp.linalg.norm(d_world, axis=-1)
 
     return integrate_ray(delta_ts, density, rgb, use_white_bg)
 
