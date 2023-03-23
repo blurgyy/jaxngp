@@ -62,7 +62,7 @@ def side_by_side(
         H: int=None,
         W: int=None,
         vertical: bool=False,
-        gap: int=0,
+        gap: int=5,
         gap_color: jax.Array=jnp.asarray([0xab, 0xcd, 0xef], dtype=jnp.uint8),
     ) -> jax.Array:
     chex.assert_not_both_none(H, W)
@@ -86,7 +86,7 @@ def side_by_side(
 
 def add_border(
         img: jax.Array,
-        width: int,
+        width: int=5,
         color: jax.Array=jnp.asarray([0xfe, 0xdc, 0xba], dtype=jnp.uint8),
     ) -> jax.Array:
     chex.assert_rank(img, 3)
