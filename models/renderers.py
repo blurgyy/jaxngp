@@ -55,18 +55,27 @@ def make_near_far_from_aabb(
         o: jax.Array,  # [3]
         d: jax.Array,  # [3]
     ):
-    # find a smallest non-negative `t` for each ray, such that o+td is inside the given aabb
+    "Finds a smallest non-negative `t` for each ray, such that o+td is inside the given aabb."
+
+    # avoid d[j] being zero
+    eps = 1e-15
+    d = jnp.where(
+        jnp.signbit(d),  # True for negatives, False for non-negatives
+        jnp.clip(d, None, -eps * jnp.ones_like(d)),  # if negative, upper-bound is -eps
+        jnp.clip(d, eps * jnp.ones_like(d)),  # if non-negative, lower-bound is eps
+    )
+
     tx0, tx1 = (
-        (aabb[0][0] - o[0]) / (d[0] + 1e-15),
-        (aabb[0][1] - o[0]) / (d[0] + 1e-15),
+        (aabb[0][0] - o[0]) / d[0],
+        (aabb[0][1] - o[0]) / d[0],
     )
     ty0, ty1 = (
-        (aabb[1][0] - o[1]) / (d[1] + 1e-15),
-        (aabb[1][1] - o[1]) / (d[1] + 1e-15),
+        (aabb[1][0] - o[1]) / d[1],
+        (aabb[1][1] - o[1]) / d[1],
     )
     tz0, tz1 = (
-        (aabb[2][0] - o[2]) / (d[2] + 1e-15),
-        (aabb[2][1] - o[2]) / (d[2] + 1e-15),
+        (aabb[2][0] - o[2]) / d[2],
+        (aabb[2][1] - o[2]) / d[2],
     )
     tx_start, tx_end = jnp.minimum(tx0, tx1), jnp.maximum(tx0, tx1)
     ty_start, ty_end = jnp.minimum(ty0, ty1), jnp.maximum(ty0, ty1)
