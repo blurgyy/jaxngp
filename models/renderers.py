@@ -4,6 +4,7 @@ import chex
 from flax.core.scope import FrozenVariableDict
 import jax
 import jax.numpy as jnp
+import jax.random as jran
 from tqdm import tqdm
 
 from utils.common import jit_jaxfn_with, tqdm_format, vmap_jaxfn_with
@@ -94,8 +95,9 @@ def make_near_far_from_aabb(
 
 
 @jit_jaxfn_with(static_argnames=["options", "nerf_fn"])
-@vmap_jaxfn_with(in_axes=(0, 0, None, None, None, None, None))
+@vmap_jaxfn_with(in_axes=(None, 0, 0, None, None, None, None, None))
 def march_rays(
+        K: jran.KeyArray,
         o_world: jax.Array,
         d_world: jax.Array,
         aabb: AABB,
@@ -131,6 +133,20 @@ def march_rays(
     # linearly sample `steps` points inside clipped bbox
     # [steps]
     z_vals = t_start + (t_end - t_start) * jnp.linspace(0, 1, options.steps)
+
+    if options.stratified:
+        # [steps-1]
+        mids = .5 * (z_vals[1:] + z_vals[:-1])
+        # [steps]
+        upper = jnp.concatenate([mids, z_vals[-1:]], axis=-1)
+        # [steps]
+        lower = jnp.concatenate([z_vals[:1], mids], axis=-1)
+        K, key = jran.split(K, 2)
+        # [steps]
+        t_rand = jran.uniform(key, z_vals.shape, dtype=z_vals.dtype, minval=0, maxval=1)
+        # [steps]
+        z_vals = lower + (upper - lower) * t_rand
+
     # [steps, 3]
     ray_pts = o_world[None, :] + z_vals[:, None] * d_world[None, :]
 
@@ -218,6 +234,7 @@ def get_indices_chunks(
 #
 # @jit_jaxfn_with(static_argnames=["camera", "options", "raymarch_options", "nerf_fn"])
 def render_image(
+        K: jran.KeyArray,
         aabb: AABB,
         camera: PinholeCamera,
         transform_cw: RigidTransformation,
@@ -252,7 +269,9 @@ def render_image(
     image_array = jnp.empty((camera.H, camera.W, 3), dtype=jnp.uint8)
     for idcs in tqdm(indices, desc="rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
         # rgbs = raymarcher(o_world[idcs], d_world[idcs], param_dict)
+        K, key = jran.split(K, 2)
         rgbs = march_rays(
+            key,
             o_world[idcs],
             d_world[idcs],
             aabb,
@@ -308,6 +327,7 @@ def main():
     focal = .5 * 800 / np.tan(d["camera_angle_x"] / 2)
 
     # K, key, keyy = jran.split(jran.PRNGKey(0xabcdef), 3)
+    K = jran.PRNGKey(0xccff)
 
     # o = jran.normal(key, (8, 3)) + 0.5
     # d = 99 * jran.normal(keyy, (8, 3))
@@ -353,7 +373,9 @@ def main():
         T_cw = transformation[:3, 3]
         # print(R_cw, R_cw.T)
         print(jnp.linalg.det(R_cw))
+        K, key = jran.split(K, 2)
         img = render_image(
+            K=key,
             aabb=aabb,
             camera=camera,
             transform_cw=RigidTransformation(rotation=R_cw, translation=T_cw),

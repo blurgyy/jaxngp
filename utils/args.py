@@ -117,6 +117,7 @@ class NeRFArgs:
 
     raymarch: RayMarchingOptions=RayMarchingOptions(
         steps=2**10,
+        stratified=True,
     )
 
     render: RenderingOptions=RenderingOptions(

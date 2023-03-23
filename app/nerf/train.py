@@ -21,6 +21,7 @@ from utils.types import AABB, PinholeCamera, RayMarchingOptions, RenderingOption
 
 @common.jit_jaxfn_with(static_argnames=["raymarch_options"])
 def train_step(
+        K: jran.KeyArray,
         state: TrainState,
         aabb: AABB,
         camera: PinholeCamera,
@@ -68,9 +69,10 @@ def train_step(
 
         return o_world, d_world
 
-    def loss(params, gt):
+    def loss(params, gt, key):
         o_world, d_world = make_rays_worldspace()
         preds = march_rays(
+            key,
             o_world,
             d_world,
             aabb,
@@ -84,7 +86,8 @@ def train_step(
 
     loss_grad_fn = jax.value_and_grad(loss)
 
-    loss, grads = loss_grad_fn(state.params, all_rgbs[perm])
+    K, key = jran.split(K, 2)
+    loss, grads = loss_grad_fn(state.params, all_rgbs[perm], key)
     state = state.apply_gradients(grads=grads)
     metrics = {
         "loss": loss * perm.shape[0],
@@ -93,6 +96,7 @@ def train_step(
 
 
 def train_epoch(
+        K: jran.KeyArray,
         aabb: AABB,
         scene_metadata: data.SceneMetadata,
         raymarch_options: RayMarchingOptions,
@@ -105,7 +109,9 @@ def train_epoch(
     ):
     loss, running_loss = 0, -1
     for perm in (pbar := tqdm(permutation, total=total_batches, desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs), bar_format=common.tqdm_format)):
+        K, key = jran.split(K)
         state, metrics = train_step(
+            key,
             state,
             aabb,
             scene_metadata.camera,
@@ -138,12 +144,12 @@ def train(args: NeRFArgs, logger: logging.Logger):
     K = common.set_deterministic(args.common.seed)
 
     # model parameters
-    K, key = jran.split(K, 2)
     aabb = [[-args.bound, args.bound]] * 3
     model, init_input = (
         make_nerf_ngp(aabb=aabb),
         (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
     )
+    K, key = jran.split(K, 2)
     variables = model.init(key, *init_input)
     if args.common.display_model_summary:
         print(model.tabulate(key, *init_input))
@@ -221,7 +227,9 @@ def train(args: NeRFArgs, logger: logging.Logger):
             .repeat(args.data.loop)
 
         try:
+            K, key = jran.split(K, 2)
             loss, state = train_epoch(
+                K=key,
                 aabb=aabb,
                 scene_metadata=scene_metadata_train,
                 raymarch_options=args.raymarch,
@@ -259,7 +267,9 @@ def train(args: NeRFArgs, logger: logging.Logger):
                 rotation=scene_metadata_val.all_transforms[val_i, :9].reshape(3, 3),
                 translation=scene_metadata_val.all_transforms[val_i, -3:].reshape(3),
             )
+            K, key = jran.split(K, 2)
             image = render_image(
+                K=key,
                 aabb=aabb,
                 camera=scene_metadata_val.camera,
                 transform_cw=val_transform,

@@ -22,6 +22,7 @@ class PinholeCamera:
 @dataclass
 class RayMarchingOptions:
     steps: int
+    stratified: bool
 
 
 @dataclass

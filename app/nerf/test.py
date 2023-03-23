@@ -59,7 +59,9 @@ def test(args: NeRFArgs, logger: logging.Logger):
             rotation=scene_metadata_test.all_transforms[test_i, :9].reshape(3, 3),
             translation=scene_metadata_test.all_transforms[test_i, -3:].reshape(3),
         )
+        K, key = jran.split(K, 2)
         image = render_image(
+            K=key,
             aabb=aabb,
             camera=scene_metadata_test.camera,
             transform_cw=transform,
