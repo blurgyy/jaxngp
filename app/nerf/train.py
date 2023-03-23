@@ -98,12 +98,13 @@ def train_epoch(
         raymarch_options: RayMarchingOptions,
         render_options: RenderingOptions,
         permutation: data.Dataset,
-        total_batches: int,
         state: TrainState,
-        ep_log: int
+        total_batches: int,
+        ep_log: int,
+        total_epochs: int,
     ):
     loss, running_loss = 0, -1
-    for perm in (pbar := tqdm(permutation, total=total_batches, desc="Training epoch#{:03d}".format(ep_log), bar_format=common.tqdm_format)):
+    for perm in (pbar := tqdm(permutation, total=total_batches, desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs), bar_format=common.tqdm_format)):
         state, metrics = train_step(
             state,
             aabb,
@@ -121,7 +122,7 @@ def train_epoch(
             running_loss = loss_log
         else:
             running_loss = running_loss * 0.99 + 0.01 * loss_log
-        pbar.set_description_str("Training epoch#{:03d} loss={:.3e}".format(ep_log, running_loss))
+        pbar.set_description_str("Training epoch#{:03d}/{:d} loss={:.3e}".format(ep_log, total_epochs, running_loss))
     return loss, state
 
 
@@ -226,9 +227,10 @@ def train(args: NeRFArgs, logger: logging.Logger):
                 raymarch_options=args.raymarch,
                 render_options=args.render,
                 permutation=permutation.take(args.train.n_batches).as_numpy_iterator(),
-                total_batches=args.train.n_batches,
                 state=state,
+                total_batches=args.train.n_batches,
                 ep_log=ep_log,
+                total_epochs=args.train.n_epochs,
             )
         except KeyboardInterrupt:
             logger.warn("aborted at epoch {}".format(ep_log))
