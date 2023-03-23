@@ -111,10 +111,11 @@ def train_epoch(
             perm,
         )
         loss += metrics["loss"]
+        loss_log = metrics["loss"] / perm.shape[0]
         if running_loss < 0:
-            running_loss = metrics["loss"]
+            running_loss = loss_log
         else:
-            running_loss = running_loss * 0.99 + 0.01 * metrics["loss"]
+            running_loss = running_loss * 0.99 + 0.01 * loss_log
         pbar.set_description_str("Training epoch#{:03d} loss={:.3e}".format(ep_log, running_loss))
     return loss, state
 
