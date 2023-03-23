@@ -121,21 +121,6 @@ def march_rays(
     """
     chex.assert_shape([o_world, d_world], [[..., 3], [..., 3]])
 
-    # # NGP paper:
-    # #   In synthetic NeRF scenes, which we bound to the unit cube [0, 1]^3, we use a fixed ray
-    # #   marching step size equal to Δ𝑡 := √3/1024; √3 represents the diagonal of the unit cube.
-    # # NeRF paper:
-    # #   For experiments with synthetic images, we scale the scene so that it lies within a cube
-    # #   of side length 2 centered at the origin, and only query the representation within this
-    # #   bounding volume.
-    # # NeRF synthetic data has bounds of [-1, 1]^3, thus the use of 2√3 as Δ𝑡 here.
-    # # [steps]
-    # delta_t = (2 * jnp.sqrt(3)) * (jnp.arange(steps) + 1) / steps
-    # # [1, steps, 1]
-    # delta_t = delta_t.reshape(1, steps, 1)
-    # # [..., steps, 3]: `steps` sampled points along each input ray
-    # sampled_points = o_world[..., None, :] + delta_t * d_world[..., None, :]
-
     # skip the empty space between camera and scene bbox
     t_start, t_end = make_near_far_from_aabb(
         aabb=aabb,
