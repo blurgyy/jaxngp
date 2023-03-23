@@ -71,6 +71,7 @@ def test(args: NeRFArgs, logger: logging.Logger):
         gt_image = Image.open(test_views[test_i].file)
         gt_image = np.asarray(gt_image)
         gt_image = data.blend_alpha_channel(gt_image, use_white_bg=args.render.use_white_bg)
+        gt_image = (gt_image * 255).astype(jnp.uint8)
         logger.info("{}: psnr={}".format(test_views[test_i].file, data.psnr(gt_image, image)))
         dest = args.exp_dir\
             .joinpath("test")\
