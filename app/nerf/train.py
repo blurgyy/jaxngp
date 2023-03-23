@@ -294,4 +294,5 @@ def train(args: NeRFArgs, logger: logging.Logger):
                 H=scene_metadata_val.camera.H,
                 W=scene_metadata_val.camera.W
             )
+            comparison_image_data = data.add_border(comparison_image_data)
             Image.fromarray(np.asarray(comparison_image_data)).save(dest)
