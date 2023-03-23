@@ -194,6 +194,7 @@ def make_rays_worldspace(
     o_world = jnp.broadcast_to(transform_cw.translation, d_cam.shape)
     # [H*W, 3]
     d_world = d_cam @ transform_cw.rotation.T
+    d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
 
     return o_world, d_world
 
