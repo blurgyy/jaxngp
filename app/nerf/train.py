@@ -277,4 +277,10 @@ def train(args: NeRFArgs, logger: logging.Logger):
                 .joinpath("{:03d}.png".format(val_i))
             dest.parent.mkdir(parents=True, exist_ok=True)
             logger.info("saving image to {}".format(dest))
-            Image.fromarray(np.asarray(image)).save(dest)
+            comparison_image_data = data.side_by_side(
+                gt_image,
+                image,
+                H=scene_metadata_val.camera.H,
+                W=scene_metadata_val.camera.W
+            )
+            Image.fromarray(np.asarray(comparison_image_data)).save(dest)

@@ -56,8 +56,15 @@ def to_unit_cube_2d(xys: jax.Array, W: int, H: int):
     return uvs
 
 
+def side_by_side(lhs: jax.Array, rhs: jax.Array, H: int, W: int):
+    chex.assert_shape([lhs, rhs], [H, W, 3])
+    chex.assert_type([lhs, rhs], jnp.uint8)
+    # [H, 2*W, 3]
+    return jnp.concatenate([lhs, rhs], axis=1)
+
+
 def psnr(lhs: jax.Array, rhs: jax.Array):
-    chex.assert_type([lhs, rhs], [jnp.uint8, jnp.uint8])
+    chex.assert_type([lhs, rhs], jnp.uint8)
     mse = ((lhs.astype(float) - rhs.astype(float)) ** 2).mean()
     if mse == 0:
         return 100
