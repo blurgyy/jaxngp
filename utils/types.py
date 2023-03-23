@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Literal, Tuple
 
 import jax
 from flax.struct import dataclass
@@ -6,6 +6,7 @@ from flax.struct import dataclass
 
 AABB = Tuple[Tuple[int, int], Tuple[int, int], Tuple[int, int]]
 DensityAndRGB = Tuple[jax.Array, jax.Array]
+LogLevel = Literal["DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL"]
 
 
 @dataclass

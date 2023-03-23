@@ -129,6 +129,9 @@ def setup_logging(
     logger.setLevel(level)
     logger.addHandler(ch)
     logger.propagate = False
+
+    # logger complains about `warn` being deprecated with another warning
+    logger.warn = logger.warning
     return logger
 
 

@@ -4,12 +4,13 @@ from typing import List, Literal, Optional
 
 from flax.struct import dataclass
 
-from utils.types import RayMarchingOptions, RenderingOptions
+from utils.types import LogLevel, RayMarchingOptions, RenderingOptions
+
 
 @dataclass
 class CommonArgs:
     # log level
-    logging: Literal["DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    logging: LogLevel = "INFO"
     # float precision
     prec: int = 32
     # random seed

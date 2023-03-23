@@ -56,11 +56,50 @@ def to_unit_cube_2d(xys: jax.Array, W: int, H: int):
     return uvs
 
 
-def side_by_side(lhs: jax.Array, rhs: jax.Array, H: int, W: int):
-    chex.assert_shape([lhs, rhs], [H, W, 3])
+def side_by_side(
+        lhs: jax.Array,
+        rhs: jax.Array,
+        H: int=None,
+        W: int=None,
+        vertical: bool=False,
+        gap: int=0,
+        gap_color: jax.Array=jnp.asarray([0xab, 0xcd, 0xef], dtype=jnp.uint8),
+    ) -> jax.Array:
+    chex.assert_not_both_none(H, W)
+    chex.assert_scalar_non_negative(vertical)
     chex.assert_type([lhs, rhs], jnp.uint8)
-    # [H, 2*W, 3]
-    return jnp.concatenate([lhs, rhs], axis=1)
+    chex.assert_axis_dimension(lhs, -1, 3)
+    chex.assert_axis_dimension(rhs, -1, 3)
+    if vertical:
+        chex.assert_axis_dimension(lhs, 1, W)
+        chex.assert_axis_dimension(rhs, 1, W)
+    else:
+        chex.assert_axis_dimension(lhs, 0, H)
+        chex.assert_axis_dimension(rhs, 0, H)
+    concat_axis = 0 if vertical else 1
+    if gap > 0:
+        gap = jnp.broadcast_to(gap_color, (gap, W, 3) if vertical else (H, gap, 3))
+        return jnp.concatenate([lhs, gap, rhs], axis=concat_axis)
+    else:
+        return jnp.concatenate([lhs, rhs], axis=concat_axis)
+
+
+def add_border(
+        img: jax.Array,
+        width: int,
+        color: jax.Array=jnp.asarray([0xfe, 0xdc, 0xba], dtype=jnp.uint8),
+    ) -> jax.Array:
+    chex.assert_rank(img, 3)
+    chex.assert_axis_dimension(img, -1, 3)
+    chex.assert_scalar_non_negative(width)
+    chex.assert_type(img, jnp.uint8)
+    chex.assert_type(color, jnp.uint8)
+    H, W = img.shape[:2]
+    leftright = jnp.broadcast_to(color, (H, width, 3))
+    img = jnp.concatenate([leftright, img, leftright], axis=1)
+    topbottom = jnp.broadcast_to(color, (width, W+2*width, 3))
+    img = jnp.concatenate([topbottom, img, topbottom], axis=0)
+    return img
 
 
 def psnr(lhs: jax.Array, rhs: jax.Array):
@@ -85,7 +124,12 @@ def blend_alpha_channel(imgarr, use_white_bg: bool):
     chex.assert_shape(imgarr, [..., 4])
     rgbs, alpha = imgarr[..., :-1], imgarr[..., -1:]
     if use_white_bg:
-        rgbs = rgbs * alpha + (1 - alpha)
+        if imgarr.dtype == jnp.uint8:
+            rgbs, alpha = rgbs.astype(float) / 255, alpha.astype(float) / 255
+            rgbs = rgbs * alpha + (1 - alpha)
+            rgbs = (rgbs * 255).astype(jnp.uint8)
+        else:
+            rgbs = rgbs * alpha + (1 - alpha)
     return rgbs
 
 
