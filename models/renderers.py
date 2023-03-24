@@ -20,22 +20,26 @@ from utils.types import (
 
 
 def integrate_ray(
-        delta_ts: jax.Array,
+        z_vals: jax.Array,
         densities: jax.Array,
         rgbs: jax.Array,
         use_white_bg: bool,
-    ) -> jax.Array:
+    ) -> Tuple[jax.Array, jax.Array, jax.Array]:
     """
     Inputs:
-        delta_ts [steps]: delta_ts[i] is the distance between the i-th sample and the (i-1)th sample,
-                          with delta_ts[0] being the distance between the first sample and ray
-                          origin
+        z_vals [steps]: z_vals[i] is the distance of the i-th sample from the camera
         densities [steps, 1]: density values along a ray
         rgbs [steps, 3]: rgb values along a ray
 
     Returns:
         rgb [3]: integrated ray colors according to input densities and rgbs.
     """
+    # [steps-1]
+    delta_ts = z_vals[1:] - z_vals[:-1]
+    # [steps]
+    # set infinite delta_t for last sample since we want to stop ray marching at the last sample
+    delta_ts = jnp.concatenate([delta_ts, 1e10 * jnp.ones_like(delta_ts[:1])])
+
     # NOTE:
     #   jax.lax.fori_loop is slower than vectorized operations (below is vectorized version)
 
@@ -70,7 +74,7 @@ def integrate_ray(
 
     final_rgb += use_white_bg * (1 - jnp.sum(weights, axis=0))
 
-    return final_rgb
+    return weights, final_rgb
 
 
 def make_near_far_from_aabb(
@@ -79,6 +83,9 @@ def make_near_far_from_aabb(
         d: jax.Array,  # [3]
     ):
     "Finds a smallest non-negative `t` for each ray, such that o+td is inside the given aabb."
+
+    # make sure d is normalized
+    d /= jnp.linalg.norm(d, axis=-1, keepdims=True)
 
     # avoid d[j] being zero
     eps = 1e-15
@@ -116,6 +123,56 @@ def make_near_far_from_aabb(
     return t_start, t_end
 
 
+def sample_pdf(
+        K: jran.KeyArray,
+        bins: jax.Array,
+        weights: jax.Array,
+        n_importance: int,
+    ):
+    """
+    Importance sampling according to given weights.  Adapted from <bmild/nerf>
+
+    Inputs:
+        bins [steps-1]
+        weights [steps-2]
+        n_importance int
+
+    Returns:
+        samples [n_importance]
+    """
+    weights += 1e-5
+    # [steps-2]
+    pdf = weights / jnp.sum(weights)
+    # [steps-1]
+    cdf = jnp.concatenate([jnp.zeros_like(pdf[:1]), jnp.cumsum(pdf)])
+
+    # sample
+    K, key = jran.split(K, 2)
+    # [n_importance]
+    u = jran.uniform(key, (n_importance,), dtype=bins.dtype, minval=0, maxval=1)
+    # [n_importance], 0 <= inds < steps-1
+    inds = jnp.searchsorted(cdf, u, side="right", method="sort")  # "sort" method is more performant on accelerators
+    # [n_importance], 0 <= inds_below < steps-1
+    inds_below = jnp.maximum(0, inds - 1)
+    # [n_importance], 0 < inds_above < steps-1
+    inds_above = jnp.minimum(cdf.shape[-1] - 1, inds)
+
+    # [n_importance]
+    interval_lengths = cdf[inds_above] - cdf[inds_below]
+    interval_lengths = jnp.where(
+        jnp.signbit(interval_lengths - 1e-5),  # True if interval_lengths < 1e-5
+        jnp.ones_like(interval_lengths),
+        interval_lengths,
+    )
+
+    # t is again normalized into range [0, 1]
+    t = (u - cdf[inds_below]) / interval_lengths
+
+    new_z_vals = bins[inds_below] + t * (bins[inds_above] - bins[inds_below])
+
+    return new_z_vals
+
+
 @jit_jaxfn_with(static_argnames=["options", "nerf_fn"])
 @vmap_jaxfn_with(in_axes=(None, 0, 0, None, None, None, None, None))
 def march_rays(
@@ -145,6 +202,8 @@ def march_rays(
     """
     chex.assert_shape([o_world, d_world], [[..., 3], [..., 3]])
 
+    # make sure d_world is normalized
+    d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True)
     # skip the empty space between camera and scene bbox
     t_start, t_end = make_near_far_from_aabb(
         aabb=aabb,
@@ -178,15 +237,30 @@ def march_rays(
         jnp.broadcast_to(d_world, ray_pts.shape),
     )
 
-    # [steps-1]
-    delta_ts = z_vals[1:] - z_vals[:-1]
-    # [steps]
-    # we want to stop ray marching at last sample
-    delta_ts = jnp.concatenate([delta_ts, 1e10 * jnp.ones_like(delta_ts[:1])])
-    # account for non-unit direction vectors
-    delta_ts *= jnp.linalg.norm(d_world, axis=-1)
+    weights, rgbs = integrate_ray(z_vals, density, rgb, use_white_bg)
 
-    return integrate_ray(delta_ts, density, rgb, use_white_bg)
+    if options.n_importance > 0:
+        z_mids = .5 * (z_vals[1:] + z_vals[:-1])
+        K, key = jran.split(K, 2)
+        z_samples = sample_pdf(key, z_mids, weights[1:-1], options.n_importance)
+        z_samples = jax.lax.stop_gradient(z_samples)
+
+        # update z_vals
+        z_vals = jnp.sort(jnp.concatenate([z_vals, z_samples]))
+
+        # update ray_pts
+        # [steps, 3]
+        ray_pts = o_world[None, :] + z_vals[:, None] * d_world[None, :]
+
+        density, rgb = nerf_fn(
+            param_dict,
+            ray_pts,
+            jnp.broadcast_to(d_world, ray_pts.shape),
+        )
+
+        _, rgbs = integrate_ray(z_vals, density, rgb, use_white_bg)
+
+    return rgbs
 
 
 @jit_jaxfn_with(static_argnames=["camera"])
