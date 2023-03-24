@@ -69,12 +69,15 @@ def integrate_ray(
     # [steps]
     weights = alphas * acc_transmittance
 
-    # [3]
-    final_rgb = jnp.sum(weights[:, None] * rgbs, axis=0)
+    if rgbs is None:
+        return weights
+    else:
+        # [3]
+        final_rgb = jnp.sum(weights[:, None] * rgbs, axis=0)
 
-    final_rgb += use_white_bg * (1 - jnp.sum(weights, axis=0))
+        final_rgb += use_white_bg * (1 - jnp.sum(weights, axis=0))
 
-    return weights, final_rgb
+        return weights, final_rgb
 
 
 def make_near_far_from_aabb(
@@ -237,9 +240,9 @@ def march_rays(
         jnp.broadcast_to(d_world, ray_pts.shape),
     )
 
-    weights, rgbs = integrate_ray(z_vals, density, rgb, use_white_bg)
-
     if options.n_importance > 0:
+        weights = integrate_ray(z_vals, density, None, use_white_bg)
+
         z_mids = .5 * (z_vals[1:] + z_vals[:-1])
         K, key = jran.split(K, 2)
         z_samples = sample_pdf(key, z_mids, weights[1:-1], options.n_importance)
@@ -258,7 +261,7 @@ def march_rays(
             jnp.broadcast_to(d_world, ray_pts.shape),
         )
 
-        _, rgbs = integrate_ray(z_vals, density, rgb, use_white_bg)
+    _, rgbs = integrate_ray(z_vals, density, rgb, use_white_bg)
 
     return rgbs
 
