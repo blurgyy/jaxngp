@@ -202,11 +202,6 @@ def train(args: NeRFArgs, logger: logging.Logger):
         use_white_bg=args.render.use_white_bg,
     )
 
-    # val_transform = RigidTransformation(
-    #     rotation=scene_metadata_train.all_transforms[3, :9].reshape(3, 3),
-    #     translation=scene_metadata_train.all_transforms[3, -3:].reshape(3),
-    # )
-
     scene_metadata_val, val_views = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split="val",
@@ -251,7 +246,13 @@ def train(args: NeRFArgs, logger: logging.Logger):
         logger.info("epoch#{:03d}: per-pixel loss={:.2e}".format(ep_log, loss / scene_metadata_train.all_xys.shape[0]))
 
         logger.info("saving training state ... ")
-        ckpt_name = checkpoints.save_checkpoint(args.exp_dir, state, step=ep_log, overwrite=True, keep=2**30)
+        ckpt_name = checkpoints.save_checkpoint(
+            args.exp_dir,
+            state,
+            step=ep_log * args.train.n_batches,
+            overwrite=True,
+            keep=2**30,
+        )
         logger.info("training state of epoch {} saved to: {}".format(ep_log, ckpt_name))
 
         # validate on `args.val_num` random camera transforms
