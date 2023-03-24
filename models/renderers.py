@@ -39,12 +39,34 @@ def integrate_ray(
     # NOTE:
     #   jax.lax.fori_loop is slower than vectorized operations (below is vectorized version)
 
-    # [steps, 1]
-    alphas = 1 - jnp.exp(-densities * delta_ts[:, None])
-    # [steps, 1]
-    weights = alphas * jnp.cumprod(1 - alphas + 1e-15, axis=0)
+    # [steps]
+    alphas = 1 - jnp.exp(-densities.squeeze() * delta_ts)
+
+    # Compute accumulated transmittance up to this sample.  Prepending a value of `1.0` to reflect
+    # that the transmittance at the first sample is 100%.
+    #
+    # In the original NeRF code the author used `tf.math.cumprod(exclusive=True)` to prepend the 1.0
+    # and cut the final sample, but jax.numpy does not have an `exclusive` flag for its `cumprod`
+    # function, so we manually do it like below.
+    # [steps+1]
+    acc_transmittance = jnp.cumprod(
+        jnp.concatenate(
+            [
+                jnp.ones_like(alphas[:1]),
+                1 - alphas + 1e-15,
+            ],
+        ),
+    )
+    # exclude the final sample which we set its density to inf earlier
+    # [steps]
+    acc_transmittance = acc_transmittance[:-1]
+
+    # weights, reflects the probability of the ray not being absorbed up to this sample.
+    # [steps]
+    weights = alphas * acc_transmittance
+
     # [3]
-    final_rgb = jnp.sum(weights * rgbs, axis=0)
+    final_rgb = jnp.sum(weights[:, None] * rgbs, axis=0)
 
     final_rgb += use_white_bg * (1 - jnp.sum(weights, axis=0))
 
