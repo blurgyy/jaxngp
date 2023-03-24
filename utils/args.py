@@ -105,7 +105,10 @@ class NeRFArgs:
     )
 
     train: TrainingArgs=TrainingArgs(
-        lr=1e-2,
+        # After fixing ray integration weights (6cdaed1), the "mic", "ficus" models from the
+        # nerf-synthetic dataset fail to converge.  Using a smaller initial lr like here (1e-3)
+        # makes them converge again.
+        lr=1e-3,
         momentum=None,
         bs=2**10,
         n_epochs=32,
