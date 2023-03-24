@@ -154,6 +154,10 @@ def make_nerf(
         pos_enc: PositionalEncodingType,
         dir_enc: DirectionalEncodingType,
 
+        # encoding levels
+        pos_levels: int,
+        dir_levels: int,
+
         # layer widths
         density_Ds: List[int],
         rgb_Ds: List[int],
@@ -174,15 +178,13 @@ def make_nerf(
         raise NotImplementedError("Frequency encoding for NeRF is not tuned")
         position_encoder = FrequencyEncoder(dim=3, L=10)
     elif pos_enc == "hashgrid":
-        log2_min_res = 4
-        log2_max_res = 12
         position_encoder = HashGridEncoder(
             dim=3,
-            L=log2_max_res - log2_min_res + 1,
+            L=pos_levels,
             T=find_smallest_prime_larger_or_equal_than(2**20),
             F=2,
-            N_min=2**log2_min_res,
-            N_max=2**log2_max_res,
+            N_min=2**4,
+            N_max=2**(4+pos_levels-1),
             param_dtype=jnp.float32,
         )
     else:
@@ -193,7 +195,7 @@ def make_nerf(
         )
 
     if dir_enc == "sh":
-        direction_encoder = SphericalHarmonicsEncoder(L=4)
+        direction_encoder = SphericalHarmonicsEncoder(L=dir_levels)
     else:
         raise mkValueError(
             desc="directional encoding",
@@ -237,6 +239,9 @@ def make_nerf_ngp(aabb: AABB) -> NeRF:
 
         pos_enc="hashgrid",
         dir_enc="sh",
+
+        pos_levels=9,  # 2**4, 2**5, ..., 2**12
+        dir_levels=4,
 
         density_Ds=[64],
         density_out_dim=16,
