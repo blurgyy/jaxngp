@@ -158,7 +158,8 @@ def train(args: NeRFArgs, logger: logging.Logger):
         init_value=args.train.lr,
         transition_steps=10_000,
         decay_rate=1/3,  # decay to `1/3 * init_lr` after `transition_steps` steps
-        transition_begin=20_000,  # hold the initial lr value for the initial 20k steps
+        staircase=True,  # use integer division to determine lr drop step
+        transition_begin=10_000,  # hold the initial lr value for the initial 10k steps (but first lr drop happens at 20k steps because `staircase` is specified)
         end_value=args.train.lr / 100,  # stop decaying at `1/100 * init_lr`
     )
     optimizer = optax.adamw(
