@@ -68,7 +68,7 @@ def test(args: NeRFArgs, logger: logging.Logger):
             camera=scene_metadata_test.camera,
             transform_cw=transform,
             options=args.render,
-            raymarch_options=args.raymarch,
+            raymarch_options=args.raymarch_eval,
             param_dict={"params": params},
             nerf_fn=model.apply,
         )

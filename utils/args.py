@@ -118,10 +118,15 @@ class NeRFArgs:
     # Width of axis-aligned bounding-box
     bound: float=1.5
 
-    raymarch: RayMarchingOptions=RayMarchingOptions(
+    raymarch_train: RayMarchingOptions=RayMarchingOptions(
         steps=2**7,  # TODO: add coarse network, or implement ray-marching with early stop
         stratified=True,
         n_importance=2**7,
+    )
+    raymarch_eval: RayMarchingOptions=RayMarchingOptions(
+        steps=2**8,
+        stratified=True,
+        n_importance=2**8+2**9,
     )
 
     render: RenderingOptions=RenderingOptions(

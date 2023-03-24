@@ -229,7 +229,7 @@ def train(args: NeRFArgs, logger: logging.Logger):
                 K=key,
                 aabb=aabb,
                 scene_metadata=scene_metadata_train,
-                raymarch_options=args.raymarch,
+                raymarch_options=args.raymarch_train,
                 render_options=args.render,
                 permutation=permutation.take(args.train.n_batches).as_numpy_iterator(),
                 state=state,
@@ -277,7 +277,7 @@ def train(args: NeRFArgs, logger: logging.Logger):
                 camera=scene_metadata_val.camera,
                 transform_cw=val_transform,
                 options=args.render,
-                raymarch_options=args.raymarch,
+                raymarch_options=args.raymarch_eval,
                 param_dict={"params": state.params},
                 nerf_fn=state.apply_fn,
             )
