@@ -75,7 +75,7 @@ def test(args: NeRFArgs, logger: logging.Logger):
         gt_image = data.blend_alpha_channel(gt_image, use_white_bg=args.render.use_white_bg)
         logger.info("{}: psnr={}".format(test_views[test_i].file, data.psnr(gt_image, image)))
         dest = args.exp_dir\
-            .joinpath("test")\
+            .joinpath(args.test_split)\
             .joinpath("{:03d}.png".format(test_i))
         dest.parent.mkdir(parents=True, exist_ok=True)
         logger.info("saving image to {}".format(dest))
