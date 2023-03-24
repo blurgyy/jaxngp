@@ -27,7 +27,7 @@ import tensorflow as tf
 
 PositionalEncodingType = Literal["frequency", "hashgrid"]
 DirectionalEncodingType = Literal["sh"]
-ActivationType = Literal["exponential", "sigmoid"]
+ActivationType = Literal["exponential", "sigmoid", "truncated_exponential"]
 
 
 _tqdm_format = "SBRIGHT{desc}RESET: HI{percentage:3.0f}%RESET {n_fmt}/{total_fmt} [{elapsed}<HI{remaining}RESET, {rate_fmt}]"
