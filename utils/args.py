@@ -119,7 +119,7 @@ class NeRFArgs:
     bound: float=1.5
 
     raymarch: RayMarchingOptions=RayMarchingOptions(
-        steps=2**6,
+        steps=2**7,  # TODO: add coarse network, or implement ray-marching with early stop
         stratified=True,
         n_importance=2**7,
     )
