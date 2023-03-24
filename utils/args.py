@@ -112,7 +112,7 @@ class NeRFArgs:
         momentum=None,
         bs=2**10,
         n_epochs=32,
-        n_batches=2**10,
+        n_batches=2**12,
     )
 
     # Width of axis-aligned bounding-box
