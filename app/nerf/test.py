@@ -2,6 +2,7 @@ import logging
 
 from PIL import Image
 from flax.training import checkpoints
+import jax
 import jax.numpy as jnp
 import jax.random as jran
 import numpy as np
@@ -43,6 +44,7 @@ def test(args: NeRFArgs, logger: logging.Logger):
 
     # load parameters
     params = checkpoints.restore_checkpoint(args.test_ckpt, target=None)["params"]
+    params = jax.tree_util.tree_map(lambda x: jnp.asarray(x), params)
 
     scene_metadata_test, test_views = make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
