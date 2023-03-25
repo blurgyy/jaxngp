@@ -219,6 +219,7 @@ class HashGridEncoder(Encoder):
         pos_floored = jnp.floor(pos_scaled).astype(int)
         # [..., 2**dim, dim]
         vert_pos = pos_floored[..., None, :] + cell_vert_offsets[dim]
+        vert_pos = vert_pos.astype(jnp.uint32)
         # NOTE:
         #   don't use too large primes (e.g. >= 2**20), because some larger images can easily have
         #   axes with more than 2**11(=2048) pixels, and jax represents integers as int32 by
