@@ -75,8 +75,8 @@ class NeRF(nn.Module):
         )
 
         x = self.density_mlp(pos_enc)
-        # [..., 1]
-        density = x[..., 0:1]
+        # [..., 1], [..., density_MLP_out-1]
+        density, x = jnp.split(x, [1], axis=-1)
 
         # paper:
         #   The color MLP adds view-dependent color variation. Its input is the concatenation of
