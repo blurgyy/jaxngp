@@ -190,7 +190,7 @@ class HashGridEncoder(Encoder):
         indices = functools.reduce(
             lambda prev, d: prev * res + vert_pos[..., d],
             range(dim),
-            1,
+            0,
         )
         return indices, pos_scaled, vert_pos
 
