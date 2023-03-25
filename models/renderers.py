@@ -24,7 +24,7 @@ def integrate_ray(
         densities: jax.Array,
         rgbs: jax.Array,
         use_white_bg: bool,
-    ) -> Tuple[jax.Array, jax.Array, jax.Array]:
+    ):
     """
     Inputs:
         z_vals [steps]: z_vals[i] is the distance of the i-th sample from the camera
