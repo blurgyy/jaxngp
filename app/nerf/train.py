@@ -245,7 +245,7 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
             logger.info("exiting cleanly ...")
             exit()
 
-        logger.info("epoch#{:03d}: per-pixel loss={:.2e}".format(ep_log, loss / scene_metadata_train.all_xys.shape[0]))
+        logger.info("epoch#{:03d}: per-pixel loss={:.2e}".format(ep_log, loss / (args.train.n_batches * args.render.ray_chunk_size)))
 
         logger.info("saving training state ... ")
         ckpt_name = checkpoints.save_checkpoint(
