@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from dataclasses import dataclass
 from functools import partial, reduce
 import os
 from pathlib import Path
@@ -7,7 +8,6 @@ from typing import Tuple, Union
 from typing_extensions import assert_never
 
 from PIL import Image
-from flax.struct import dataclass
 import numpy as np
 import tyro
 
@@ -16,7 +16,7 @@ from utils.data import add_border, blend_alpha_channel, side_by_side
 from utils.types import LogLevel
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class Concatenate:
     # output image save path, the path will be overwritten with a warning
     out: Path
@@ -29,12 +29,12 @@ class Concatenate:
     use_white_bg: bool=True
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class Metrics:
     psnr: bool=True
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class Args:
     do: Union[Concatenate, Metrics]
     logging: LogLevel = "INFO"

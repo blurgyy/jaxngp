@@ -15,7 +15,7 @@ import tyro
 from models.nerfs import make_nerf_ngp
 from models.renderers import march_rays, render_image
 from utils import common, data
-from utils.args import NeRFArgs
+from utils.args import NeRFTrainingArgs
 from utils.types import AABB, PinholeCamera, RayMarchingOptions, RenderingOptions, RigidTransformation
 
 
@@ -132,7 +132,7 @@ def train_epoch(
     return loss, state
 
 
-def train(args: NeRFArgs, logger: logging.Logger):
+def train(args: NeRFTrainingArgs, logger: logging.Logger):
     args.exp_dir.mkdir(parents=True)
     args.exp_dir.joinpath("config.yaml").write_text(tyro.to_yaml(args))
     logger.info("configurations saved to '{}'".format(args.exp_dir.joinpath("config.yaml")))
@@ -221,7 +221,7 @@ def train(args: NeRFArgs, logger: logging.Logger):
             shuffle=True
         )\
             .batch(args.render.ray_chunk_size, drop_remainder=True)\
-            .repeat(args.data.loop)
+            .repeat(args.train.data_loop)
 
         try:
             K, key = jran.split(K, 2)
@@ -229,7 +229,7 @@ def train(args: NeRFArgs, logger: logging.Logger):
                 K=key,
                 aabb=aabb,
                 scene_metadata=scene_metadata_train,
-                raymarch_options=args.raymarch_train,
+                raymarch_options=args.raymarch,
                 render_options=args.render,
                 permutation=permutation.take(args.train.n_batches).as_numpy_iterator(),
                 state=state,
@@ -276,14 +276,14 @@ def train(args: NeRFArgs, logger: logging.Logger):
                 aabb=aabb,
                 camera=scene_metadata_val.camera,
                 transform_cw=val_transform,
-                options=args.render,
+                options=args.render_eval,
                 raymarch_options=args.raymarch_eval,
                 param_dict={"params": state.params},
                 nerf_fn=state.apply_fn,
             )
             gt_image = Image.open(val_views[val_i].file)
             gt_image = np.asarray(gt_image)
-            gt_image = data.blend_alpha_channel(gt_image, use_white_bg=args.render.use_white_bg)
+            gt_image = data.blend_alpha_channel(gt_image, use_white_bg=args.render_eval.use_white_bg)
             logger.info("{}: psnr={}".format(val_views[val_i].file, data.psnr(gt_image, image)))
             dest = args.exp_dir\
                 .joinpath("validataion")\

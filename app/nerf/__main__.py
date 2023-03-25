@@ -1,38 +1,45 @@
 #!/usr/bin/env python3
 
+from typing import Annotated, Union
+from typing_extensions import assert_never
+
 import tyro
 
 from utils import common
-from utils.args import NeRFArgs
+from utils.args import NeRFTestingArgs, NeRFTrainingArgs
 
 
-def main(args: NeRFArgs):
+MainArgsType = Union[
+    Annotated[
+        NeRFTrainingArgs,
+        tyro.conf.subcommand(
+            name="train",
+            prefix_name=False,
+        ),
+    ],
+    Annotated[
+        NeRFTestingArgs,
+        tyro.conf.subcommand(
+            name="test",
+            prefix_name=False,
+        ),
+    ],
+]
+
+
+def main(args: MainArgsType):
     logger = common.setup_logging("nerf")
 
-    if args.train_ckpt is not None and args.test_ckpt is not None:
-        logger.error("--train-ckpt and --test-ckpt shouldn't be used together")
-        exit(1)
-
-    # set running mode
-    if args.test_ckpt is not None:
-        run_mode = "test"
-    elif args.exp_dir.exists():
-        logger.error("specified experiment directory '{}' already exists".format(args.exp_dir))
-        exit(2)
-    else:
-        run_mode = "train"
-
-    if args.train_ckpt is not None:
-        raise NotImplementedError("Resuming are not implemented")
-
-    if run_mode == "train":
+    if isinstance(args, NeRFTrainingArgs):
         from app.nerf.train import train
         train(args, logger)
-    elif run_mode == "test":
+    elif isinstance(args, NeRFTestingArgs):
         from app.nerf.test import test
         test(args, logger)
+    else:
+        assert_never()
 
 
 if __name__ == "__main__":
-    cfg = tyro.cli(NeRFArgs)
-    main(cfg)
+    args = tyro.cli(MainArgsType)
+    main(args)

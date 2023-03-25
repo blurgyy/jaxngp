@@ -10,12 +10,12 @@ import numpy as np
 from models.nerfs import make_nerf_ngp
 from models.renderers import render_image
 from utils import common, data
-from utils.args import NeRFArgs
+from utils.args import NeRFTestingArgs
 from utils.data import make_nerf_synthetic_scene_metadata
 from utils.types import RigidTransformation
 
 
-def test(args: NeRFArgs, logger: logging.Logger):
+def test(args: NeRFTestingArgs, logger: logging.Logger):
     if not args.test_ckpt.exists():
         logger.warn("specified checkpoint '{}' does not exist".format(args.test_ckpt))
         exit(1)
@@ -68,7 +68,7 @@ def test(args: NeRFArgs, logger: logging.Logger):
             camera=scene_metadata_test.camera,
             transform_cw=transform,
             options=args.render,
-            raymarch_options=args.raymarch_eval,
+            raymarch_options=args.raymarch,
             param_dict={"params": params},
             nerf_fn=model.apply,
         )

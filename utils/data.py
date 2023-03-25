@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
+from dataclasses import dataclass
 import json
 from pathlib import Path
 from typing import Literal, Tuple, Union
 
 from PIL import Image
 import chex
-from flax.struct import dataclass
 import jax
 import jax.numpy as jnp
 import jax.random as jran
@@ -19,7 +19,7 @@ from utils.types import PinholeCamera, RigidTransformation
 Dataset = tf.data.Dataset
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class ImageMetadata:
     H: int
     W: int
@@ -28,7 +28,7 @@ class ImageMetadata:
     rgbs: jax.Array  # float,[H*W, 3]: normalized rgb values in range [0, 1]
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class ViewMetadata:
     H: int
     W: int
@@ -38,7 +38,7 @@ class ViewMetadata:
     file: Path
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class SceneMetadata:
     # TODO:
     #   Make this `camera`'s H, W configurable and resize loaded images accordingly (specified H,W

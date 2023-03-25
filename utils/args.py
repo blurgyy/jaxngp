@@ -1,13 +1,12 @@
 from dataclasses import field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Literal, Optional
-
-from flax.struct import dataclass
 
 from utils.types import LogLevel, RayMarchingOptions, RenderingOptions
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class CommonArgs:
     # log level
     logging: LogLevel = "INFO"
@@ -18,15 +17,8 @@ class CommonArgs:
     # display model information after model init
     display_model_summary: bool=False
 
-@dataclass
-class DataArgs:
-    # number of workers used in dataloaders
-    n_workers: int
-    # loop within training data for this number of iterations, this helps reduce the effective
-    # dataloader overhead.
-    loop: int
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class TrainingArgs:
     # learning rate
     lr: float
@@ -42,15 +34,15 @@ class TrainingArgs:
     # batches per epoch
     n_batches: int
 
+    # loop within training data for this number of iterations, this helps reduce the effective
+    # dataloader overhead.
+    data_loop: int
 
-@dataclass
+
+@dataclass(frozen=True, kw_only=True)
 class ImageFitArgs:
     common: CommonArgs=CommonArgs(
         prec=32,
-    )
-    data: DataArgs=DataArgs(
-        n_workers=2,
-        loop=1,
     )
     train: TrainingArgs=TrainingArgs(
         # paper:
@@ -71,38 +63,34 @@ class ImageFitArgs:
         bs=2**10,
         n_epochs=32,
         n_batches=2**30,
+        data_loop=1,
     )
 
 
-@dataclass
-class NeRFArgs:
+@dataclass(frozen=True, kw_only=True)
+class _NeRFArgs:
     # a nerf-synthetic format directory
     data_root: Path
 
     # experiment artifacts are saved under this directory
     exp_dir: Path
 
+    raymarch: RayMarchingOptions
+    render: RenderingOptions
+
+    # Width of axis-aligned bounding-box
+    bound: float=1.5
+
+    common: CommonArgs=CommonArgs()
+
+
+@dataclass(frozen=True, kw_only=True)
+class NeRFTrainingArgs(_NeRFArgs):
     # number of images to validate
     val_num: int=3
 
     # if specified, continue training from this checkpoint
     train_ckpt: Optional[Path]=None
-
-    # if specified, switch to test mode and use this checkpoint
-    test_ckpt: Optional[Path]=None
-
-    # which test images should be tested on, indices are 0-based
-    test_indices: List[int]=field(default_factory=list)
-
-    # which split to test on
-    test_split: Literal["train", "test", "val"]="test"
-
-    common: CommonArgs=CommonArgs()
-
-    data: DataArgs=DataArgs(
-        n_workers=0,
-        loop=1,
-    )
 
     train: TrainingArgs=TrainingArgs(
         # After fixing ray integration weights (6cdaed1), the "mic", "ficus" models from the
@@ -113,22 +101,49 @@ class NeRFArgs:
         bs=2**10,
         n_epochs=32,
         n_batches=2**12,
+        data_loop=1,
     )
 
-    # Width of axis-aligned bounding-box
-    bound: float=1.5
-
-    raymarch_train: RayMarchingOptions=RayMarchingOptions(
+    # raymarching/rendering options during training
+    raymarch: RayMarchingOptions=RayMarchingOptions(
         steps=2**7,  # TODO: add coarse network, or implement ray-marching with early stop
         stratified=True,
         n_importance=2**7,
     )
+    render: RenderingOptions=RenderingOptions(
+        ray_chunk_size=2**10,
+        use_white_bg=True,
+    )
+
+    # raymarching/rendering options for validating during training
     raymarch_eval: RayMarchingOptions=RayMarchingOptions(
         steps=2**8,
         stratified=True,
         n_importance=2**8+2**9,
     )
+    render_eval: RenderingOptions=RenderingOptions(
+        ray_chunk_size=2**10,
+        use_white_bg=True,
+    )
 
+
+@dataclass(frozen=True, kw_only=True)
+class NeRFTestingArgs(_NeRFArgs):
+    # if specified, switch to test mode and use this checkpoint
+    test_ckpt: Path
+
+    # which test images should be tested on, indices are 0-based
+    test_indices: List[int]=field(default_factory=list)
+
+    # which split to test on
+    test_split: Literal["train", "test", "val"]="test"
+
+    # raymarching/rendering options during testing
+    raymarch: RayMarchingOptions=RayMarchingOptions(
+        steps=2**8,
+        stratified=True,
+        n_importance=2**8+2**9,
+    )
     render: RenderingOptions=RenderingOptions(
         ray_chunk_size=2**10,
         use_white_bg=True,
