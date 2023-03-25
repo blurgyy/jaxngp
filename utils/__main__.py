@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from functools import partial, reduce
 import os
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Annotated, Tuple, Union
 from typing_extensions import assert_never
 
 from PIL import Image
@@ -13,7 +13,6 @@ import tyro
 
 from utils.common import setup_logging
 from utils.data import add_border, blend_alpha_channel, side_by_side
-from utils.types import LogLevel
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -34,15 +33,27 @@ class Metrics:
     psnr: bool=True
 
 
-@dataclass(frozen=True, kw_only=True)
-class Args:
-    do: Union[Concatenate, Metrics]
-    logging: LogLevel = "INFO"
+Args = Union[
+    Annotated[
+        Concatenate,
+        tyro.conf.subcommand(
+            name="cat",
+            prefix_name=False,
+        ),
+    ],
+    Annotated[
+        Metrics,
+        tyro.conf.subcommand(
+            name="metrics",
+            prefix_name=False,
+        ),
+    ],
+]
 
 
 def main(_args: Tuple[Args, list[str]]):
     args, extra_cli_args = _args
-    logger = setup_logging("utils", args.logging)
+    logger = setup_logging("utils", "INFO")
     do = args.do
     if isinstance(do, Concatenate):
         if do.out.is_dir():
