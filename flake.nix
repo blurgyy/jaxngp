@@ -75,6 +75,7 @@
       in pkgs.mkShell {  # impure
         name = "cuda";
         buildInputs = [
+          pkgs.colmapWithCuda
           (pkgs.${py}.withPackages (pp: mkPythonDeps {
               inherit pp;
               extraPackages = [];
@@ -110,6 +111,7 @@
       in pkgs.mkShell {
         name = "cpu";
         buildInputs = with pkgs; [
+          colmap
           (python3.withPackages (pp: mkPythonDeps {
               inherit pp;
               extraPackages = [];
