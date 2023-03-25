@@ -287,10 +287,17 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
             logger.info("{}: psnr={}".format(val_views[val_i].file, data.psnr(gt_image, image)))
             dest = args.exp_dir\
                 .joinpath("validataion")\
-                .joinpath("ep{}".format(ep_log))\
-                .joinpath("{:03d}.png".format(val_i))
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            logger.info("saving image to {}".format(dest))
+                .joinpath("ep{}".format(ep_log))
+            dest.mkdir(parents=True, exist_ok=True)
+
+            # prediction image
+            dest_pred = dest.joinpath("{:03d}-pred.png".format(val_i))
+            logger.debug("saving comparison image to {}".format(dest_pred))
+            Image.fromarray(np.asarray(image)).save(dest_pred)
+
+            # comparison image
+            dest_comparison = dest.joinpath("{:03d}-comparison.png".format(val_i))
+            logger.debug("saving comparison image to {}".format(dest_comparison))
             comparison_image_data = data.side_by_side(
                 gt_image,
                 image,
@@ -298,4 +305,4 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
                 W=scene_metadata_val.camera.W
             )
             comparison_image_data = data.add_border(comparison_image_data)
-            Image.fromarray(np.asarray(comparison_image_data)).save(dest)
+            Image.fromarray(np.asarray(comparison_image_data)).save(dest_comparison)

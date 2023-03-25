@@ -77,10 +77,17 @@ def test(args: NeRFTestingArgs, logger: logging.Logger):
         gt_image = data.blend_alpha_channel(gt_image, use_white_bg=args.render.use_white_bg)
         logger.info("{}: psnr={}".format(test_views[test_i].file, data.psnr(gt_image, image)))
         dest = args.exp_dir\
-            .joinpath(args.test_split)\
-            .joinpath("{:03d}.png".format(test_i))
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        logger.info("saving image to {}".format(dest))
+            .joinpath(args.test_split)
+        dest.mkdir(parents=True, exist_ok=True)
+
+        # prediction image
+        dest_pred = dest.joinpath("{:03d}-pred.png".format(test_i))
+        logger.debug("saving comparison image to {}".format(dest_pred))
+        Image.fromarray(np.asarray(image)).save(dest_pred)
+
+        # comparison image
+        dest_comparison = dest.joinpath("{:03d}-comparison.png".format(test_i))
+        logger.debug("saving comparison image to {}".format(dest_comparison))
         comparison_image_data = data.side_by_side(
             gt_image,
             image,
@@ -88,6 +95,6 @@ def test(args: NeRFTestingArgs, logger: logging.Logger):
             W=scene_metadata_test.camera.W
         )
         comparison_image_data = data.add_border(comparison_image_data)
-        Image.fromarray(np.asarray(comparison_image_data)).save(dest)
+        Image.fromarray(np.asarray(comparison_image_data)).save(dest_comparison)
 
     return params
