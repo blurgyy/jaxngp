@@ -68,7 +68,7 @@ class HashGridEncoder(Encoder):
             res = int(self.N_min * (b**i))
             resolutions.append(res)
 
-            n_entries = (res + 1) ** 2
+            n_entries = (res + 1) ** self.dim
 
             if n_entries <= self.T:
                 indexing_methods.append(self.onebyone)
