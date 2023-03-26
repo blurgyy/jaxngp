@@ -190,13 +190,20 @@ def make_nerf(
         raise NotImplementedError("Frequency encoding for NeRF is not tuned")
         position_encoder = FrequencyEncoder(dim=3, L=10)
     elif pos_enc == "hashgrid":
+        bound_max = max(
+            [
+                aabb[0][1] - aabb[0][0],
+                aabb[1][1] - aabb[1][0],
+                aabb[2][1] - aabb[2][0],
+            ]
+        ) / 2
         position_encoder = HashGridEncoder(
             dim=3,
             L=pos_levels,
             T=find_smallest_prime_larger_or_equal_than(2**20),
             F=2,
             N_min=2**4,
-            N_max=2**(4+pos_levels-1),
+            N_max=int(2**12 * bound_max),
             param_dtype=jnp.float32,
         )
     else:
@@ -252,7 +259,7 @@ def make_nerf_ngp(aabb: AABB) -> NeRF:
         pos_enc="hashgrid",
         dir_enc="sh",
 
-        pos_levels=9,  # 2**4, 2**5, ..., 2**12
+        pos_levels=16,
         dir_levels=4,
 
         density_Ds=[64],
