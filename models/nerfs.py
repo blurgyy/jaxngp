@@ -94,8 +94,8 @@ class NeRF(nn.Module):
         return density, rgb
 
 
-class PositionBasedMLP(nn.Module):
-    "Position-based MLP"
+class CoordinateBasedMLP(nn.Module):
+    "Coordinate-based MLP"
 
     # hidden layer widths
     Ds: List[int]
@@ -213,12 +213,12 @@ def make_nerf(
             type=DirectionalEncodingType,
         )
 
-    density_mlp = PositionBasedMLP(
+    density_mlp = CoordinateBasedMLP(
         Ds=density_Ds,
         out_dim=density_out_dim,
         skip_in_layers=density_skip_in_layers
     )
-    rgb_mlp = PositionBasedMLP(
+    rgb_mlp = CoordinateBasedMLP(
         Ds=rgb_Ds,
         out_dim=rgb_out_dim,
         skip_in_layers=rgb_skip_in_layers
@@ -270,12 +270,12 @@ def make_debug_nerf(aabb: AABB) -> NeRF:
         aabb=aabb,
         position_encoder=lambda x: x,
         direction_encoder=lambda x: x,
-        density_mlp=PositionBasedMLP(
+        density_mlp=CoordinateBasedMLP(
             Ds=[64],
             out_dim=16,
             skip_in_layers=[],
         ),
-        rgb_mlp=PositionBasedMLP(
+        rgb_mlp=CoordinateBasedMLP(
             Ds=[64, 64],
             out_dim=3,
             skip_in_layers=[],
