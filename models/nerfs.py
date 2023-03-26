@@ -104,7 +104,7 @@ class PositionBasedMLP(nn.Module):
 
     # as described in the paper
     kernel_init: Initializer=nn.initializers.glorot_uniform()
-    bias_init: Initializer=nn.initializers.glorot_uniform()
+    bias_init: Initializer=nn.initializers.uniform()
 
     @nn.compact
     def __call__(self, x: jax.Array) -> jax.Array:
@@ -112,8 +112,18 @@ class PositionBasedMLP(nn.Module):
         for i, d in enumerate(self.Ds):
             if i in self.skip_in_layers:
                 x = jnp.concatenate([in_x, x], axis=-1)
-            x = nn.relu(nn.Dense(d)(x))
-        return nn.Dense(self.out_dim)(x)
+            x = nn.Dense(
+                d,
+                kernel_init=self.kernel_init,
+                bias_init=self.bias_init,
+            )(x)
+            x = nn.relu(x)
+        x = nn.Dense(
+            self.out_dim,
+            kernel_init=self.kernel_init,
+            bias_init=self.bias_init,
+        )(x)
+        return x
 
 
 def make_activation(act: ActivationType):
