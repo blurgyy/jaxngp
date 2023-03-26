@@ -127,27 +127,27 @@ class CoordinateBasedMLP(nn.Module):
 
 
 def make_activation(act: ActivationType):
-    @jax.custom_vjp
-    def trunc_exp(x):
-        "Exponential function, except its gradient is capped with a maximum absolute value of 15.0"
-        return jnp.exp(x)
-    def __fwd_trunc_exp(x):
-        y = trunc_exp(x)
-        aux = jnp.exp(x)  # aux contains additional information that is useful in the backward pass
-        return y, aux
-    def __bwd_trunc_exp(aux, grad_y):
-        grad_x = jnp.clip(aux * grad_y, -15, 15)
-        return (grad_x, )
-    trunc_exp.defvjp(
-        fwd=__fwd_trunc_exp,
-        bwd=__bwd_trunc_exp,
-    )
-
     if act == "sigmoid":
         return nn.sigmoid
     elif act == "exponential":
         return jnp.exp
     elif act == "truncated_exponential":
+        @jax.custom_vjp
+        def trunc_exp(x):
+            "Exponential function, except its gradient is capped with a maximum absolute value of 15.0"
+            return jnp.exp(x)
+        def __fwd_trunc_exp(x):
+            y = trunc_exp(x)
+            aux = jnp.exp(x)  # aux contains additional information that is useful in the backward pass
+            return y, aux
+        def __bwd_trunc_exp(aux, grad_y):
+            grad_x = jnp.clip(aux * grad_y, -15, 15)
+            return (grad_x, )
+        trunc_exp.defvjp(
+            fwd=__fwd_trunc_exp,
+            bwd=__bwd_trunc_exp,
+        )
+
         return trunc_exp
     elif act == "relu":
         return nn.relu
