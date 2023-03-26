@@ -135,8 +135,8 @@ def make_activation(act: ActivationType):
         y = trunc_exp(x)
         aux = jnp.exp(x)  # aux contains additional information that is useful in the backward pass
         return y, aux
-    def __bwd_trunc_exp(grad_x, grad_y):
-        grad_x = jnp.clip(grad_x * grad_y, -15, 15)
+    def __bwd_trunc_exp(aux, grad_y):
+        grad_x = jnp.clip(aux * grad_y, -15, 15)
         return (grad_x, )
     trunc_exp.defvjp(
         fwd=__fwd_trunc_exp,
