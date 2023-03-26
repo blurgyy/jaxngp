@@ -149,6 +149,8 @@ def make_activation(act: ActivationType):
         return jnp.exp
     elif act == "truncated_exponential":
         return trunc_exp
+    elif act == "relu":
+        return nn.relu
     else:
         raise mkValueError(
             desc="activation",
