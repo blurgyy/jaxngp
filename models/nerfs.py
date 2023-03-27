@@ -59,15 +59,7 @@ class NeRF(nn.Module):
         # [..., 1], [..., density_MLP_out-1]
         density, x = jnp.split(x, [1], axis=-1)
 
-        # paper:
-        #   The color MLP adds view-dependent color variation. Its input is the concatenation of
-        #   • the 16 output values of the density MLP, and
-        #   • the view direction projected onto the first 16 coefficients of the spherical harmonics
-        #     basis (i.e. up to degree 4). This is a natural frequency encoding over unit vectors.
-        # x = nn.relu(x)
-
         # [..., 3]
-        # rgb = self.rgb_mlp(jnp.concatenate([x[..., 1:], dir_enc], axis=-1)) 
         rgb = self.rgb_mlp(jnp.concatenate([x, dir_enc], axis=-1))
 
         density, rgb = self.density_activation(density), self.rgb_activation(rgb)
