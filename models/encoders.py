@@ -153,7 +153,7 @@ class HashGridEncoder(Encoder):
         pos_offset = pos_scaled[..., None, :] - vert_pos[..., 0:1, :]
         # [L, ..., 2**dim, dim]
         widths = jnp.clip(
-            # cell_vert_offsets: [2**dim, 2]
+            # cell_vert_offsets: [2**dim, dim]
             (1 - cell_vert_offsets[dim]) + (2 * cell_vert_offsets[dim] - 1) * pos_offset,
             0,
             1,
