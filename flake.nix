@@ -50,7 +50,6 @@
           (depsWith pp).tyro
           pillow
           ipdb
-          sympy
           colorama
 
           jaxlib-bin

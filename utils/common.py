@@ -14,14 +14,12 @@ from typing import (
     get_args,
 )
 
-import chex
 import colorama
 from colorama import Back, Fore, Style
 import jax
 from jax._src.lib import xla_client as xc
 import jax.random as jran
 import numpy as np
-import sympy
 import tensorflow as tf
 
 
@@ -140,17 +138,3 @@ def set_deterministic(seed: int) -> jran.KeyArray:
     np.random.seed(seed)
     tf.random.set_seed(seed)
     return jran.PRNGKey(seed)
-
-
-def find_smallest_prime_larger_or_equal_than(x: int):
-    chex.assert_type(x, int)
-
-    if x <= 2:
-        return 2
-
-    if x & 1 == 0:
-        x += 1
-    while not sympy.isprime(x):
-        x += 2
-
-    return x

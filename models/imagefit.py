@@ -6,7 +6,6 @@ from flax.linen.dtypes import Dtype
 import jax
 
 from models.encoders import FrequencyEncoder, HashGridEncoder
-from utils.common import find_smallest_prime_larger_or_equal_than
 
 
 class ImageFitter(nn.Module):
@@ -31,7 +30,7 @@ class ImageFitter(nn.Module):
                 dim=2,
                 L=16,
                 # ~1Mi entries per level
-                T=find_smallest_prime_larger_or_equal_than(2**20),
+                T=2**20,
                 F=2,
                 N_min=16,
                 N_max=2**19,  # 524288

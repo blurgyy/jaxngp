@@ -15,7 +15,6 @@ from utils.common import (
     ActivationType,
     DirectionalEncodingType,
     PositionalEncodingType,
-    find_smallest_prime_larger_or_equal_than,
     mkValueError,
 )
 from utils.types import AABB
@@ -200,10 +199,10 @@ def make_nerf(
         position_encoder = HashGridEncoder(
             dim=3,
             L=pos_levels,
-            T=find_smallest_prime_larger_or_equal_than(2**20),
+            T=2**19,
             F=2,
             N_min=2**4,
-            N_max=int(2**12 * bound_max),
+            N_max=int(2**11 * bound_max),
             param_dtype=jnp.float32,
         )
     else:

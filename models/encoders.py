@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as jran
 
-from utils.common import find_smallest_prime_larger_or_equal_than, jit_jaxfn_with, vmap_jaxfn_with
+from utils.common import jit_jaxfn_with, vmap_jaxfn_with
 
 
 cell_vert_offsets = {
@@ -43,7 +43,6 @@ class HashGridEncoder(Encoder):
     # Number of levels (16).
     L: int
     # Maximum entries per level (hash table size) (2**14 to 2**24).
-    # T is better set to a prime number, because hashing operations requires taking its modulo.
     T: int
     # Number of feature dimensions per entry (2).
     F: int
