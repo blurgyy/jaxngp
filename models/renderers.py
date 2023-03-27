@@ -373,7 +373,7 @@ def render_image(
     xys, indices = get_indices_chunks(key, camera.H, camera.W, options.ray_chunk_size)
 
     image_array = jnp.empty((camera.H, camera.W, 3), dtype=jnp.uint8)
-    for idcs in tqdm(indices, desc="rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
+    for idcs in tqdm(indices, desc="| rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
         # rgbs = raymarcher(o_world[idcs], d_world[idcs], param_dict)
         K, key = jran.split(K, 2)
         rgbs = march_rays(
