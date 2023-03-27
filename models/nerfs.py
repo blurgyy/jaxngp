@@ -285,8 +285,8 @@ def make_test_cube(width: int, aabb: AABB, density: float=32) -> NeRF:
     @jax.jit
     @jax.vmap
     def cube_rgb_fn(density_xyz_dir: jax.Array) -> jax.Array:
-        # density(1) + xyz(3) + dir(3), only take xyz to infer color
-        x = density_xyz_dir[1:4]
+        # xyz(3) + dir(3), only take xyz to infer color
+        x = density_xyz_dir[:3]
         x = jnp.clip(x, -width/2, width/2)
         return x / width + .5
 

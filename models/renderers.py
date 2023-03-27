@@ -436,7 +436,11 @@ def main():
     # WARN:
     #   since the `test_cube`'s color is varying through space, rendering with too few steps causes
     #   under-sampling, which results in darker appearance in rendered image.
-    raymarch_options = RayMarchingOptions(steps=2**10)
+    raymarch_options = RayMarchingOptions(
+        steps=2**10,
+        stratified=False,
+        n_importance=0,
+    )
     bound = 1.5
     aabb = [[-bound, bound]] * 3
     render_options = RenderingOptions(
