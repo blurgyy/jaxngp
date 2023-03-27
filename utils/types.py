@@ -4,7 +4,7 @@ import jax
 from flax.struct import dataclass
 
 
-AABB = Tuple[Tuple[int, int], Tuple[int, int], Tuple[int, int]]
+AABB = Tuple[Tuple[float, float], Tuple[float, float], Tuple[float, float]]
 DensityAndRGB = Tuple[jax.Array, jax.Array]
 LogLevel = Literal["DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL"]
 
@@ -34,7 +34,7 @@ class RenderingOptions:
 
 @dataclass
 class RigidTransformation:
-    # [3, 3] rotatio matrix
+    # [3, 3] rotation matrix
     rotation: jax.Array
     # [3] translation vector
     translation: jax.Array

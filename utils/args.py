@@ -78,7 +78,7 @@ class _NeRFArgs:
     raymarch: RayMarchingOptions
     render: RenderingOptions
 
-    # Width of axis-aligned bounding-box
+    # half width of axis-aligned bounding-box, i.e. aabb's width is `bound*2`
     bound: float=1.5
 
     common: CommonArgs=CommonArgs()

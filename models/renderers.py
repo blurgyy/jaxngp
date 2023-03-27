@@ -440,9 +440,6 @@ def main():
     # d /= jnp.linalg.norm(d, axis=-1, keepdims=True)
     camera = PinholeCamera(W=W, H=H, focal=focal)
     # ndc_o, ndc_d = make_ndc_rays(o, d, camera)
-    # WARN:
-    #   since the `test_cube`'s color is varying through space, rendering with too few steps causes
-    #   under-sampling, which results in darker appearance in rendered image.
     raymarch_options = RayMarchingOptions(
         steps=2**10,
         stratified=False,
