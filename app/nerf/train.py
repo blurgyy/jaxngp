@@ -265,7 +265,7 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
                 (min(args.val_num, len(val_views)),),
                 replace=False,
             ):
-            logger.info("validating on {}".format(val_views[val_i].file))
+            logger.debug("validating on {}".format(val_views[val_i].file))
             val_transform = RigidTransformation(
                 rotation=scene_metadata_val.all_transforms[val_i, :9].reshape(3, 3),
                 translation=scene_metadata_val.all_transforms[val_i, -3:].reshape(3),
