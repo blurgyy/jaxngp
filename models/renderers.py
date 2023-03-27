@@ -311,15 +311,21 @@ def make_rays_worldspace(
 
 @jit_jaxfn_with(static_argnames=["H", "W", "chunk_size"])
 def get_indices_chunks(
+        K: jran.KeyArray,
         H: int,
         W: int,
         chunk_size: int,
     ):
     n_pixels = H * W
     n_chunks = (n_pixels + chunk_size - 1) // chunk_size
-    indices = jnp.arange(H * W)
-    _xs = jnp.mod(indices, W)
-    _ys = jnp.floor_divide(indices, H)
+
+    # randomize ray order
+    K, key = jran.split(K, 2)
+    indices = jran.permutation(key, H * W)
+
+    # xys has sorted order
+    _xs = jnp.mod(jnp.arange(H * W), W)
+    _ys = jnp.floor_divide(jnp.arange(H * W), H)
     xys = jnp.concatenate([_xs.reshape(-1, 1), _ys.reshape(-1, 1)], axis=-1)
 
     return xys, jnp.array_split(indices, n_chunks)
@@ -363,7 +369,8 @@ def render_image(
 
     o_world, d_world = make_rays_worldspace(camera=camera, transform_cw=transform_cw)
 
-    xys, indices = get_indices_chunks(camera.H, camera.W, options.ray_chunk_size)
+    K, key = jran.split(K, 2)
+    xys, indices = get_indices_chunks(key, camera.H, camera.W, options.ray_chunk_size)
 
     image_array = jnp.empty((camera.H, camera.W, 3), dtype=jnp.uint8)
     for idcs in tqdm(indices, desc="rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
