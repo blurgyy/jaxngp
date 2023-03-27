@@ -185,7 +185,9 @@ def make_nerf(
         density_act: ActivationType,
         rgb_act: ActivationType,
     ) -> NeRF:
-    if pos_enc == "frequency":
+    if pos_enc == "identity":
+        position_encoder = lambda x: x
+    elif pos_enc == "frequency":
         raise NotImplementedError("Frequency encoding for NeRF is not tuned")
         position_encoder = FrequencyEncoder(dim=3, L=10)
     elif pos_enc == "hashgrid":
@@ -212,7 +214,9 @@ def make_nerf(
             type=PositionalEncodingType,
         )
 
-    if dir_enc == "sh":
+    if dir_enc == "identity":
+        direction_encoder = lambda x: x
+    elif dir_enc == "sh":
         direction_encoder = SphericalHarmonicsEncoder(L=dir_levels)
     else:
         raise mkValueError(

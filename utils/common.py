@@ -23,8 +23,8 @@ import numpy as np
 import tensorflow as tf
 
 
-PositionalEncodingType = Literal["frequency", "hashgrid"]
-DirectionalEncodingType = Literal["sh"]
+PositionalEncodingType = Literal["identity", "frequency", "hashgrid"]
+DirectionalEncodingType = Literal["identity", "sh"]
 ActivationType = Literal["exponential", "relu", "sigmoid", "truncated_exponential"]
 
 
