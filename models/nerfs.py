@@ -46,32 +46,14 @@ class NeRF(nn.Module):
             density [..., 1]: density (ray terminating probability) of each query points
             rgb [..., 3]: predicted color for each query point
         """
-        def out_of_unit_cube(xyz: jax.Array, eps: float=1e-3):
-            "below expression effectively tests if xyz is **outside** of the AABB [eps, 1-eps]^3"
-            return jnp.signbit(xyz - eps) ^ jnp.signbit(1 - eps - xyz)
-
         # scale and translate xyz coordinates into unit cube
         bbox = jnp.asarray(self.aabb)
         xyz = (xyz - bbox[:, 0]) / (bbox[:, 1] - bbox[:, 0])
-        # calculate mask for zeroing out-of-bound inputs, applying this mask (see below `jnp.where`
-        # calls) gives a ~2x speed boost.
-        oob = out_of_unit_cube(xyz)
-        oob = oob[:, 0:1] | oob[:, 1:2] | oob[:, 2:3]
 
         # [..., D_pos]
         pos_enc = self.position_encoder(xyz)
-        pos_enc = jnp.where(
-            oob,
-            jnp.zeros_like(pos_enc),
-            pos_enc,
-        )
         # [..., D_dir]
         dir_enc = self.direction_encoder(dir)
-        dir_enc = jnp.where(
-            oob,
-            jnp.zeros_like(dir_enc),
-            dir_enc,
-        )
 
         x = self.density_mlp(pos_enc)
         # [..., 1], [..., density_MLP_out-1]
