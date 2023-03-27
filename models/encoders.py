@@ -224,16 +224,16 @@ class HashGridEncoder(Encoder):
         #   don't use too large primes (e.g. >= 2**20), because some larger images can easily have
         #   axes with more than 2**11(=2048) pixels, and jax represents integers as int32 by
         #   default, overflows could happen and increase hash collisions.
-        primes = (
+        primes = jax.tree_util.tree_map(lambda x: jnp.asarray(x, dtype=jnp.uint32), (
             1,
-            find_smallest_prime_larger_or_equal_than(1<<17),
-            find_smallest_prime_larger_or_equal_than(1<<18),
-        )
+            2_654_435_761,
+            805_459_861,
+        ))
         # [..., 2**dim]
         indices = functools.reduce(
             lambda prev, d: jnp.bitwise_xor(prev, vert_pos[..., d] * primes[d]),
             range(dim),
-            0,
+            jnp.asarray(0, dtype=jnp.uint32),
         )
         return jnp.mod(indices, T), pos_scaled, vert_pos
 
