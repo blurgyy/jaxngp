@@ -369,6 +369,14 @@ def render_image(
     K, key = jran.split(K, 2)
     xys, indices = get_indices_chunks(key, camera.H, camera.W, options.ray_chunk_size)
 
+    bound_max = max(
+        [
+            aabb[0][1] - aabb[0][0],
+            aabb[1][1] - aabb[1][0],
+            aabb[2][1] - aabb[2][0],
+        ]
+    ) / 2
+
     image_array = jnp.empty((camera.H, camera.W, 3), dtype=jnp.uint8)
     depth_array = jnp.empty((camera.H, camera.W), dtype=jnp.uint8)
     for idcs in tqdm(indices, desc="| rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
@@ -384,7 +392,7 @@ def render_image(
             param_dict,
             nerf_fn,
         )
-        depths = depths / 8.
+        depths = depths / (bound_max * 2 + jnp.linalg.norm(transform_cw.translation))
         image_array = set_pixels(image_array, xys, idcs, rgbs)
         depth_array = set_pixels(depth_array, xys, idcs, depths)
 
