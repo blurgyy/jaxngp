@@ -133,6 +133,9 @@ def train_epoch(
 
 
 def train(args: NeRFTrainingArgs, logger: logging.Logger):
+    if args.exp_dir.exists():
+        logger.error("specified experiment directory '{}' already exists".format(args.exp_dir))
+        exit(2)
     args.exp_dir.mkdir(parents=True)
     args.exp_dir.joinpath("config.yaml").write_text(tyro.to_yaml(args))
     logger.info("configurations saved to '{}'".format(args.exp_dir.joinpath("config.yaml")))
