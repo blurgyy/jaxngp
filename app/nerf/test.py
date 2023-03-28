@@ -62,7 +62,7 @@ def test(args: NeRFTestingArgs, logger: logging.Logger):
             translation=scene_metadata_test.all_transforms[test_i, -3:].reshape(3),
         )
         K, key = jran.split(K, 2)
-        image = render_image(
+        rgb, depth = render_image(
             K=key,
             aabb=aabb,
             camera=scene_metadata_test.camera,
@@ -75,26 +75,31 @@ def test(args: NeRFTestingArgs, logger: logging.Logger):
         gt_image = Image.open(test_views[test_i].file)
         gt_image = np.asarray(gt_image)
         gt_image = data.blend_alpha_channel(gt_image, use_white_bg=args.render.use_white_bg)
-        logger.info("{}: psnr={}".format(test_views[test_i].file, data.psnr(gt_image, image)))
+        logger.info("{}: psnr={}".format(test_views[test_i].file, data.psnr(gt_image, rgb)))
         dest = args.exp_dir\
             .joinpath(args.test_split)
         dest.mkdir(parents=True, exist_ok=True)
 
-        # prediction image
-        dest_pred = dest.joinpath("{:03d}-pred.png".format(test_i))
-        logger.debug("saving comparison image to {}".format(dest_pred))
-        Image.fromarray(np.asarray(image)).save(dest_pred)
+        # rgb
+        dest_rgb = dest.joinpath("{:03d}-pred.png".format(test_i))
+        logger.debug("saving comparison image to {}".format(dest_rgb))
+        Image.fromarray(np.asarray(rgb)).save(dest_rgb)
 
         # comparison image
         dest_comparison = dest.joinpath("{:03d}-comparison.png".format(test_i))
         logger.debug("saving comparison image to {}".format(dest_comparison))
         comparison_image_data = data.side_by_side(
             gt_image,
-            image,
+            rgb,
             H=scene_metadata_test.camera.H,
             W=scene_metadata_test.camera.W
         )
         comparison_image_data = data.add_border(comparison_image_data)
         Image.fromarray(np.asarray(comparison_image_data)).save(dest_comparison)
+
+        # depth
+        dest_depth = dest.joinpath("{:03d}-depth.png".format(test_i))
+        logger.debug("saving predicted depth image to {}".format(dest_depth))
+        Image.fromarray(np.asarray(depth)).save(dest_depth)
 
     return params

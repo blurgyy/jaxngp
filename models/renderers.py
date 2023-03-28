@@ -69,10 +69,12 @@ def integrate_ray(
     else:
         # [3]
         final_rgb = jnp.sum(weights[:, None] * rgbs, axis=0)
+        # [1]
+        depth = jnp.sum(weights * z_vals, axis=-1)
 
         final_rgb += use_white_bg * (1 - jnp.sum(weights, axis=0))
 
-        return weights, final_rgb
+        return weights, final_rgb, depth
 
 
 def make_near_far_from_aabb(
@@ -256,9 +258,9 @@ def march_rays(
             jnp.broadcast_to(d_world, ray_pts.shape),
         )
 
-    _, rgbs = integrate_ray(z_vals, density, rgb, use_white_bg)
+    _, rgbs, depths = integrate_ray(z_vals, density, rgb, use_white_bg)
 
-    return rgbs
+    return rgbs, depths
 
 
 @jit_jaxfn_with(static_argnames=["camera"])
@@ -342,7 +344,7 @@ def render_image(
         raymarch_options: RayMarchingOptions,
         param_dict: FrozenVariableDict,
         nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
-    ) -> jax.Array:
+    ) -> Tuple[jax.Array, jax.Array]:
     """
     Given a rigid transformation and a camera model, render the image as seen by the camera.
 
@@ -368,10 +370,11 @@ def render_image(
     xys, indices = get_indices_chunks(key, camera.H, camera.W, options.ray_chunk_size)
 
     image_array = jnp.empty((camera.H, camera.W, 3), dtype=jnp.uint8)
+    depth_array = jnp.empty((camera.H, camera.W), dtype=jnp.uint8)
     for idcs in tqdm(indices, desc="| rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
         # rgbs = raymarcher(o_world[idcs], d_world[idcs], param_dict)
         K, key = jran.split(K, 2)
-        rgbs = march_rays(
+        rgbs, depths = march_rays(
             key,
             o_world[idcs],
             d_world[idcs],
@@ -381,10 +384,12 @@ def render_image(
             param_dict,
             nerf_fn,
         )
+        depths = depths / 8.
         image_array = set_pixels(image_array, xys, idcs, rgbs)
+        depth_array = set_pixels(depth_array, xys, idcs, depths)
 
     # print("returning from fn ... ", end="")
-    return image_array
+    return image_array, depth_array
 
 
 @jax.jit
@@ -476,7 +481,7 @@ def main():
         # print(R_cw, R_cw.T)
         print(jnp.linalg.det(R_cw))
         K, key = jran.split(K, 2)
-        img = render_image(
+        img, depth = render_image(
             K=key,
             aabb=aabb,
             camera=camera,
@@ -493,6 +498,8 @@ def main():
         print(img.shape)
         img = Image.fromarray(np.asarray(img))
         img.save("rendered-{:03d}.png".format(i))
+        dep = Image.fromarray(np.asarray(depth), mode="L")
+        dep.save("depth-{:03d}.png".format(i))
     # np.savetxt("pts.xyz", np.asarray(pts.reshape(-1, 3)))
 
 

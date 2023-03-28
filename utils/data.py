@@ -113,11 +113,17 @@ def psnr(lhs: jax.Array, rhs: jax.Array):
 
 @jax.jit
 def set_pixels(imgarr: jax.Array, xys: jax.Array, selected: jax.Array, preds: jax.Array) -> jax.Array:
-    H, W, C = imgarr.shape
-    interm = imgarr.reshape(H*W, C)
+    H, W = imgarr.shape[:2]
+    if len(imgarr.shape) == 3:
+        interm = imgarr.reshape(H*W, -1)
+    else:
+        interm = imgarr.ravel()
     idcs = xys[selected, 1] * W + xys[selected, 0]
     interm = interm.at[idcs].set(jnp.clip(preds * 255, 0, 255).astype(jnp.uint8))
-    return interm.reshape(H, W, C)
+    if len(imgarr.shape) == 3:
+        return interm.reshape(H, W, -1)
+    else:
+        return interm.reshape(H, W)
 
 
 def blend_alpha_channel(imgarr, use_white_bg: bool):

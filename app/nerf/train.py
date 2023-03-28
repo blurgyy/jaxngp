@@ -71,7 +71,7 @@ def train_step(
 
     def loss(params, gt, key):
         o_world, d_world = make_rays_worldspace()
-        preds = march_rays(
+        preds, _ = march_rays(
             key,
             o_world,
             d_world,
@@ -274,7 +274,7 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
                 translation=scene_metadata_val.all_transforms[val_i, -3:].reshape(3),
             )
             K, key = jran.split(K, 2)
-            image = render_image(
+            rgb, depth = render_image(
                 K=key,
                 aabb=aabb,
                 camera=scene_metadata_val.camera,
@@ -287,25 +287,30 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
             gt_image = Image.open(val_views[val_i].file)
             gt_image = np.asarray(gt_image)
             gt_image = data.blend_alpha_channel(gt_image, use_white_bg=args.render_eval.use_white_bg)
-            logger.info("{}: psnr={}".format(val_views[val_i].file, data.psnr(gt_image, image)))
+            logger.info("{}: psnr={}".format(val_views[val_i].file, data.psnr(gt_image, rgb)))
             dest = args.exp_dir\
                 .joinpath("validataion")\
                 .joinpath("ep{}".format(ep_log))
             dest.mkdir(parents=True, exist_ok=True)
 
-            # prediction image
-            dest_pred = dest.joinpath("{:03d}-pred.png".format(val_i))
-            logger.debug("saving comparison image to {}".format(dest_pred))
-            Image.fromarray(np.asarray(image)).save(dest_pred)
+            # rgb
+            dest_rgb = dest.joinpath("{:03d}-rgb.png".format(val_i))
+            logger.debug("saving predicted rgb image to {}".format(dest_rgb))
+            Image.fromarray(np.asarray(rgb)).save(dest_rgb)
 
             # comparison image
             dest_comparison = dest.joinpath("{:03d}-comparison.png".format(val_i))
             logger.debug("saving comparison image to {}".format(dest_comparison))
             comparison_image_data = data.side_by_side(
                 gt_image,
-                image,
+                rgb,
                 H=scene_metadata_val.camera.H,
                 W=scene_metadata_val.camera.W
             )
             comparison_image_data = data.add_border(comparison_image_data)
             Image.fromarray(np.asarray(comparison_image_data)).save(dest_comparison)
+
+            # depth
+            dest_depth = dest.joinpath("{:03d}-depth.png".format(val_i))
+            logger.debug("saving predicted depth image to {}".format(dest_depth))
+            Image.fromarray(np.asarray(depth)).save(dest_depth)
