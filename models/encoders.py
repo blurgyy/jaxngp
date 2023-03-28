@@ -94,11 +94,11 @@ class HashGridEncoder(Encoder):
         #   ...
         #   (indices_{L-1}, pos_scaled_{L-1}, vert_pos_{L-1})
         # ], where:
-        # indices [L, pos.shape[0], 2**dim] (int):
+        # indices [pos.shape[0], 2**dim] (int):
         #   indices in hash table
-        # pos_scaled [L, pos.shape[0], 2**dim] (float):
+        # pos_scaled [pos.shape[0], 2**dim] (float):
         #   query points' coordinates scaled to each hierarchies (float)
-        # vert_pos [L, pos.shape[0], 2**dim, dim] (int):
+        # vert_pos [pos.shape[0], 2**dim, dim] (int):
         #   vertex coordinates of the enclosing grid cell's vertices (2**dim in total) of each
         #   query point
         indices_posscaled_vertpos_tuples = jax.tree_map(
@@ -107,7 +107,14 @@ class HashGridEncoder(Encoder):
             resolutions,
         )
 
-        indices, pos_scaled, vert_pos = map(jnp.asarray, zip(*indices_posscaled_vertpos_tuples))
+        # indices [L, pos.shape[0], 2**dim] (int):
+        #   indices in hash table
+        # pos_scaled [L, pos.shape[0], 2**dim] (float):
+        #   query points' coordinates scaled to each hierarchies (float)
+        # vert_pos [L, pos.shape[0], 2**dim, dim] (int):
+        #   vertex coordinates of the enclosing grid cell's vertices (2**dim in total) of each
+        #   query point
+        indices, pos_scaled, vert_pos = map(jnp.stack, zip(*indices_posscaled_vertpos_tuples))
 
         # add offsets for each hash grid level
         indices += jnp.asarray(offsets[:-1]).reshape((self.L, 1, 1))
