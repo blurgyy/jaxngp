@@ -77,7 +77,6 @@ class CoordinateBasedMLP(nn.Module):
 
     # as described in the paper
     kernel_init: Initializer=nn.initializers.glorot_uniform()
-    bias_init: Initializer=nn.initializers.uniform()
 
     @nn.compact
     def __call__(self, x: jax.Array) -> jax.Array:
@@ -87,14 +86,14 @@ class CoordinateBasedMLP(nn.Module):
                 x = jnp.concatenate([in_x, x], axis=-1)
             x = nn.Dense(
                 d,
+                use_bias=False,
                 kernel_init=self.kernel_init,
-                bias_init=self.bias_init,
             )(x)
             x = nn.relu(x)
         x = nn.Dense(
             self.out_dim,
+            use_bias=False,
             kernel_init=self.kernel_init,
-            bias_init=self.bias_init,
         )(x)
         return x
 
