@@ -207,7 +207,7 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
     scene_metadata_val, val_views = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split="val",
-        use_white_bg=args.render.use_white_bg,
+        use_white_bg=args.render_eval.use_white_bg,
     )
 
     logger.info("starting training")
