@@ -226,10 +226,7 @@ class HashGridEncoder(Encoder):
         # [..., 2**dim, dim]
         vert_pos = pos_floored[..., None, :] + cell_vert_offsets[dim]
         vert_pos = vert_pos.astype(jnp.uint32)
-        # NOTE:
-        #   don't use too large primes (e.g. >= 2**20), because some larger images can easily have
-        #   axes with more than 2**11(=2048) pixels, and jax represents integers as int32 by
-        #   default, overflows could happen and increase hash collisions.
+        # use primes as reported in the paper
         primes = jax.tree_util.tree_map(lambda x: jnp.asarray(x, dtype=jnp.uint32), (
             1,
             2_654_435_761,
