@@ -52,18 +52,13 @@ def integrate_ray(
     # In the original NeRF code the author used `tf.math.cumprod(exclusive=True)` to prepend the 1.0
     # and cut the final sample, but jax.numpy does not have an `exclusive` flag for its `cumprod`
     # function, so we manually do it like below.
-    # [steps+1]
-    acc_transmittance = jnp.cumprod(
-        jnp.concatenate(
-            [
-                jnp.ones_like(alphas[:1]),
-                1 - alphas + 1e-15,
-            ],
-        ),
-    )
-    # exclude the final sample which we set its density to inf earlier
     # [steps]
-    acc_transmittance = acc_transmittance[:-1]
+    acc_transmittance = jnp.concatenate(
+        [
+            jnp.ones_like(alphas[:1]),
+            jnp.cumprod(1 - alphas[:-1] + 1e-15),  # exclude the final sample which we set its density to inf earlier
+        ],
+    )
 
     # weights, reflects the probability of the ray not being absorbed up to this sample.
     # [steps]
