@@ -8,7 +8,7 @@
     nixgl = {
       url = "github:guibou/nixgl/c917918ab9ebeee27b0dd657263d3f57ba6bb8ad";
       inputs = {
-        nixpkgs.follows = "nixpkgs-with-nvidia-driver-fix";
+        nixpkgs.follows = "nixpkgs";
         flake-utils.follows = "flake-utils";
       };
     };
