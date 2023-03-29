@@ -1,4 +1,4 @@
-from typing import Literal, Tuple
+from typing import Literal, Tuple, Union
 
 import jax
 from flax.struct import dataclass
@@ -7,6 +7,7 @@ from flax.struct import dataclass
 AABB = Tuple[Tuple[float, float], Tuple[float, float], Tuple[float, float]]
 DensityAndRGB = Tuple[jax.Array, jax.Array]
 LogLevel = Literal["DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL"]
+RGBColor = Tuple[float, float, float]
 
 
 @dataclass
@@ -29,7 +30,10 @@ class RayMarchingOptions:
 @dataclass
 class RenderingOptions:
     ray_chunk_size: int
-    use_white_bg: bool
+    # background color for transparent parts of the image, has no effect if `random_bg` is True
+    bg: RGBColor
+    # ignore `bg` specification and use random color for transparent parts of the image
+    random_bg: bool
 
 
 @dataclass

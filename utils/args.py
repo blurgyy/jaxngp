@@ -112,7 +112,8 @@ class NeRFTrainingArgs(_NeRFArgs):
     )
     render: RenderingOptions=RenderingOptions(
         ray_chunk_size=2**10,
-        use_white_bg=True,
+        bg=(1.0, 1.0, 1.0),  # white, but ignored by default due to random_bg=True
+        random_bg=True,
     )
 
     # raymarching/rendering options for validating during training
@@ -123,7 +124,8 @@ class NeRFTrainingArgs(_NeRFArgs):
     )
     render_eval: RenderingOptions=RenderingOptions(
         ray_chunk_size=2**10,
-        use_white_bg=True,
+        bg=(0.0, 0.0, 0.0),  # black
+        random_bg=False,
     )
 
 
@@ -146,5 +148,6 @@ class NeRFTestingArgs(_NeRFArgs):
     )
     render: RenderingOptions=RenderingOptions(
         ray_chunk_size=2**10,
-        use_white_bg=True,
+        bg=(0.0, 0.0, 0.0),  # black
+        random_bg=False,
     )

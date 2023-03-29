@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
-
 from dataclasses import dataclass
 import json
+import math
 from pathlib import Path
 from typing import Literal, Tuple, Union
 
@@ -15,7 +14,7 @@ import tensorflow as tf
 from tqdm import tqdm
 
 from utils.common import mkValueError, tqdm_format
-from utils.types import PinholeCamera, RigidTransformation
+from utils.types import PinholeCamera, RGBColor, RigidTransformation
 Dataset = tf.data.Dataset
 
 
@@ -102,6 +101,10 @@ def add_border(
     return img
 
 
+def loss2psnr(loss: float, maxval: float):
+    return 20 * math.log10(math.sqrt(maxval / loss))
+
+
 def psnr(lhs: jax.Array, rhs: jax.Array):
     chex.assert_type([lhs, rhs], jnp.uint8)
     mse = ((lhs.astype(float) - rhs.astype(float)) ** 2).mean()
@@ -126,20 +129,21 @@ def set_pixels(imgarr: jax.Array, xys: jax.Array, selected: jax.Array, preds: ja
         return interm.reshape(H, W)
 
 
-def blend_alpha_channel(imgarr, use_white_bg: bool):
+def blend_alpha_channel(imgarr, bg: RGBColor):
     chex.assert_shape(imgarr, [..., 4])
     rgbs, alpha = imgarr[..., :-1], imgarr[..., -1:]
-    if use_white_bg:
-        if imgarr.dtype == jnp.uint8:
-            rgbs, alpha = rgbs.astype(float) / 255, alpha.astype(float) / 255
-            rgbs = rgbs * alpha + (1 - alpha)
-            rgbs = (rgbs * 255).astype(jnp.uint8)
-        else:
-            rgbs = rgbs * alpha + (1 - alpha)
+    bg_color = jnp.asarray(bg)
+    bg_color = jnp.broadcast_to(bg_color, rgbs.shape)
+    if imgarr.dtype == jnp.uint8:
+        rgbs, alpha = rgbs.astype(float) / 255, alpha.astype(float) / 255
+        rgbs = rgbs * alpha + bg_color * (1 - alpha)
+        rgbs = (rgbs * 255).astype(jnp.uint8)
+    else:
+        rgbs = rgbs * alpha + bg_color * (1 - alpha)
     return rgbs
 
 
-def get_xyrgbs(imgarr: jax.Array, use_white_bg: bool) -> Tuple[jax.Array, jax.Array]:
+def get_xyrgbas(imgarr: jax.Array) -> Tuple[jax.Array, jax.Array]:
     assert imgarr.dtype == jnp.uint8
     H, W, C = imgarr.shape
 
@@ -149,10 +153,12 @@ def get_xyrgbs(imgarr: jax.Array, use_white_bg: bool) -> Tuple[jax.Array, jax.Ar
 
     flattened = imgarr.reshape(H*W, C) / 255
     if C == 3:
-        rgbs = flattened
+        # images without an alpha channel is equivalent to themselves with an all-opaque alpha
+        # channel
+        rgbs = jnp.concatenate([flattened, jnp.ones_like(flattened[:, :1])])
         return xys, rgbs
     elif C == 4:
-        rgbs = blend_alpha_channel(flattened, use_white_bg)
+        rgbs = flattened
         return xys, rgbs
     else:
         raise mkValueError(
@@ -165,7 +171,7 @@ def get_xyrgbs(imgarr: jax.Array, use_white_bg: bool) -> Tuple[jax.Array, jax.Ar
 _ImageSourceType = Union[jax.Array, np.ndarray, Image.Image, Path, str],
 def make_image_metadata(
         image: _ImageSourceType,
-        use_white_bg: bool = True,
+        bg: RGBColor,
     ) -> ImageMetadata:
     if isinstance(image, jax.Array):
         pass
@@ -182,7 +188,11 @@ def make_image_metadata(
             type=_ImageSourceType,
         )
 
-    xys, rgbs = get_xyrgbs(image, use_white_bg=use_white_bg)
+    raise NotImplementedError(
+        "function get_xyrgbs has been renamed to get_xyrgbas and this part has not been updated "
+        "accordingly"
+    )
+    xys, rgbs = get_xyrgbs(image, bg=bg)
 
     H, W = image.shape[:2]
     uvs = to_unit_cube_2d(xys, W, H)
@@ -199,11 +209,10 @@ def make_image_metadata(
 def make_view(
         image_path: Union[Path, str],
         transform_4x4: jax.Array,
-        use_white_bg: bool,
     ) -> ViewMetadata:
     image_path = Path(image_path)
     image = jnp.asarray(Image.open(image_path))
-    xys, rgbs = get_xyrgbs(image, use_white_bg=use_white_bg)
+    xys, rgbs = get_xyrgbas(image)
     H, W = image.shape[:2]
     return ViewMetadata(
         H=H,
@@ -221,7 +230,6 @@ def make_view(
 def make_nerf_synthetic_scene_metadata(
         rootdir: Union[Path, str],
         split: Literal["train", "val", "test"],
-        use_white_bg: bool=True,
     ) -> Tuple[SceneMetadata, list[ViewMetadata]]:
     rootdir = Path(rootdir)
 
@@ -233,7 +241,6 @@ def make_nerf_synthetic_scene_metadata(
             lambda frame: make_view(
                     image_path=rootdir.joinpath(frame["file_path"] + ".png"),
                     transform_4x4=jnp.asarray(frame["transform_matrix"]),
-                    use_white_bg=use_white_bg,
                 ),
             tqdm(transforms["frames"], desc="loading views (split={})".format(split), bar_format=tqdm_format)
         )
@@ -302,13 +309,12 @@ def main():
     sce = make_nerf_synthetic_scene_metadata(
         rootdir="data/nerf/nerf_synthetic/lego",
         split="train",
-        use_white_bg=True,
     )
     print(sce.all_xys.shape)
     print(sce.all_rgbs.shape)
     print(sce.all_transforms.shape)
 
-    # imdata = make_image_metadata("./h.jpg", use_white_bg=True)
+    # imdata = make_image_metadata("./h.jpg", bg="white")
     # K, key = jran.split(jran.PRNGKey(0xabcdef), 2)
     # ds = make_permutation_dataset(key, imdata.H*imdata.W, shuffle=True)
     # print(ds.element_spec)

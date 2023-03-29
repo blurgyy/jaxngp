@@ -16,10 +16,16 @@ from models.nerfs import make_nerf_ngp
 from models.renderers import march_rays, render_image
 from utils import common, data
 from utils.args import NeRFTrainingArgs
-from utils.types import AABB, PinholeCamera, RayMarchingOptions, RenderingOptions, RigidTransformation
+from utils.types import (
+    AABB,
+    PinholeCamera,
+    RayMarchingOptions,
+    RenderingOptions,
+    RigidTransformation,
+)
 
 
-@common.jit_jaxfn_with(static_argnames=["raymarch_options"])
+@common.jit_jaxfn_with(static_argnames=["raymarch_options", "render_options"])
 def train_step(
         K: jran.KeyArray,
         state: TrainState,
@@ -69,19 +75,29 @@ def train_step(
 
         return o_world, d_world
 
-    def loss(params, gt, key):
+    def loss(params, gt, K):
         o_world, d_world = make_rays_worldspace()
-        preds, _ = march_rays(
+        K, key = jran.split(K, 2)
+        weights, preds, _ = march_rays(
             key,
             o_world,
             d_world,
             aabb,
-            render_options.use_white_bg,
             raymarch_options,
             {"params": params},
             state.apply_fn,
         )
-        loss = jnp.square(preds - gt).mean()
+        if render_options.random_bg:
+            K, key = jran.split(K, 2)
+            bg = jran.uniform(key, preds.shape, dtype=preds.dtype, minval=0, maxval=1)
+        else:
+            bg = render_options.bg
+        pred_rgbs = data.blend_alpha_channel(
+            imgarr=jnp.concatenate([preds, weights.sum(axis=-1, keepdims=True)], axis=-1),
+            bg=bg,
+        )
+        gt_rgbs = data.blend_alpha_channel(imgarr=gt, bg=bg)
+        loss = jnp.square(pred_rgbs - gt_rgbs).mean()
         return loss
 
     loss_grad_fn = jax.value_and_grad(loss)
@@ -128,7 +144,14 @@ def train_epoch(
             running_loss = loss_log
         else:
             running_loss = running_loss * 0.99 + 0.01 * loss_log
-        pbar.set_description_str("Training epoch#{:03d}/{:d} loss={:.3e}".format(ep_log, total_epochs, running_loss))
+        pbar.set_description_str(
+            desc="Training epoch#{:03d}/{:d} mse={:.3e} psnr={:.2f}".format(
+                ep_log,
+                total_epochs,
+                running_loss,
+                data.loss2psnr(running_loss, maxval=1)
+            )
+        )
     return loss, state
 
 
@@ -204,13 +227,11 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
     scene_metadata_train, _ = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split="train",
-        use_white_bg=args.render.use_white_bg,
     )
 
     scene_metadata_val, val_views = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split="val",
-        use_white_bg=args.render_eval.use_white_bg,
     )
 
     logger.info("starting training")
@@ -248,7 +269,8 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
             logger.info("exiting cleanly ...")
             exit()
 
-        logger.info("epoch#{:03d}: per-pixel loss={:.2e}".format(ep_log, loss / (args.train.n_batches * args.render.ray_chunk_size)))
+        loss_log = loss / (args.train.n_batches * args.render.ray_chunk_size)
+        logger.info("epoch#{:03d}: mse={:.2e} psnr={:.2f}".format(ep_log, loss_log, data.loss2psnr(loss_log, maxval=1)))
 
         logger.info("saving training state ... ")
         ckpt_name = checkpoints.save_checkpoint(
@@ -286,7 +308,7 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
             )
             gt_image = Image.open(val_views[val_i].file)
             gt_image = np.asarray(gt_image)
-            gt_image = data.blend_alpha_channel(gt_image, use_white_bg=args.render_eval.use_white_bg)
+            gt_image = data.blend_alpha_channel(gt_image, bg=args.render_eval.bg)
             logger.info("{}: psnr={}".format(val_views[val_i].file, data.psnr(gt_image, rgb)))
             dest = args.exp_dir\
                 .joinpath("validataion")\

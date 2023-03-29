@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from functools import partial, reduce
 import os
 from pathlib import Path
-from typing import Annotated, List, Tuple, Union
+from typing import Annotated, List, Union
 from typing_extensions import assert_never
 
 from PIL import Image
@@ -13,6 +13,7 @@ import tyro
 
 from utils.common import setup_logging
 from utils.data import add_border, blend_alpha_channel, psnr, side_by_side
+from utils.types import RGBColor
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -26,7 +27,7 @@ class Concatenate:
     gap: int=0
     # border in pixels
     border: int=0
-    use_white_bg: bool=True
+    bg: RGBColor=[1.0, 1.0, 1.0]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -34,7 +35,7 @@ class Metrics:
     gt: Path
     image_paths: tyro.conf.Positional[List[Path]]
     psnr: bool=True
-    use_white_bg: bool=True
+    bg: RGBColor=[1.0, 1.0, 1.0]
 
 
 Args = Union[
@@ -70,7 +71,7 @@ def main(args: Args):
             logger.warn("the file extension '{}' might not be supported".format(args.out.suffix))
 
         images = list(map(
-            lambda img: blend_alpha_channel(img, use_white_bg=args.use_white_bg) if img.shape[-1] == 4 else img,
+            lambda img: blend_alpha_channel(img, bg=args.bg) if img.shape[-1] == 4 else img,
             map(np.asarray, map(Image.open, args.image_paths)),
         ))
         H, W = images[0].shape[:2]
@@ -92,9 +93,9 @@ def main(args: Args):
     elif isinstance(args, Metrics):
         gt_image = np.asarray(Image.open(args.gt))
         if gt_image.shape[-1] == 4:
-            gt_image = blend_alpha_channel(gt_image, use_white_bg=args.use_white_bg)
+            gt_image = blend_alpha_channel(gt_image, bg=args.bg)
         images = list(map(
-            lambda img: blend_alpha_channel(img, use_white_bg=args.use_white_bg) if img.shape[-1] == 4 else img,
+            lambda img: blend_alpha_channel(img, bg=args.bg) if img.shape[-1] == 4 else img,
             map(np.asarray, map(Image.open, args.image_paths)),
         ))
         for impath, img in zip(args.image_paths, images):

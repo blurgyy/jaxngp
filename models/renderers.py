@@ -8,7 +8,7 @@ import jax.random as jran
 from tqdm import tqdm
 
 from utils.common import jit_jaxfn_with, tqdm_format, vmap_jaxfn_with
-from utils.data import set_pixels
+from utils.data import blend_alpha_channel, set_pixels
 from utils.types import (
     AABB,
     DensityAndRGB,
@@ -23,7 +23,6 @@ def integrate_ray(
         z_vals: jax.Array,
         densities: jax.Array,
         rgbs: jax.Array,
-        use_white_bg: bool,
     ):
     """
     Inputs:
@@ -71,8 +70,6 @@ def integrate_ray(
         final_rgb = jnp.sum(weights[:, None] * rgbs, axis=0)
         # [1]
         depth = jnp.sum(weights * z_vals, axis=-1)
-
-        final_rgb += use_white_bg * (1 - jnp.sum(weights, axis=0))
 
         return weights, final_rgb, depth
 
@@ -174,17 +171,16 @@ def sample_pdf(
 
 
 @jit_jaxfn_with(static_argnames=["options", "nerf_fn"])
-@vmap_jaxfn_with(in_axes=(None, 0, 0, None, None, None, None, None))
+@vmap_jaxfn_with(in_axes=(None, 0, 0, None, None, None, None))
 def march_rays(
         K: jran.KeyArray,
         o_world: jax.Array,
         d_world: jax.Array,
         aabb: AABB,
-        use_white_bg: bool,
         options: RayMarchingOptions,
         param_dict: FrozenVariableDict,
         nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
-    ) -> jax.Array:
+    ) -> Tuple[jax.Array, jax.Array, jax.Array]:
     """
     Given a pack of rays, render the colors along them.
 
@@ -238,7 +234,7 @@ def march_rays(
     )
 
     if options.n_importance > 0:
-        weights = integrate_ray(z_vals, density, None, use_white_bg)
+        weights = integrate_ray(z_vals, density, None)
 
         z_mids = .5 * (z_vals[1:] + z_vals[:-1])
         K, key = jran.split(K, 2)
@@ -258,9 +254,9 @@ def march_rays(
             jnp.broadcast_to(d_world, ray_pts.shape),
         )
 
-    _, rgbs, depths = integrate_ray(z_vals, density, rgb, use_white_bg)
+    weights, rgbs, depths = integrate_ray(z_vals, density, rgb)
 
-    return rgbs, depths
+    return weights, rgbs, depths
 
 
 @jit_jaxfn_with(static_argnames=["camera"])
@@ -382,16 +378,21 @@ def render_image(
     for idcs in tqdm(indices, desc="| rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
         # rgbs = raymarcher(o_world[idcs], d_world[idcs], param_dict)
         K, key = jran.split(K, 2)
-        rgbs, depths = march_rays(
+        weights, preds, depths = march_rays(
             key,
             o_world[idcs],
             d_world[idcs],
             aabb,
-            options.use_white_bg,
             raymarch_options,
             param_dict,
             nerf_fn,
         )
+        if options.random_bg:
+            K, key = jran.split(K, 2)
+            bg = jran.uniform(key, preds.shape, preds.dtype, minval=0, maxval=1)
+        else:
+            bg = options.bg
+        rgbs = blend_alpha_channel(jnp.concatenate([preds, weights.sum(axis=-1, keepdims=True)], axis=-1), bg=bg)
         depths = depths / (bound_max * 2 + jnp.linalg.norm(transform_cw.translation))
         image_array = set_pixels(image_array, xys, idcs, rgbs)
         depth_array = set_pixels(depth_array, xys, idcs, depths)
@@ -457,7 +458,8 @@ def main():
     aabb = [[-bound, bound]] * 3
     render_options = RenderingOptions(
         ray_chunk_size=2**13,
-        use_white_bg=True
+        bg=[.68, .75, .43],
+        random_bg=False,
     )
     nerf_fn = make_test_cube(
         width=1,
