@@ -97,7 +97,13 @@ def train_step(
             bg=bg,
         )
         gt_rgbs = data.blend_alpha_channel(imgarr=gt, bg=bg)
-        loss = optax.huber_loss(pred_rgbs, gt_rgbs, delta=0.1).mean()
+        # from NVlabs/instant-ngp/commit/d6c7241de9be5be1b6d85fe43e446d2eb042511b
+        # Note: we divide the huber loss by a factor of 5 such that its L2 region near zero
+        # matches with the L2 loss and error numbers become more comparable. This allows reading
+        # off dB numbers of ~converged models and treating them as approximate PSNR to compare
+        # with other NeRF methods. Self-normalizing optimizers such as Adam are agnostic to such
+        # constant factors; optimization is therefore unaffected.
+        loss = optax.huber_loss(pred_rgbs, gt_rgbs, delta=0.1).mean() / 5.0
         return loss
 
     loss_grad_fn = jax.value_and_grad(loss)
@@ -145,11 +151,11 @@ def train_epoch(
         else:
             running_loss = running_loss * 0.99 + 0.01 * loss_log
         pbar.set_description_str(
-            desc="Training epoch#{:03d}/{:d} loss={:.3e} psnr={:.2f}".format(
+            desc="Training epoch#{:03d}/{:d} loss={:.3e} psnr~{:.2f}dB".format(
                 ep_log,
                 total_epochs,
                 running_loss,
-                data.loss2psnr(running_loss, maxval=1)
+                data.linear2psnr(running_loss, maxval=1)
             )
         )
     return loss, state
@@ -270,7 +276,7 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
             exit()
 
         loss_log = loss / (args.train.n_batches * args.render.ray_chunk_size)
-        logger.info("epoch#{:03d}: loss={:.2e} psnr={:.2f}".format(ep_log, loss_log, data.loss2psnr(loss_log, maxval=1)))
+        logger.info("epoch#{:03d}: loss={:.2e} psnr~{:.2f}dB".format(ep_log, loss_log, data.linear2psnr(loss_log, maxval=1)))
 
         logger.info("saving training state ... ")
         ckpt_name = checkpoints.save_checkpoint(
@@ -309,7 +315,7 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
             gt_image = Image.open(val_views[val_i].file)
             gt_image = np.asarray(gt_image)
             gt_image = data.blend_alpha_channel(gt_image, bg=args.render_eval.bg)
-            logger.info("{}: psnr={}".format(val_views[val_i].file, data.psnr(gt_image, rgb)))
+            logger.info("{}: psnr={}dB".format(val_views[val_i].file, data.psnr(gt_image, rgb)))
             dest = args.exp_dir\
                 .joinpath("validataion")\
                 .joinpath("ep{}".format(ep_log))

@@ -101,8 +101,8 @@ def add_border(
     return img
 
 
-def loss2psnr(loss: float, maxval: float):
-    return 20 * math.log10(math.sqrt(maxval / loss))
+def linear2psnr(val: float, maxval: float):
+    return 20 * math.log10(math.sqrt(maxval / val))
 
 
 def psnr(lhs: jax.Array, rhs: jax.Array):
