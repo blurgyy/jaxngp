@@ -31,12 +31,12 @@ def train_step(
         state: TrainState,
         aabb: AABB,
         camera: PinholeCamera,
+        raymarch_options: RayMarchingOptions,
+        render_options: RenderingOptions,
         all_xys: jax.Array,
         all_rgbs: jax.Array,
         all_transforms: jax.Array,
-        raymarch_options: RayMarchingOptions,
-        render_options: RenderingOptions,
-        perm: jax.Array
+        perm: jax.Array,
     ):
     # TODO:
     #   merge this and `models.renderers.make_rays_worldspace` as a single function
@@ -97,7 +97,7 @@ def train_step(
             bg=bg,
         )
         gt_rgbs = data.blend_alpha_channel(imgarr=gt, bg=bg)
-        loss = jnp.square(pred_rgbs - gt_rgbs).mean()
+        loss = optax.huber_loss(pred_rgbs, gt_rgbs, delta=0.1).mean()
         return loss
 
     loss_grad_fn = jax.value_and_grad(loss)
@@ -131,11 +131,11 @@ def train_epoch(
             state,
             aabb,
             scene_metadata.camera,
+            raymarch_options,
+            render_options,
             scene_metadata.all_xys,
             scene_metadata.all_rgbs,
             scene_metadata.all_transforms,
-            raymarch_options,
-            render_options,
             perm,
         )
         loss += metrics["loss"]
@@ -145,7 +145,7 @@ def train_epoch(
         else:
             running_loss = running_loss * 0.99 + 0.01 * loss_log
         pbar.set_description_str(
-            desc="Training epoch#{:03d}/{:d} mse={:.3e} psnr={:.2f}".format(
+            desc="Training epoch#{:03d}/{:d} loss={:.3e} psnr={:.2f}".format(
                 ep_log,
                 total_epochs,
                 running_loss,
@@ -270,7 +270,7 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
             exit()
 
         loss_log = loss / (args.train.n_batches * args.render.ray_chunk_size)
-        logger.info("epoch#{:03d}: mse={:.2e} psnr={:.2f}".format(ep_log, loss_log, data.loss2psnr(loss_log, maxval=1)))
+        logger.info("epoch#{:03d}: loss={:.2e} psnr={:.2f}".format(ep_log, loss_log, data.loss2psnr(loss_log, maxval=1)))
 
         logger.info("saving training state ... ")
         ckpt_name = checkpoints.save_checkpoint(
