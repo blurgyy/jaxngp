@@ -3,11 +3,12 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/22.11";
+    nixpkgs-with-nvidia-driver-fix.url = "github:nixos/nixpkgs/pull/222762/head";
     flake-utils.url = "github:numtide/flake-utils/3db36a8b464d0c4532ba1c7dda728f4576d6d073";
     nixgl = {
       url = "github:guibou/nixgl/c917918ab9ebeee27b0dd657263d3f57ba6bb8ad";
       inputs = {
-        nixpkgs.follows = "nixpkgs";
+        nixpkgs.follows = "nixpkgs-with-nvidia-driver-fix";
         flake-utils.follows = "flake-utils";
       };
     };
@@ -65,6 +66,9 @@
           config = {
             allowUnfree = true;
             cudaSupport = true;
+            packageOverrides = pkgs: {
+              linuxPackages = (import inputs.nixpkgs-with-nvidia-driver-fix {}).linuxPackages;
+            };
           };
           overlays = [
             inputs.nixgl.overlays.default
