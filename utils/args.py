@@ -93,10 +93,10 @@ class NeRFTrainingArgs(_NeRFArgs):
     train_ckpt: Optional[Path]=None
 
     train: TrainingArgs=TrainingArgs(
-        # After fixing ray integration weights (6cdaed1), the "mic", "ficus" models from the
-        # nerf-synthetic dataset fail to converge.  Using a smaller initial lr like here (1e-3)
-        # makes them converge again.
-        lr=1e-3,
+        # This is a relatively large learning rate, should be used jointly with
+        # `threasholded_exponential` as density activation, and random color as supervision for
+        # transparent pixels.
+        lr=1e-2,
         momentum=None,
         bs=2**10,
         n_epochs=32,

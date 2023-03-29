@@ -6,7 +6,6 @@ from typing import (
     Any,
     Hashable,
     Iterable,
-    Literal,
     Optional,
     Optional,
     Sequence,
@@ -21,11 +20,6 @@ from jax._src.lib import xla_client as xc
 import jax.random as jran
 import numpy as np
 import tensorflow as tf
-
-
-PositionalEncodingType = Literal["identity", "frequency", "hashgrid"]
-DirectionalEncodingType = Literal["identity", "sh"]
-ActivationType = Literal["exponential", "relu", "sigmoid", "truncated_exponential"]
 
 
 _tqdm_format = "SBRIGHT{desc}RESET: HI{percentage:3.0f}%RESET {n_fmt}/{total_fmt} [{elapsed}<HI{remaining}RESET, {rate_fmt}]"

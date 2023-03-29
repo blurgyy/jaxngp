@@ -1,8 +1,12 @@
-from typing import Literal, Tuple, Union
+from typing import Literal, Tuple
 
-import jax
 from flax.struct import dataclass
+import jax
 
+
+PositionalEncodingType = Literal["identity", "frequency", "hashgrid"]
+DirectionalEncodingType = Literal["identity", "sh"]
+ActivationType = Literal["exponential", "relu", "sigmoid", "truncated_exponential", "thresholded_exponential"]
 
 AABB = Tuple[Tuple[float, float], Tuple[float, float], Tuple[float, float]]
 DensityAndRGB = Tuple[jax.Array, jax.Array]

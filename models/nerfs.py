@@ -11,12 +11,8 @@ from models.encoders import (
     HashGridEncoder,
     SphericalHarmonicsEncoder,
 )
-from utils.common import (
-    ActivationType,
-    DirectionalEncodingType,
-    PositionalEncodingType,
-    mkValueError,
-)
+from utils.common import mkValueError
+from utils.types import ActivationType, DirectionalEncodingType, PositionalEncodingType
 from utils.types import AABB
 
 
@@ -119,8 +115,20 @@ def make_activation(act: ActivationType):
             fwd=__fwd_trunc_exp,
             bwd=__bwd_trunc_exp,
         )
-
         return trunc_exp
+
+    elif act == "thresholded_exponential":
+        def thresh_exp(x):
+            """
+            Exponential function translated along -y direction by 1e-2, and thresholded to have
+            non-negative values.
+            """
+            # paper:
+            #   the occupancy grids ... is updated every 16 steps ... corresponds to thresholding
+            #   the opacity of a minimal ray marching step by 1 − exp(−0.01) ≈ 0.01
+            return nn.relu(jnp.exp(x) - 1e-2)
+        return thresh_exp
+
     elif act == "relu":
         return nn.relu
     else:
@@ -241,7 +249,7 @@ def make_nerf_ngp(aabb: AABB) -> NeRF:
         density_Ds=[64],
         density_out_dim=16,
         density_skip_in_layers=[],
-        density_act="truncated_exponential",
+        density_act="thresholded_exponential",
 
         rgb_Ds=[64, 64],
         rgb_out_dim=3,
