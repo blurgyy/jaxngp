@@ -8,8 +8,10 @@ pypkgs: let
         (readDir basedir));
   mkPyPackage = name: let
       generated = pkgs.callPackage ./_sources/generated.nix {};
-    in pypkgs.callPackage ./${name} {
+      package = import ./${name};
+      args = with builtins; intersectAttrs (functionArgs package) {
         source = generated.${name};
       };
+    in pypkgs.callPackage package args;
 in
   mapDir ./. mkPyPackage

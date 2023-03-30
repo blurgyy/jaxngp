@@ -10,6 +10,7 @@ from models.encoders import (
     FrequencyEncoder,
     HashGridEncoder,
     SphericalHarmonicsEncoder,
+    SphericalHarmonicsEncoderCuda,
 )
 from utils.common import mkValueError
 from utils.types import ActivationType, DirectionalEncodingType, PositionalEncodingType
@@ -199,6 +200,8 @@ def make_nerf(
         direction_encoder = lambda x: x
     elif dir_enc == "sh":
         direction_encoder = SphericalHarmonicsEncoder(L=dir_levels)
+    elif dir_enc == "shcuda":
+        direction_encoder = SphericalHarmonicsEncoderCuda(L=dir_levels)
     else:
         raise mkValueError(
             desc="directional encoding",
@@ -241,7 +244,7 @@ def make_nerf_ngp(aabb: AABB) -> NeRF:
         aabb=aabb,
 
         pos_enc="hashgrid",
-        dir_enc="sh",
+        dir_enc="shcuda",
 
         pos_levels=16,
         dir_levels=4,

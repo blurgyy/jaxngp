@@ -43,7 +43,32 @@
             };
           };
         };
-      mkPythonDeps = { pp,  extraPackages }: with pp; [
+        cudaPkgs = import nixpkgs {
+          inherit system;
+          config = {
+            allowUnfree = true;
+            cudaSupport = true;
+            packageOverrides = pkgs: {
+              linuxPackages = (import inputs.nixpkgs-with-nvidia-driver-fix {}).linuxPackages;
+            };
+          };
+          overlays = [
+            inputs.nixgl.overlays.default
+            jaxOverlays
+          ];
+        };
+      cpuPkgs = import nixpkgs {
+        inherit system;
+        config = {
+          allowUnfree = true;
+          cudaSupport = false;  # NOTE: disable cuda for cpu env
+        };
+        overlays = [
+          inputs.nixgl.overlays.default
+          jaxOverlays
+        ];
+      };
+      mkPythonDeps = { pp, extraPackages }: with pp; [
           ipython
           tensorflow
           tqdm
@@ -59,29 +84,16 @@
           flax
         ] ++ extraPackages;
     in rec {
-      default = cuda;
-      cuda = let
-        pkgs = import nixpkgs {
-          inherit system;
-          config = {
-            allowUnfree = true;
-            cudaSupport = true;
-            packageOverrides = pkgs: {
-              linuxPackages = (import inputs.nixpkgs-with-nvidia-driver-fix {}).linuxPackages;
-            };
-          };
-          overlays = [
-            inputs.nixgl.overlays.default
-            jaxOverlays
-          ];
-        };
-      in pkgs.mkShell {  # impure
+      default = cudaDevShell;
+      cudaDevShell = cudaPkgs.mkShell {  # impure
         name = "cuda";
         buildInputs = [
-          pkgs.colmapWithCuda
-          (pkgs.${py}.withPackages (pp: mkPythonDeps {
+          cudaPkgs.colmapWithCuda
+          (cudaPkgs.${py}.withPackages (pp: mkPythonDeps {
               inherit pp;
-              extraPackages = [];
+              extraPackages = [
+                (depsWith pp).spherical-harmonics-encoding-jax
+              ];
             }))
         ];
         # REF:
@@ -94,26 +106,15 @@
           (nvidiaDriverVersionMajor <= 470)
           "--xla_gpu_force_compilation_parallelism=1";
         shellHook = ''
-          source <(sed -Ee '/\$@/d' ${lib.getExe pkgs.nixgl.nixGLIntel})
-          source <(sed -Ee '/\$@/d' ${lib.getExe pkgs.nixgl.auto.nixGLNvidia}*)
+          source <(sed -Ee '/\$@/d' ${lib.getExe cudaPkgs.nixgl.nixGLIntel})
+          source <(sed -Ee '/\$@/d' ${lib.getExe cudaPkgs.nixgl.auto.nixGLNvidia}*)
           [[ "$-" == *i* ]] && exec "$SHELL"
         '';
       };
-      cpu = let
-        pkgs = import nixpkgs {
-          inherit system;
-          config = {
-            allowUnfree = true;
-            cudaSupport = false;  # NOTE: disable cuda for cpu env
-          };
-          overlays = [
-            inputs.nixgl.overlays.default
-            jaxOverlays
-          ];
-        };
-      in pkgs.mkShell {
+
+      cpuDevShell = cpuPkgs.mkShell {
         name = "cpu";
-        buildInputs = with pkgs; [
+        buildInputs = with cpuPkgs; [
           colmap
           (python3.withPackages (pp: mkPythonDeps {
               inherit pp;
@@ -124,6 +125,8 @@
           [[ "$-" == *i* ]] && exec "$SHELL"
         '';
       };
+
+      shjax = cudaPkgs.${py}.pkgs.callPackage ./deps/spherical-harmonics-encoding-jax {};
     };
   });
 }

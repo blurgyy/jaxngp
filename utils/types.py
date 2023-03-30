@@ -5,7 +5,7 @@ import jax
 
 
 PositionalEncodingType = Literal["identity", "frequency", "hashgrid"]
-DirectionalEncodingType = Literal["identity", "sh"]
+DirectionalEncodingType = Literal["identity", "sh", "shcuda"]
 ActivationType = Literal["exponential", "relu", "sigmoid", "truncated_exponential", "thresholded_exponential"]
 
 AABB = Tuple[Tuple[float, float], Tuple[float, float], Tuple[float, float]]
