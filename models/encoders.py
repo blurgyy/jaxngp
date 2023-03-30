@@ -289,7 +289,7 @@ class SphericalHarmonicsEncoderCuda(nn.Module):
     @nn.jit
     def __call__(self, dirs: jax.Array) -> jax.Array:
         "Just a thin wrapper on top of :func:`shjax.spherical_harmonics_encoding()`"
-        dirs /= jnp.linalg.norm(dirs, axis=0, keepdims=True)
+        dirs /= jnp.linalg.norm(dirs, axis=-1, keepdims=True)
         return shjax.spherical_harmonics_encoding(dirs, self.L)
 
 
