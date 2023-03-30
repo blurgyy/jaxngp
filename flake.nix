@@ -8,7 +8,7 @@
     nixgl = {
       url = "github:guibou/nixgl/c917918ab9ebeee27b0dd657263d3f57ba6bb8ad";
       inputs = {
-        nixpkgs.follows = "nixpkgs-with-nvidia-driver-fix";
+        nixpkgs.follows = "nixpkgs";
         flake-utils.follows = "flake-utils";
       };
     };
@@ -51,7 +51,6 @@
           (depsWith pp).tyro
           pillow
           ipdb
-          sympy
           colorama
 
           jaxlib-bin
@@ -79,6 +78,7 @@
       in pkgs.mkShell {  # impure
         name = "cuda";
         buildInputs = [
+          pkgs.colmapWithCuda
           (pkgs.${py}.withPackages (pp: mkPythonDeps {
               inherit pp;
               extraPackages = [];
@@ -114,6 +114,7 @@
       in pkgs.mkShell {
         name = "cpu";
         buildInputs = with pkgs; [
+          colmap
           (python3.withPackages (pp: mkPythonDeps {
               inherit pp;
               extraPackages = [];

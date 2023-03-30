@@ -1,0 +1,6 @@
+[tool.pyright]
+include = [
+  "app",
+  "models",
+  "utils",
+]

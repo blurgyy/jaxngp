@@ -2,16 +2,23 @@
 
 import logging
 import random
-from typing import Any, Callable, Hashable, Iterable, Optional, Sequence, Tuple, Union
+from typing import (
+    Any,
+    Hashable,
+    Iterable,
+    Optional,
+    Optional,
+    Sequence,
+    Union,
+    get_args,
+)
 
-import chex
 import colorama
 from colorama import Back, Fore, Style
 import jax
 from jax._src.lib import xla_client as xc
 import jax.random as jran
 import numpy as np
-import sympy
 import tensorflow as tf
 
 
@@ -47,6 +54,12 @@ def vmap_jaxfn_with(
         )
 
 
+def mkValueError(desc, value, type):
+    variants = get_args(type)
+    assert value not in variants
+    return ValueError("Unexpected {}: '{}', expected one of [{}]".format(desc, value, "|".join(variants)))
+
+
 def jit_jaxfn_with(
         # kwargs copied from `jax.jit` source
         static_argnums: Union[int, Iterable[int], None] = None,
@@ -74,10 +87,8 @@ def jit_jaxfn_with(
 def setup_logging(
         name: str="main",
         level: str="INFO"
-    ) -> Tuple[logging.Logger, Tuple[Callable, Callable, Callable, Callable, Callable]]:
+    ) -> logging.Logger:
     colorama.just_fix_windows_console()
-
-    fn_names = ["debug", "info", "warning", "error", "critical"]
 
     class _formatter(logging.Formatter):
         def __init__(self, datefmt):
@@ -110,7 +121,10 @@ def setup_logging(
     logger.setLevel(level)
     logger.addHandler(ch)
     logger.propagate = False
-    return logger, map(lambda fn: getattr(logger, fn), fn_names)
+
+    # logger complains about `warn` being deprecated with another warning
+    logger.warn = logger.warning
+    return logger
 
 
 def set_deterministic(seed: int) -> jran.KeyArray:
@@ -118,17 +132,3 @@ def set_deterministic(seed: int) -> jran.KeyArray:
     np.random.seed(seed)
     tf.random.set_seed(seed)
     return jran.PRNGKey(seed)
-
-
-def find_smallest_prime_larger_or_equal_than(x: int):
-    chex.assert_type(x, int)
-
-    if x <= 2:
-        return 2
-
-    if x & 1 == 0:
-        x += 1
-    while not sympy.isprime(x):
-        x += 2
-
-    return x

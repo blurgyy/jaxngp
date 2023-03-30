@@ -22,7 +22,7 @@
           "flake-utils"
         ],
         "nixpkgs": [
-          "nixpkgs-with-nvidia-driver-fix"
+          "nixpkgs"
         ]
       },
       "locked": {

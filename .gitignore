@@ -1,4 +1,5 @@
 /data
+/logs
 
 result
 
@@ -6,3 +7,8 @@ result
 *.JPG
 *.png
 *.PNG
+
+*.ckpt
+
+*.bak
+*~

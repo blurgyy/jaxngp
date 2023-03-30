@@ -1,11 +1,11 @@
 from typing import Literal
+import chex
 
 import flax.linen as nn
 from flax.linen.dtypes import Dtype
 import jax
 
 from models.encoders import FrequencyEncoder, HashGridEncoder
-from utils.common import find_smallest_prime_larger_or_equal_than
 
 
 class ImageFitter(nn.Module):
@@ -17,18 +17,20 @@ class ImageFitter(nn.Module):
     def __call__(self, uv: jax.Array) -> jax.Array:
         """
         Inputs:
-            uv [..., 2]: coordinates in $\R^2$ (normalized in range [0, 1]).
+            uv [..., 2]: coordinates in $\\R^2$ (normalized in range [0, 1]).
 
         Returns:
             rgb [..., 3]: predicted color for each input uv coordinate (normalized in range [0, 1]).
         """
+        chex.assert_axis_dimension(uv, -1, 2)
+
         if self.encoding == "hashgrid":
             # [..., L*F]
             x = HashGridEncoder(
                 dim=2,
                 L=16,
                 # ~1Mi entries per level
-                T=find_smallest_prime_larger_or_equal_than(2**20),
+                T=2**20,
                 F=2,
                 N_min=16,
                 N_max=2**19,  # 524288

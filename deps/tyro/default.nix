@@ -1,6 +1,6 @@
 # with import <nixpkgs> {};
 
-{ source, buildPythonPackage
+{ source, lib, buildPythonPackage
 
 , poetry-core
 , backports-cached-property
@@ -38,4 +38,10 @@ buildPythonPackage {
   ];
 
   pythonImportsCheck = [ "tyro" ];
+
+  meta = {
+    homepage = "https://github.com/brentyi/tyro";
+    description = "Strongly typed, zero-effort CLI interfaces & config objects";
+    license = lib.licenses.mit;
+  };
 }
