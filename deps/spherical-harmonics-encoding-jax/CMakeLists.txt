@@ -1,5 +1,6 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.23)
 project(spherical_harmonics_encoding_jax LANGUAGES CXX CUDA)
+set(CMAKE_CUDA_ARCHITECTURES "all")
 
 message(STATUS "Using CMake version " ${CMAKE_VERSION})
 
