@@ -140,7 +140,7 @@ void spherical_harmonics_encoding_launcher(cudaStream_t stream, void **buffers, 
     // outputs
     real_t * const out = reinterpret_cast<real_t *>(buffers[1]);  // [length, dim * 2 * n_levels]
 
-    int blockSize = 256;
+    int blockSize = 1024;
     int numBlocks = (n + blockSize - 1) / blockSize;
     numBlocks = std::min<int>(1024, numBlocks);
     spherical_harmonics_encoding_kernel<real_t><<<numBlocks, blockSize, 0, stream>>>(
