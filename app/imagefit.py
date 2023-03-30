@@ -147,7 +147,7 @@ def main(
     in_image = np.asarray(Image.open(in_image))
     image_metadata = data.make_image_metadata(
         image=in_image,
-        bg=[0xff, 0xff, 0xff],
+        bg=(1.0, 1.0, 1.0),
     )
 
     for ep in range(args.train.n_epochs):

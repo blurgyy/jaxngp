@@ -27,7 +27,7 @@ class Concatenate:
     gap: int=0
     # border in pixels
     border: int=0
-    bg: RGBColor=[1.0, 1.0, 1.0]
+    bg: RGBColor=(1.0, 1.0, 1.0)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -35,7 +35,7 @@ class Metrics:
     gt: Path
     image_paths: tyro.conf.Positional[List[Path]]
     psnr: bool=True
-    bg: RGBColor=[1.0, 1.0, 1.0]
+    bg: RGBColor=(1.0, 1.0, 1.0)
 
 
 Args = Union[
