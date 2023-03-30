@@ -130,4 +130,5 @@ def spherical_harmonics_encoding(coord: jax.Array, degree: int) -> jax.Array:
     """
     chex.assert_rank(coord, 2)
     chex.assert_axis_dimension(coord, -1, 3)
+    chex.assert_scalar_non_negative(degree)
     return sh_enc_p.bind(coord, jnp.empty((degree,)))
