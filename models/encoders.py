@@ -7,6 +7,7 @@ from flax.linen.dtypes import Dtype
 import jax
 import jax.numpy as jnp
 import jax.random as jran
+import shjax
 
 from utils.common import jit_jaxfn_with, vmap_jaxfn_with
 
@@ -279,6 +280,17 @@ class FrequencyEncoder(Encoder):
         # [..., 2*dim*L]
         encodings = jnp.concatenate([senc, cenc], axis=-1)
         return encodings
+
+
+class SphericalHarmonicsEncoderCuda(nn.Module):
+    # highest degree
+    L: int
+
+    @nn.jit
+    def __call__(self, dirs: jax.Array) -> jax.Array:
+        "Just a thin wrapper on top of :func:`shjax.spherical_harmonics_encoding()`"
+        dirs /= jnp.linalg.norm(dirs, axis=0, keepdims=True)
+        return shjax.spherical_harmonics_encoding(dirs, self.L)
 
 
 class SphericalHarmonicsEncoder(nn.Module):

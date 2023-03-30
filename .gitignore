@@ -12,3 +12,9 @@ result
 
 *.bak
 *~
+
+.clangd
+build/
+*.egg-info
+.venv
+.cache
