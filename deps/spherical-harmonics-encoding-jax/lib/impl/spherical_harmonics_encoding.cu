@@ -20,6 +20,17 @@ __inline__ void check_throw(cudaError_t error) {
     }
 }
 
+// debugging kernel for inspecting data passed to custom op
+__global__ void copy_left_to_right(std::size_t length, float const *lhs, float * const rhs) {
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+
+    #pragma unroll
+    for (int i = index; i < length; i += stride) {
+        rhs[i] = lhs[i];
+    }
+}
+
 template <typename real_t>
 __device__ __inline__ void sh_enc(std::uint32_t degree, float x, float y, float z, real_t * const o) {
     // adapted from <https://github.com/NVlabs/tiny-cuda-nn/blob/39df2387a684e4fe0cfa33542aebf5eab237716b/include/tiny-cuda-nn/encodings/spherical_harmonics.h#L52-L123>
@@ -135,10 +146,10 @@ void spherical_harmonics_encoding_launcher(cudaStream_t stream, void **buffers, 
         *deserialize<SphericalHarmonicsEncodingDescriptor>(opaque, opaque_len);
     std::size_t const n = desc.n;
     std::uint32_t const degree = desc.degree;
-    real_t const *xyz = reinterpret_cast<real_t *>(buffers[0]);  // [length, dim]
+    real_t const *xyz = static_cast<real_t const *>(buffers[0]);  // [length, 3]
 
     // outputs
-    real_t * const out = reinterpret_cast<real_t *>(buffers[1]);  // [length, dim * 2 * n_levels]
+    real_t * const out = static_cast<real_t *>(buffers[1]);  // [length, dim * 2 * n_levels]
 
     int blockSize = 256;
     int numBlocks = (n + blockSize - 1) / blockSize;
