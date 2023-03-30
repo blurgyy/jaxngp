@@ -409,6 +409,13 @@ def bench_sh():
     sh = SphericalHarmonicsEncoder(L=L)
     shcuda = SphericalHarmonicsEncoderCuda(L=L)
 
+    @jax.jit
+    def shjax_jitted(x):
+        return sh(x)
+    @jax.jit
+    def shcuda_jitted(x):
+        return shcuda(x)
+
     d = jnp.asarray([[.1, .5, -.7]])
     d /= jnp.linalg.norm(d, axis=-1, keepdims=True)
 
@@ -427,14 +434,14 @@ def bench_sh():
 
         stime = time.time()
         print("|jax...", end="")
-        result = sh(d).block_until_ready()
+        result = shjax_jitted(d).block_until_ready()
         etime = time.time()
         durms = 1000 * (etime - stime)
         print("{:.2f}ms|".format(durms), end="")
 
         stime = time.time()
         print("|cuda...", end="")
-        result_cuda = shcuda(d).block_until_ready()
+        result_cuda = shcuda_jitted(d).block_until_ready()
         etime = time.time()
         durms = 1000 * (etime - stime)
         print("{:.2f}ms|".format(durms), end="")
@@ -459,16 +466,20 @@ def bench_hg():
     K = jran.PRNGKey(0xabcdef)
     variables = hg.init(K, jnp.zeros([5, 3]))
 
+    @jax.jit
+    def hgjax_jitted(d):
+        return hg.apply(variables, d)
+
     for i in range(100):
         K, key = jran.split(K, 2)
-        n = 10 * 256
-        d = jran.normal(key, (n, 3))
+        n = 256_000
+        d = jran.uniform(key, (n, 3), minval=0, maxval=1.)
 
         print("{:03d}-th check ({} coordinates, degree={}): ".format(i+1, n, L), end="")
 
         stime = time.time()
         print("|jax...", end="")
-        result = hg.apply(variables, d).block_until_ready()
+        result = hgjax_jitted(d).block_until_ready()
         etime = time.time()
         durms = 1000 * (etime - stime)
         print("{:.2f}ms|".format(durms), end="")
@@ -477,5 +488,9 @@ def bench_hg():
 
 
 if __name__ == "__main__":
-    # bench_hg()
+    print("bench_hg")
+    bench_hg()
+
+    print()
+    print("bench_sh:")
     bench_sh()
