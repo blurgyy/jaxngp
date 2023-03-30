@@ -297,6 +297,7 @@ class SphericalHarmonicsEncoder(nn.Module):
             encodings [..., L**2]: real parts of the spherical harmonics up to the L-th degree.
         """
         chex.assert_axis_dimension(dirs, -1, 3)
+        dirs /= jnp.linalg.norm(dirs, axis=-1, keepdims=True)
         x, y, z = dirs[..., 0], dirs[..., 1], dirs[..., 2]
         xy, xz, yz = x*y, x*z, y*z
         x2, y2, z2 = x*x, y*y, z*z
