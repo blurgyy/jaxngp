@@ -14,14 +14,14 @@ namespace shjax {
 
 namespace {
 
-void check_throw(cudaError_t error) {
+__inline__ void check_throw(cudaError_t error) {
     if (error != cudaSuccess) {
         throw std::runtime_error(cudaGetErrorString(error));
     }
 }
 
 template <typename real_t>
-__device__ void sh_enc(std::uint32_t degree, float x, float y, float z, real_t * const o) {
+__device__ __inline__ void sh_enc(std::uint32_t degree, float x, float y, float z, real_t * const o) {
     // adapted from <https://github.com/NVlabs/tiny-cuda-nn/blob/39df2387a684e4fe0cfa33542aebf5eab237716b/include/tiny-cuda-nn/encodings/spherical_harmonics.h#L52-L123>
 
     float xy=x*y, xz=x*z, yz=y*z, x2=x*x, y2=y*y, z2=z*z;
