@@ -130,13 +130,13 @@ template <typename real_t>
 __global__ void spherical_harmonics_encoding_kernel(
     std::uint32_t n,
     std::uint32_t degree,
-    float const *xyz,
+    float const * __restrict__ xyz,
     real_t * const __restrict__ output
 ) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) { return; }
 
-    real_t * const o = output + i * degree * degree;
+    real_t * const __restrict__ o = output + i * degree * degree;
     float x = xyz[i*3], y = xyz[i*3+1], z = xyz[i*3+2];
 
     sh_enc<real_t>(degree, x, y, z, o);
