@@ -1,3 +1,4 @@
+import functools
 from typing import Callable, List, Tuple
 
 import flax.linen as nn
@@ -110,6 +111,7 @@ def make_activation(act: ActivationType):
             aux = x  # aux contains additional information that is useful in the backward pass
             return y, aux
         def __bwd_trunc_exp(aux, grad_y):
+            # REF: <https://github.com/NVlabs/instant-ngp/blob/d0d35d215c7c63c382a128676f905ecb676fa2b8/src/testbed_nerf.cu#L303>
             grad_x = jnp.exp(jnp.clip(aux, -15, 15)) * grad_y
             return (grad_x, )
         trunc_exp.defvjp(
@@ -119,7 +121,7 @@ def make_activation(act: ActivationType):
         return trunc_exp
 
     elif act == "thresholded_exponential":
-        def thresh_exp(x):
+        def thresh_exp(x, thresh):
             """
             Exponential function translated along -y direction by 1e-2, and thresholded to have
             non-negative values.
@@ -127,9 +129,34 @@ def make_activation(act: ActivationType):
             # paper:
             #   the occupancy grids ... is updated every 16 steps ... corresponds to thresholding
             #   the opacity of a minimal ray marching step by 1 − exp(−0.01) ≈ 0.01
-            return nn.relu(jnp.exp(x) - 1e-2)
-        return thresh_exp
+            return nn.relu(jnp.exp(x) - thresh)
+        return functools.partial(thresh_exp, thresh=1e-2)
 
+    elif act == "truncated_thresholded_exponential":
+        @jax.custom_vjp
+        def trunc_thresh_exp(x, thresh):
+            """
+            Exponential, but value is translated along -y axis by value `thresh`, negative values
+            are removed, and gradient is truncated.
+            """
+            return nn.relu(jnp.exp(x) - thresh)
+        def __fwd_trunc_threash_exp(x, thresh):
+            y = trunc_thresh_exp(x, thresh=thresh)
+            aux = x, thresh  # aux contains additional information that is useful in the backward pass
+            return y, aux
+        def __bwd_trunc_threash_exp(aux, grad_y):
+            x, thresh = aux
+            grad_x = jnp.exp(jnp.clip(x, -15, 15)) * grad_y
+            # clip gradient for values that has been thresholded by relu during forward pass
+            grad_x = jnp.signbit(jnp.log(thresh) - x) * grad_x
+            # first tuple element is gradient for input, second tuple element is gradient for the
+            # `threshold` value.
+            return (grad_x, 0)
+        trunc_thresh_exp.defvjp(
+            fwd=__fwd_trunc_threash_exp,
+            bwd=__bwd_trunc_threash_exp,
+        )
+        return functools.partial(trunc_thresh_exp, thresh=1e-2)
     elif act == "relu":
         return nn.relu
     else:
@@ -252,7 +279,7 @@ def make_nerf_ngp(aabb: AABB) -> NeRF:
         density_Ds=[64],
         density_out_dim=16,
         density_skip_in_layers=[],
-        density_act="thresholded_exponential",
+        density_act="truncated_thresholded_exponential",
 
         rgb_Ds=[64, 64],
         rgb_out_dim=3,
