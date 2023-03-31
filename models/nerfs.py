@@ -271,7 +271,7 @@ def make_nerf_ngp(aabb: AABB) -> NeRF:
         aabb=aabb,
 
         pos_enc="hashgrid",
-        dir_enc="shcuda",
+        dir_enc="sh",
 
         pos_levels=16,
         dir_levels=4,

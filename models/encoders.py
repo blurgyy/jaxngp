@@ -282,7 +282,7 @@ class FrequencyEncoder(Encoder):
         return encodings
 
 
-class SphericalHarmonicsEncoderCuda(nn.Module):
+class SphericalHarmonicsEncoderCuda(Encoder):
     # highest degree
     L: int
 
@@ -293,7 +293,7 @@ class SphericalHarmonicsEncoderCuda(nn.Module):
         return shjax.spherical_harmonics_encoding(dirs, self.L)
 
 
-class SphericalHarmonicsEncoder(nn.Module):
+class SphericalHarmonicsEncoder(Encoder):
     # highest degree
     L: int
 
@@ -399,3 +399,98 @@ class SphericalHarmonicsEncoder(nn.Module):
         if self.L <= 8: return encodings
 
         raise NotImplementedError("Largest supported degree of spherical harmonics is 8, got {}".format(self.L))
+
+
+def bench_sh():
+    import time
+
+    L = 8
+
+    sh = SphericalHarmonicsEncoder(L=L)
+    shcuda = SphericalHarmonicsEncoderCuda(L=L)
+
+    @jax.jit
+    def shjax_jitted(x):
+        return sh(x)
+    @jax.jit
+    def shcuda_jitted(x):
+        return shcuda(x)
+
+    d = jnp.asarray([[.1, .5, -.7]])
+    d /= jnp.linalg.norm(d, axis=-1, keepdims=True)
+
+    result = sh(d)
+    result_cuda = shcuda(d)
+    print(abs(result - result_cuda).sum())
+
+    K = jran.PRNGKey(0xdeadbeef)
+    for i in range(100):
+        K, key = jran.split(K, 2)
+        n = 800*800
+        d = jran.normal(key, (n, 3))
+        d /= jnp.linalg.norm(d)
+
+        print("{:03d}-th check ({} coordinates, degree={}): ".format(i+1, n, L), end="")
+
+        stime = time.time()
+        print("|jax...", end="")
+        result = shjax_jitted(d).block_until_ready()
+        etime = time.time()
+        durms = 1000 * (etime - stime)
+        print("{:.2f}ms|".format(durms), end="")
+
+        stime = time.time()
+        print("|cuda...", end="")
+        result_cuda = shcuda_jitted(d).block_until_ready()
+        etime = time.time()
+        durms = 1000 * (etime - stime)
+        print("{:.2f}ms|".format(durms), end="")
+
+        diff = abs(result - result_cuda).sum()
+        print("diff(total)={:.3e}|diff(mean)={:.3e}".format(diff, diff/n))
+
+
+def bench_hg():
+    import time
+
+    L=16
+
+    hg = HashGridEncoder(
+        dim=3,
+        L=16,
+        T=2**19,
+        F=2,
+        N_min=16,
+        N_max=2**12,
+    )
+    K = jran.PRNGKey(0xabcdef)
+    variables = hg.init(K, jnp.zeros([5, 3]))
+
+    @jax.jit
+    def hgjax_jitted(d):
+        return hg.apply(variables, d)
+
+    for i in range(100):
+        K, key = jran.split(K, 2)
+        n = 256_000
+        d = jran.uniform(key, (n, 3), minval=0, maxval=1.)
+
+        print("{:03d}-th check ({} coordinates, degree={}): ".format(i+1, n, L), end="")
+
+        stime = time.time()
+        print("|jax...", end="")
+        result = hgjax_jitted(d).block_until_ready()
+        etime = time.time()
+        durms = 1000 * (etime - stime)
+        print("{:.2f}ms|".format(durms), end="")
+
+        print()
+
+
+if __name__ == "__main__":
+    print("bench_hg")
+    bench_hg()
+
+    print()
+    print("bench_sh:")
+    bench_sh()

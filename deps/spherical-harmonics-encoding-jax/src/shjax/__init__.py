@@ -30,7 +30,8 @@ def _spherical_harmonics_encoding_abstract(coord: jax.Array, hint: jax.Array):
         hint [degree]: an array with shape [L], this is used to hint the function with the desired
                   spherical harmonics degrees
     """
-    (n, _), dtype = coord.shape, coord.dtype
+    (*n, _), dtype = coord.shape, coord.dtype
+    n = functools.reduce(lambda x, y: x * y, n)
     degree, = hint.shape
     dtype = jax.dtypes.canonicalize_dtype(coord.dtype)
     return ShapedArray(shape=(n, degree * degree), dtype=dtype)
@@ -90,6 +91,9 @@ mlir.register_lowering(
 # vmap support. REF: <https://jax.readthedocs.io/en/latest/notebooks/How_JAX_primitives_work.html#batching>
 def spherical_harmonics_encoding_batch(args, axes):
     """
+    The primitive is already able to handle arbitrary shape (except for the last axis, which must
+    have a dimension of 3), directly binding to the primitive impl should suffice.
+
     Inputs:
         args: Passed to def_impl, contains two tensors: `coord` and `hint`, where only `coord` is
               batched.  args is (coord, hint)
@@ -100,16 +104,12 @@ def spherical_harmonics_encoding_batch(args, axes):
     coord, hint = args
     assert coord.shape[-1] == 3, "spatial coordinates must be the last dimension"
 
-    # reshape the value so that the custom operation can consume it
-    enc = sh_enc_p.bind(coord.reshape(-1, 3), hint)
+    enc = sh_enc_p.bind(coord, hint)
     # or:
-    # ret = spherical_harmonics_encoding(
-    #     coord=coord.reshape(B*n, 3),
+    # enc = spherical_harmonics_encoding(
+    #     coord=coord,
     #     degree=hint.shape[0],
     # )
-
-    # reshape back so that the spatial dimension (last dimension) is replaced with the encodings
-    enc = enc.reshape(*coord.shape[:-1], -1)
 
     # return the result, and the result axis that was batched
     return enc, axes[0]
@@ -130,4 +130,5 @@ def spherical_harmonics_encoding(coord: jax.Array, degree: int) -> jax.Array:
     """
     chex.assert_rank(coord, 2)
     chex.assert_axis_dimension(coord, -1, 3)
+    chex.assert_scalar_non_negative(degree)
     return sh_enc_p.bind(coord, jnp.empty((degree,)))
