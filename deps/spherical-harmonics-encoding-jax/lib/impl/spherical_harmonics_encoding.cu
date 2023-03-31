@@ -133,16 +133,13 @@ __global__ void spherical_harmonics_encoding_kernel(
     float const *xyz,
     real_t * const __restrict__ output
 ) {
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) { return; }
 
-    #pragma unroll
-    for (int i = index; i < n; i += stride) {
-        real_t * const o = output + i * degree * degree;
-        float x = xyz[i*3], y = xyz[i*3+1], z = xyz[i*3+2];
+    real_t * const o = output + i * degree * degree;
+    float x = xyz[i*3], y = xyz[i*3+1], z = xyz[i*3+2];
 
-        sh_enc<real_t>(degree, x, y, z, o);
-    }
+    sh_enc<real_t>(degree, x, y, z, o);
 }
 
 template <typename real_t>
@@ -159,7 +156,6 @@ void spherical_harmonics_encoding_launcher(cudaStream_t stream, void **buffers, 
 
     int blockSize = 1024;
     int numBlocks = (n + blockSize - 1) / blockSize;
-    numBlocks = std::min<int>(1024, numBlocks);
     spherical_harmonics_encoding_kernel<real_t><<<numBlocks, blockSize, 0, stream>>>(
             n,
             degree,
