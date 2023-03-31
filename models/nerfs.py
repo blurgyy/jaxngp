@@ -52,7 +52,7 @@ class NeRF(nn.Module):
 
         x = self.density_mlp(pos_enc)
         # [..., 1], [..., density_MLP_out-1]
-        density, x = jnp.split(x, [1], axis=-1)
+        density, _ = jnp.split(x, [1], axis=-1)
 
         # [..., D_dir]
         dir_enc = self.direction_encoder(dir)
