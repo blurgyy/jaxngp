@@ -21,7 +21,7 @@ __inline__ void check_throw(cudaError_t error) {
 }
 
 // debugging kernel for inspecting data passed to custom op
-__global__ void copy_left_to_right(std::size_t length, float const *lhs, float * const rhs) {
+__global__ void copy_left_to_right(std::uint32_t length, float const *lhs, float * const rhs) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
 
@@ -128,7 +128,7 @@ __device__ __inline__ void sh_enc(
 // kernel
 template <typename real_t>
 __global__ void spherical_harmonics_encoding_kernel(
-    std::size_t n,
+    std::uint32_t n,
     std::uint32_t degree,
     float const *xyz,
     real_t * const __restrict__ output
@@ -150,7 +150,7 @@ void spherical_harmonics_encoding_launcher(cudaStream_t stream, void **buffers, 
     // inputs
     SphericalHarmonicsEncodingDescriptor const &desc =
         *deserialize<SphericalHarmonicsEncodingDescriptor>(opaque, opaque_len);
-    std::size_t const n = desc.n;
+    std::uint32_t const n = desc.n;
     std::uint32_t const degree = desc.degree;
     float const *xyz = static_cast<float const *>(buffers[0]);  // [length, 3]
 

@@ -6,7 +6,7 @@
 namespace shjax {
 
 struct SphericalHarmonicsEncodingDescriptor {
-    std::size_t n;
+    std::uint32_t n;
     std::uint32_t degree;
 };
 
