@@ -1,8 +1,14 @@
-#ifdef __CUDACC__
-#define FE_INLINE __host__ __device__
-#else
-#define FE_INLINE inline
-#endif
+#define STRINGIFY(x) #x
+#define STR(x) STRINGIFY(x)
+#define FILE_LINE __FILE__ ":" STR(__LINE__)
+#define CUDA_CHECK_THROW(x)                                                                        \
+    do {                                                                                           \
+        cudaError_t result = x;                                                                    \
+        if (result != cudaSuccess)                                                                 \
+            throw std::runtime_error(                                                              \
+                std::string(FILE_LINE " " #x " failed with error ")                                \
+                + cudaGetErrorString(result));                                                     \
+    } while(0)
 
 #include <cstdint>
 
@@ -13,12 +19,6 @@
 namespace shjax {
 
 namespace {
-
-__inline__ void check_throw(cudaError_t error) {
-    if (error != cudaSuccess) {
-        throw std::runtime_error(cudaGetErrorString(error));
-    }
-}
 
 // debugging kernel for inspecting data passed to custom op
 __global__ void copy_left_to_right(std::uint32_t length, float const *lhs, float * const rhs) {
@@ -162,7 +162,7 @@ void spherical_harmonics_encoding_launcher(cudaStream_t stream, void **buffers, 
             xyz,
             out
         );
-    check_throw(cudaGetLastError());
+    CUDA_CHECK_THROW(cudaGetLastError());
 }
 
 }  // namespace
