@@ -2,6 +2,7 @@
 
 , setuptools-scm
 , cmake
+, ninja
 , pybind11
 , fmt
 
@@ -30,6 +31,7 @@ buildPythonPackage {
 
   nativeBuildInputs = [
     cmake
+    ninja
     pybind11
     setuptools-scm
   ];
