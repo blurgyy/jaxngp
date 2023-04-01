@@ -412,9 +412,11 @@ def bench_sh():
     @jax.jit
     def shjax_jitted(x):
         return sh(x)
-    @jax.jit
-    def shcuda_jitted(x):
-        return shcuda(x)
+    @jit_jaxfn_with(static_argnames=["L"])
+    # def shcuda_jitted(x):
+    #     return shcuda(x)
+    def shcuda_jitted(x, L):
+        return shjax.spherical_harmonics_encoding(x, L)
 
     d = jnp.asarray([[.1, .5, -.7]])
     d /= jnp.linalg.norm(d, axis=-1, keepdims=True)
@@ -441,7 +443,7 @@ def bench_sh():
 
         stime = time.time()
         print("|cuda...", end="")
-        result_cuda = shcuda_jitted(d).block_until_ready()
+        result_cuda = shcuda_jitted(d, L).block_until_ready()
         etime = time.time()
         durms = 1000 * (etime - stime)
         print("{:.2f}ms|".format(durms), end="")
@@ -488,8 +490,8 @@ def bench_hg():
 
 
 if __name__ == "__main__":
-    print("bench_hg")
-    bench_hg()
+    # print("bench_hg")
+    # bench_hg()
 
     print()
     print("bench_sh:")

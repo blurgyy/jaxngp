@@ -182,7 +182,9 @@ def march_rays(
         nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
     ) -> Tuple[jax.Array, jax.Array, jax.Array]:
     """
-    Given a pack of rays, render the colors along them.
+    Given a ray defined by a world-space origin coordinate (a 3D vector) `o_world` and a
+    corresponding direction vector `d_world`, compute the opacity along this ray, integrate the
+    predicted colors, and estimate a depth according to the ray's expected termination time.
 
     Inputs:
         o_world [3]: ray origins, in world space
@@ -194,7 +196,9 @@ def march_rays(
                  outputs densities and rgbs.
 
     Returns:
+        weight [n_samples]: weights of each sample along the ray
         rgb [3]: rendered colors
+        depth [1]:
     """
     chex.assert_shape([o_world, d_world], [[..., 3], [..., 3]])
 
