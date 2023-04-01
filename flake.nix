@@ -93,6 +93,7 @@
               inherit pp;
               extraPackages = [
                 (depsWith pp).spherical-harmonics-encoding-jax
+                (depsWith pp).volume-rendering-jax
               ];
             }))
         ];
@@ -127,6 +128,7 @@
       };
 
       shjax = cudaPkgs.${py}.pkgs.callPackage ./deps/spherical-harmonics-encoding-jax {};
+      volrendjax = cudaPkgs.${py}.pkgs.callPackage ./deps/volume-rendering-jax {};
     };
   });
 }
