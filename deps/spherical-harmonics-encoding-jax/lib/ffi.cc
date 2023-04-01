@@ -33,7 +33,7 @@ pybind11::dict get_registrations() {
 PYBIND11_MODULE(cudaops, m) {
     m.def("get_registrations", &get_registrations);
     m.def("make_spherical_harmonics_encoding_descriptor",
-          [](std::size_t n, std::uint8_t degree) {
+          [](std::uint32_t n, std::uint8_t degree) {
             if (degree < 1 || degree > 8) {
                 throw std::runtime_error(fmt::format("Spherical harmonics encoding supports degrees 1 to 8 (inclusive) but got {}", degree));
             }
