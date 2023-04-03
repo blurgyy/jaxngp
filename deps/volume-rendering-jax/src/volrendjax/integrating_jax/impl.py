@@ -7,11 +7,11 @@ from jax.interpreters import mlir, xla
 from jax.lib import xla_client
 
 from . import abstract, lowering
-from .. import integrating
+from .. import volrendutils_cuda
 
 
 # register GPU XLA custom calls
-for name, value in integrating.get_registrations().items():
+for name, value in volrendutils_cuda.get_integrating_registrations().items():
     xla_client.register_custom_call_target(name, value, platform="gpu")
 
 

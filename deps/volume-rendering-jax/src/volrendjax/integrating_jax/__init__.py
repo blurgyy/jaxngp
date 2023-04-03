@@ -30,12 +30,11 @@ def integrate_rays(
                              Max and Min Chen, 2005.  The product of `ds[i]` and `densities[i]`
                              represents the probability of the ray terminates anywhere between
                              `z_vals[i]` and `z_vals[i]+ds[i]`.
-                             Note that `ds[i]` is _not_ the same as `z_vals[i+1] - z_vals[i]`
-                             (though they may equal), because: (1) if empty spaces are skipped
-                             during ray marching, `z_vals[i+1]-z_vals[i]` may be very large, in
-                             which case it's no longer appropriate to assume the density is constant
-                             along this large segment; (2) `z_vals[i+1]` is not defined for the last
-                             sample.
+                             Note that `ds[i]` is _not_ the same as `z_vals[i+1]-z_vals[i]` (though
+                             they may equal), because: (1) if empty spaces are skipped during ray
+                             marching, `z_vals[i+1]-z_vals[i]` may be very large, in which case it's
+                             no longer appropriate to assume the density is constant along this
+                             large segment; (2) `z_vals[i+1]` is not defined for the last sample.
         z_vals [total_samples]: z_vals[i] is the distance of the i-th sample from the camera
         densities [total_samples, 1]: density values along a ray
         rgbs [total_samples, 3]: rgb values along a ray

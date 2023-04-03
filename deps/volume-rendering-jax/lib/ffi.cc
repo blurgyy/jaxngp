@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <fmt/format.h>
 
-#include "impl/integrating.h"
+#include "impl/volrend.h"
 #include "serde.h"
 
 namespace volrendjax {
@@ -22,20 +22,26 @@ pybind11::capsule encapsulate_function(T *fn) {
 // expose gpu function
 namespace {
 
-pybind11::dict get_registrations() {
+pybind11::dict get_marching_registrations() {
     pybind11::dict dict;
-
-    dict["integrate_rays"] = encapsulate_function(integrate_rays);
-    dict["integrate_rays_backward"] = encapsulate_function(integrate_rays_backward);
-
+    dict["march_rays"] = encapsulate_function(march_rays);
     return dict;
 }
 
-PYBIND11_MODULE(integrating, m) {
-    m.def("get_registrations", &get_registrations);
-    m.def("make_ray_integrating_descriptor",
+pybind11::dict get_integrating_registrations() {
+    pybind11::dict dict;
+    dict["integrate_rays"] = encapsulate_function(integrate_rays);
+    dict["integrate_rays_backward"] = encapsulate_function(integrate_rays_backward);
+    return dict;
+}
+
+PYBIND11_MODULE(volrendutils_cuda, m) {
+    m.def("get_marching_registrations", &get_marching_registrations);
+    m.def("get_integrating_registrations", &get_integrating_registrations);
+
+    m.def("make_integrating_descriptor",
           [](std::uint32_t n_rays, std::uint32_t total_samples) {
-            return to_pybind11_bytes(RayIntegratingDescriptor{
+            return to_pybind11_bytes(IntegratingDescriptor{
                 .n_rays = n_rays,
                 .total_samples = total_samples,
             });

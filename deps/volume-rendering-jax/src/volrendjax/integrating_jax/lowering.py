@@ -1,8 +1,7 @@
-import jax
 from jax.interpreters import mlir
 from jax.interpreters.mlir import ir
 
-from .. import integrating
+from .. import volrendutils_cuda
 
 try:
     from jaxlib.mhlo_helpers import custom_call
@@ -35,7 +34,7 @@ def integrate_rays_lowering_rule(
     n_rays, = ir.RankedTensorType(transmittance_threshold.type).shape
     total_samples, = ir.RankedTensorType(z_vals.type).shape
 
-    opaque = integrating.make_ray_integrating_descriptor(n_rays, total_samples)
+    opaque = volrendutils_cuda.make_integrating_descriptor(n_rays, total_samples)
 
     shapes = {
         "in.transmittance_threshold": (n_rays,),
@@ -115,7 +114,7 @@ def integrate_rays_backward_lowring_rule(
     n_rays, = ir.RankedTensorType(transmittance_threshold.type).shape
     total_samples, = ir.RankedTensorType(z_vals.type).shape
 
-    opaque = integrating.make_ray_integrating_descriptor(n_rays, total_samples)
+    opaque = volrendutils_cuda.make_integrating_descriptor(n_rays, total_samples)
 
     shapes = {
         "in.transmittance_threshold": (n_rays,),

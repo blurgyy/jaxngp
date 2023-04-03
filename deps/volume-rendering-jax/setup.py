@@ -75,9 +75,10 @@ class CMakeBuildExt(build_ext):
 
 extensions = [
     Extension(
-        "volrendjax.integrating",  # Python dotted name, whose final component should be a buildable target defined in CMakeLists.txt
+        "volrendjax.volrendutils_cuda",  # Python dotted name, whose final component should be a buildable target defined in CMakeLists.txt
         [  # source paths, relative to this setup.py file
             "lib/ffi.cc",
+            "lib/impl/marching.cu",
             "lib/impl/integrating.cu",
         ],
     ),

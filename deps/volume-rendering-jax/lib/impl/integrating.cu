@@ -1,18 +1,6 @@
-#define STRINGIFY(x) #x
-#define STR(x) STRINGIFY(x)
-#define FILE_LINE __FILE__ ":" STR(__LINE__)
-#define CUDA_CHECK_THROW(x)                                                                        \
-    do {                                                                                           \
-        cudaError_t result = x;                                                                    \
-        if (result != cudaSuccess)                                                                 \
-            throw std::runtime_error(                                                              \
-                std::string(FILE_LINE " " #x " failed with error ")                                \
-                + cudaGetErrorString(result));                                                     \
-    } while(0)
-
 #include <cstdint>
 
-#include "integrating.h"
+#include "volrend.h"
 #include "../serde.h"
 
 
@@ -209,8 +197,8 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
 
     // inputs
     /// static
-    RayIntegratingDescriptor const &desc =
-        *deserialize<RayIntegratingDescriptor>(opaque, opaque_len);
+    IntegratingDescriptor const &desc =
+        *deserialize<IntegratingDescriptor>(opaque, opaque_len);
     std::uint32_t n_rays = desc.n_rays;
     std::uint32_t total_samples = desc.total_samples;
     /// arrays
@@ -266,8 +254,8 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
 
     // inputs
     /// static
-    RayIntegratingDescriptor const &desc =
-        *deserialize<RayIntegratingDescriptor>(opaque, opaque_len);
+    IntegratingDescriptor const &desc =
+        *deserialize<IntegratingDescriptor>(opaque, opaque_len);
     std::uint32_t n_rays = desc.n_rays;
     std::uint32_t total_samples = desc.total_samples;
 

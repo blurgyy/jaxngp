@@ -12,10 +12,11 @@ include_directories(${CMAKE_CURRENT_LIST_DIR}/lib)
 
 include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 pybind11_add_module(
-    integrating
+    volrendutils_cuda
+    ${CMAKE_CURRENT_LIST_DIR}/lib/impl/marching.cu
     ${CMAKE_CURRENT_LIST_DIR}/lib/impl/integrating.cu
     ${CMAKE_CURRENT_LIST_DIR}/lib/ffi.cc
 )
-target_link_libraries(integrating PRIVATE fmt::fmt)
+target_link_libraries(volrendutils_cuda PRIVATE fmt::fmt)
 
-install(TARGETS integrating DESTINATION volrendjax)
+install(TARGETS volrendutils_cuda DESTINATION volrendjax)
