@@ -82,7 +82,7 @@ def make_near_far_from_aabb(
     "Finds a smallest non-negative `t` for each ray, such that o+td is inside the given aabb."
 
     # make sure d is normalized
-    d /= jnp.linalg.norm(d, axis=-1, keepdims=True)
+    d /= jnp.linalg.norm(d, axis=-1, keepdims=True) + 1e-15
 
     # avoid d[j] being zero
     eps = 1e-15
@@ -203,7 +203,7 @@ def march_rays(
     chex.assert_shape([o_world, d_world], [[..., 3], [..., 3]])
 
     # make sure d_world is normalized
-    d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True)
+    d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
     # skip the empty space between camera and scene bbox
     t_start, t_end = make_near_far_from_aabb(
         aabb=aabb,
@@ -295,13 +295,13 @@ def make_rays_worldspace(
     d_cam_zs = -camera.focal * jnp.ones_like(d_cam_idcs)
     # [H*W, 3]
     d_cam = jnp.concatenate([d_cam_xs, d_cam_ys, d_cam_zs], axis=-1)
-    d_cam /= jnp.linalg.norm(d_cam, axis=-1, keepdims=True)
+    d_cam /= jnp.linalg.norm(d_cam, axis=-1, keepdims=True) + 1e-15
 
     # [H*W, 3]
     o_world = jnp.broadcast_to(transform_cw.translation, d_cam.shape)
     # [H*W, 3]
     d_world = d_cam @ transform_cw.rotation.T
-    d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True)
+    d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
 
     return o_world, d_world
 
@@ -450,7 +450,7 @@ def main():
 
     # o = jran.normal(key, (8, 3)) + 0.5
     # d = 99 * jran.normal(keyy, (8, 3))
-    # d /= jnp.linalg.norm(d, axis=-1, keepdims=True)
+    # d /= jnp.linalg.norm(d, axis=-1, keepdims=True) + 1e-15
     camera = PinholeCamera(W=W, H=H, focal=focal)
     # ndc_o, ndc_d = make_ndc_rays(o, d, camera)
     raymarch_options = RayMarchingOptions(

@@ -55,7 +55,7 @@ def train_step(
         d_cam_zs = -camera.focal * xyzs[:, 2:3]
         # [N, 3]
         d_cam = jnp.concatenate([d_cam_xs, d_cam_ys, d_cam_zs], axis=-1)
-        d_cam /= jnp.linalg.norm(d_cam, axis=-1, keepdims=True)
+        d_cam /= jnp.linalg.norm(d_cam, axis=-1, keepdims=True) + 1e-15
 
         # indices of views, used to retrieve transformation information for each ray
         view_idcs = perm // (camera.H * camera.W)
@@ -71,7 +71,7 @@ def train_step(
         d_world = (d_cam[:, None, :] * R_cws).sum(-1)
 
         # d_cam was normalized already, normalize d_world just to be sure
-        d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True)
+        d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
 
         return o_world, d_world
 

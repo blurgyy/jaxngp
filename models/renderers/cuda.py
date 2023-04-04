@@ -49,7 +49,7 @@ def make_near_far_from_aabb(
     "Finds a smallest non-negative `t` for each ray, such that o+td is inside the given aabb."
 
     # make sure d is normalized
-    d /= jnp.linalg.norm(d, axis=-1, keepdims=True)
+    d /= jnp.linalg.norm(d, axis=-1, keepdims=True) + 1e-15
 
     # avoid d[j] being zero
     eps = 1e-15
@@ -123,7 +123,7 @@ def render_rays(
         )
 
     # make sure d_world is normalized
-    d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True)
+    d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
     # skip the empty space between camera and scene bbox
     # [n_rays], [n_rays]
     t_starts, t_ends = make_near_far_from_aabb(

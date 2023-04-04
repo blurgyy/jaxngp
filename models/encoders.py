@@ -419,7 +419,7 @@ def bench_sh():
         return shjax.spherical_harmonics_encoding(x, L)
 
     d = jnp.asarray([[.1, .5, -.7]])
-    d /= jnp.linalg.norm(d, axis=-1, keepdims=True)
+    d /= jnp.linalg.norm(d, axis=-1, keepdims=True) + 1e-15
 
     result = sh(d)
     result_cuda = shcuda(d)
@@ -430,7 +430,7 @@ def bench_sh():
         K, key = jran.split(K, 2)
         n = 800*800
         d = jran.normal(key, (n, 3))
-        d /= jnp.linalg.norm(d)
+        d /= jnp.linalg.norm(d) + 1e-15
 
         print("{:03d}-th check ({} coordinates, degree={}): ".format(i+1, n, L), end="")
 
