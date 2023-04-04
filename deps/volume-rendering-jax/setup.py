@@ -78,6 +78,7 @@ extensions = [
         "volrendjax.volrendutils_cuda",  # Python dotted name, whose final component should be a buildable target defined in CMakeLists.txt
         [  # source paths, relative to this setup.py file
             "lib/ffi.cc",
+            "lib/impl/packbits.cu",
             "lib/impl/marching.cu",
             "lib/impl/integrating.cu",
         ],

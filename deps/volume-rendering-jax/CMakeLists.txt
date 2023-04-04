@@ -13,6 +13,7 @@ include_directories(${CMAKE_CURRENT_LIST_DIR}/lib)
 include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 pybind11_add_module(
     volrendutils_cuda
+    ${CMAKE_CURRENT_LIST_DIR}/lib/impl/packbits.cu
     ${CMAKE_CURRENT_LIST_DIR}/lib/impl/marching.cu
     ${CMAKE_CURRENT_LIST_DIR}/lib/impl/integrating.cu
     ${CMAKE_CURRENT_LIST_DIR}/lib/ffi.cc

@@ -22,6 +22,12 @@ pybind11::capsule encapsulate_function(T *fn) {
 // expose gpu function
 namespace {
 
+pybind11::dict get_packbits_registrations() {
+    pybind11::dict dict;
+    dict["pack_density_into_bits"] = encapsulate_function(pack_density_into_bits);
+    return dict;
+}
+
 pybind11::dict get_marching_registrations() {
     pybind11::dict dict;
     dict["march_rays"] = encapsulate_function(march_rays);
@@ -36,6 +42,23 @@ pybind11::dict get_integrating_registrations() {
 }
 
 PYBIND11_MODULE(volrendutils_cuda, m) {
+    m.def("get_packbits_registrations", &get_packbits_registrations);
+    m.def("make_packbits_descriptor",
+          [](std::uint32_t n_bytes, float density_threshold) {
+            if (n_bytes == 0) {
+                throw std::runtime_error("expected n_bytes to be a positive integer, got 0");
+            }
+            return to_pybind11_bytes(PackbitsDescriptor{
+                .n_bytes = n_bytes,
+                .density_threshold = density_threshold,
+            });
+          },
+          "Static arguments passed to the `pack_density_into_bits` function.\n\n"
+          "Args:\n"
+          "    n_bytes: sum of number of byetes of all cascades of occupancy bitfields\n"
+          "    density_threshold: grid cells with densites larger than this threshold is considered occupied\n"
+          );
+
     m.def("get_marching_registrations", &get_marching_registrations);
     m.def("make_marching_descriptor",
           [](std::uint32_t n_rays, std::uint32_t max_n_samples, std::uint32_t K, std::uint32_t G, float bound, float stepsize_portion) {

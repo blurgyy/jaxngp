@@ -55,7 +55,21 @@ struct MarchingDescriptor {
     float stepsize_portion;
 };
 
+// Static parameters passed to `pack_density_into_bits`
+struct PackbitsDescriptor {
+    std::uint32_t n_bytes;
+    // grid cells with densityes larger than this threshold is considered occupied
+    float density_threshold;
+};
+
 // functions to register
+void pack_density_into_bits(
+    cudaStream_t stream,
+    void **buffers,
+    const char *opaque,
+    std::size_t opaque_len
+);
+
 void march_rays(
     cudaStream_t stream,
     void **buffers,
