@@ -6,7 +6,7 @@ from icecream import ic
 import jax
 import jax.numpy as jnp
 import jax.random as jran
-from volrendjax import integrate_rays
+from volrendjax import integrate_rays, march_rays
 
 from utils.common import jit_jaxfn_with
 from utils.types import AABB, DensityAndRGB, RayMarchingOptions
@@ -76,21 +76,17 @@ def make_near_far_from_aabb(
     ty_start, ty_end = jnp.minimum(ty0, ty1), jnp.maximum(ty0, ty1)
     tz_start, tz_end = jnp.minimum(tz0, tz1), jnp.maximum(tz0, tz1)
 
-    t_start = jnp.maximum(
-        jnp.maximum(jnp.maximum(tx_start, ty_start), tz_start),  # last axis that gose inside the bbox
-        0,  # t_start should be larger than zero
-    )
-    t_end = jnp.maximum(
-        jnp.minimum(jnp.minimum(tx_end, ty_end), tz_end),  # first axis that goes out of the bbox
-        t_start + 1e-5,  # t_end should be larger than t_start for the ray to intersect with the aabb
-    )
+    # when t_start<0, or t_start>t_end, ray does not intersect with aabb, these cases are handled in
+    # the `march_rays` implementation
+    t_start = jnp.maximum(jnp.maximum(tx_start, ty_start), tz_start)  # last axis that gose inside the bbox
+    t_end = jnp.minimum(jnp.minimum(tx_end, ty_end), tz_end)  # first axis that goes out of the bbox
 
     # [n_rays, 1], [n_rays, 1]
     return t_start, t_end
 
 
 @jit_jaxfn_with(static_argnames=["options", "nerf_fn"])
-def march_rays(
+def render_rays(
     K: jran.KeyArray,
     o_world: jax.Array,
     d_world: jax.Array,
@@ -130,60 +126,35 @@ def march_rays(
     d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True)
     # skip the empty space between camera and scene bbox
     # [n_rays], [n_rays]
-    t_start, t_end = make_near_far_from_aabb(
+    t_starts, t_ends = make_near_far_from_aabb(
         aabb=aabb,
         o=o_world,
         d=d_world
     )
 
-    # linearly sample `steps` points inside clipped bbox
-    # [n_rays, steps]
-    z_vals = t_start + (t_end - t_start) * jnp.linspace(0, 1, options.steps)
+    rays_n_samples, ray_pts, ray_dirs, dss, z_vals = march_rays(
+        max_n_samples=options.steps,
+        K=1,
+        G=128,
+        bound=1,
+        stepsize_portion=1/256,
+        rays_o=o_world,
+        rays_d=d_world,
+        t_starts=t_starts.ravel(),
+        t_ends=t_ends.ravel(),
+        occupancy_bitfield=jnp.ones((128**3)//8, dtype=jnp.uint8) * 255,
+    )
 
-    if options.stratified:
-        # [n_rays, steps-1]
-        mids = .5 * (z_vals[:, 1:] + z_vals[:, :-1])
-        # [n_rays, steps]
-        upper = jnp.concatenate([mids, z_vals[:, -1:]], axis=-1)
-        # [n_rays, steps]
-        lower = jnp.concatenate([z_vals[:, :1], mids], axis=-1)
-        K, key = jran.split(K, 2)
-        # [n_rays, steps]
-        t_rand = jran.uniform(key, z_vals.shape, dtype=z_vals.dtype, minval=0, maxval=1)
-        # [n_rays, steps]
-        z_vals = lower + (upper - lower) * t_rand
-
-    # [n_rays, steps, 3]
-    ray_pts = o_world[:, None, :] + z_vals[..., None] * d_world[:, None, :]
-    n_rays = ray_pts.shape[0]
-
-    d_world = jnp.broadcast_to(d_world[:, None, :], ray_pts.shape)
-
-    # [total_samples, 3]
-    ray_pts = ray_pts.reshape(-1, 3)
-    # [total_samples, 3]
-    d_world = d_world.reshape(-1, 3)
-
-    # densities:[total_samples, 1]; rgbs:[total_samples, 3]
     densities, rgbs = nerf_fn(
         param_dict,
         ray_pts,
-        d_world,
+        ray_dirs,
     )
 
-    # comply to cuda `integrate_rays` accepted array layout
-    rays_n_samples = jnp.broadcast_to(options.steps, (n_rays,))
     rays_sample_startidx = jnp.concatenate(
-        [jnp.zeros_like(rays_n_samples[:1]), jnp.cumsum(rays_n_samples[:-1])],
+        [jnp.zeros_like(rays_n_samples[:1]), jnp.cumsum(options.steps * jnp.ones_like(rays_n_samples[:-1]))],
         axis=-1,
     )
-    dss = jnp.diff(z_vals, axis=-1)
-    # for uniformly sampled ray points, it's ok to use the average sample distance as the last `ds`
-    dss = jnp.concatenate([dss, jnp.mean(dss, axis=-1, keepdims=True)], axis=-1)
-    # [total_samples]
-    dss = dss.ravel()
-    # [total_samples]
-    z_vals = z_vals.ravel()
 
     effective_samples, opacities, final_rgbs, depths = integrate_rays(
         1e-4,

@@ -12,8 +12,6 @@ namespace {
 __global__ void copy_left_to_right(std::uint32_t length, float const *lhs, float * const rhs) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
-
-    #pragma unroll
     for (int i = index; i < length; i += stride) {
         rhs[i] = lhs[i];
     }
@@ -197,8 +195,7 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
 
     // inputs
     /// static
-    IntegratingDescriptor const &desc =
-        *deserialize<IntegratingDescriptor>(opaque, opaque_len);
+    IntegratingDescriptor const &desc = *deserialize<IntegratingDescriptor>(opaque, opaque_len);
     std::uint32_t n_rays = desc.n_rays;
     std::uint32_t total_samples = desc.total_samples;
     /// arrays

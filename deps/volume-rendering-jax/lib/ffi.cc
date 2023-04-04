@@ -37,8 +37,33 @@ pybind11::dict get_integrating_registrations() {
 
 PYBIND11_MODULE(volrendutils_cuda, m) {
     m.def("get_marching_registrations", &get_marching_registrations);
-    m.def("get_integrating_registrations", &get_integrating_registrations);
+    m.def("make_marching_descriptor",
+          [](std::uint32_t n_rays, std::uint32_t max_n_samples, std::uint32_t K, std::uint32_t G, float bound, float stepsize_portion) {
+            if (K == 0) {
+                throw std::runtime_error("expected K to be a positive integer, got 0");
+            }
+            return to_pybind11_bytes(MarchingDescriptor{
+                .n_rays = n_rays,
+                .max_n_samples = max_n_samples,
+                .K = K,
+                .G = G,
+                .bound = bound,
+                .stepsize_portion = stepsize_portion,
+            });
+          },
+          "Static arguments passed to the `march_rays` function.\n\n"
+          "Args:\n"
+          "    n_rays: number of input rays\n"
+          "    max_n_samples: maximum number of samples to generate per ray\n"
+          "    K: total number of cascades of the occupancy bitfield\n"
+          "    G: occupancy grid resolution, the paper uses 128 for every cascade\n"
+          "    bound: the half length of the longest axis of the scene’s bounding box,\n"
+          "           e.g. the `bound` of the bounding box [-1, 1]^3 is 1\n"
+          "    stepsize_portion: next step size is calculated as t * stepsize_portion,\n"
+          "                      the paper uses 1/256\n"
+          );
 
+    m.def("get_integrating_registrations", &get_integrating_registrations);
     m.def("make_integrating_descriptor",
           [](std::uint32_t n_rays, std::uint32_t total_samples) {
             return to_pybind11_bytes(IntegratingDescriptor{
@@ -46,7 +71,7 @@ PYBIND11_MODULE(volrendutils_cuda, m) {
                 .total_samples = total_samples,
             });
           },
-          "Description of the data passed to the `integrate_rays` or `integrate_rays_backward` function.\n\n"
+          "Static arguments passed to the `integrate_rays` or `integrate_rays_backward` function.\n\n"
           "Args:\n"
           "    n_rays: number of rays\n"
           "    total_samples: sum of number of samples on each ray\n"
