@@ -55,6 +55,11 @@ struct MarchingDescriptor {
     float stepsize_portion;
 };
 
+struct Morton3DDescriptor {
+    // number of entries to process
+    std::uint32_t length;
+};
+
 // Static parameters passed to `pack_density_into_bits`
 struct PackbitsDescriptor {
     std::uint32_t n_bytes;
@@ -71,6 +76,20 @@ void pack_density_into_bits(
 );
 
 void march_rays(
+    cudaStream_t stream,
+    void **buffers,
+    const char *opaque,
+    std::size_t opaque_len
+);
+
+/// morton3d
+void morton3d(
+    cudaStream_t stream,
+    void **buffers,
+    const char *opaque,
+    std::size_t opaque_len
+);
+void morton3d_invert(
     cudaStream_t stream,
     void **buffers,
     const char *opaque,

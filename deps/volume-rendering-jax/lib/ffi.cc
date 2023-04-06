@@ -34,6 +34,13 @@ pybind11::dict get_marching_registrations() {
     return dict;
 }
 
+pybind11::dict get_morton3d_registrations() {
+    pybind11::dict dict;
+    dict["morton3d"] = encapsulate_function(morton3d);
+    dict["morton3d_invert"] = encapsulate_function(morton3d_invert);
+    return dict;
+}
+
 pybind11::dict get_integrating_registrations() {
     pybind11::dict dict;
     dict["integrate_rays"] = encapsulate_function(integrate_rays);
@@ -85,6 +92,21 @@ PYBIND11_MODULE(volrendutils_cuda, m) {
           "    stepsize_portion: next step size is calculated as t * stepsize_portion,\n"
           "                      the paper uses 1/256\n"
           );
+
+    m.def("get_morton3d_registrations", &get_morton3d_registrations);
+    m.def(
+        "make_morton3d_descriptor",
+        [](std::uint32_t length) {
+            return to_pybind11_bytes(Morton3DDescriptor { .length = length });
+        },
+        "Static arguments passed to the `morton3d` or `morton3d_invert` functions.\n\n"
+        "Args:\n"
+        "    length: number of entries to process\n"
+        "\n"
+        "Returns:\n"
+        "    Serialized bytes that can be passed as the opaque parameter to `morton3d` or\n"
+        "    `morton3d_invert` functions"
+    );
 
     m.def("get_integrating_registrations", &get_integrating_registrations);
     m.def("make_integrating_descriptor",

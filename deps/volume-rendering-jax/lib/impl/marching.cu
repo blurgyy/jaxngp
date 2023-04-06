@@ -37,14 +37,14 @@ inline __device__ std::uint32_t expand_bits(std::uint32_t v) {
     return v;
 }
 
-inline __device__ std::uint32_t morton3D(std::uint32_t x, std::uint32_t y, std::uint32_t z) {
+inline __device__ std::uint32_t __morton3D(std::uint32_t x, std::uint32_t y, std::uint32_t z) {
     uint32_t xx = expand_bits(x);
     uint32_t yy = expand_bits(y);
     uint32_t zz = expand_bits(z);
     return xx | (yy << 1) | (zz << 2);
 }
 
-inline __device__ std::uint32_t morton3D_invert(std::uint32_t x) {
+inline __device__ std::uint32_t __morton3D_invert(std::uint32_t x) {
     x = x & 0x49249249;
     x = (x | (x >> 2)) & 0xc30c30c3;
     x = (x | (x >> 4)) & 0x0f00f00f;
@@ -125,7 +125,7 @@ __global__ void march_rays_kernel(
         int const grid_y = clampi((int)(.5f * (y / mip_bound + 1) * G), 0, G-1);
         int const grid_z = clampi((int)(.5f * (z / mip_bound + 1) * G), 0, G-1);
 
-        std::uint32_t const occupancy_grid_idx = cascade * G3 + morton3D(grid_x, grid_y, grid_z);
+        std::uint32_t const occupancy_grid_idx = cascade * G3 + __morton3D(grid_x, grid_y, grid_z);
         bool const occupied = occupancy_bitfield[occupancy_grid_idx / 8] & (1 << (occupancy_grid_idx & 7));  // (x&7) is the same as (x%8)
 
         if (occupied) {
@@ -155,6 +155,42 @@ __global__ void march_rays_kernel(
             } while (ray_t < tt);
         }
     }
+}
+
+__global__ void morton3d_kernel(
+    // inputs
+    /// static
+    std::uint32_t length
+
+    /// array
+    , std::uint32_t const * const __restrict__ xyzs  // [length, 3]
+
+    // outputs
+    , std::uint32_t * const __restrict__ idcs  // [length]
+) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= length) { return; }
+
+    idcs[i] = __morton3D(xyzs[i*3+0], xyzs[i*3+1], xyzs[i*3+2]);
+}
+
+__global__ void morton3d_invert_kernel(
+    // inputs
+    /// static
+    std::uint32_t length
+
+    /// array
+    , std::uint32_t const * const __restrict__ idcs  // [length]
+
+    // outputs
+    , std::uint32_t * const __restrict__ xyzs  // [length, 3]
+) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= length) { return; }
+
+    xyzs[i*3+0] = __morton3D_invert(idcs[i] >> 0);
+    xyzs[i*3+1] = __morton3D_invert(idcs[i] >> 1);
+    xyzs[i*3+2] = __morton3D_invert(idcs[i] >> 2);
 }
 
 void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque, std::size_t opaque_len) {
@@ -227,6 +263,67 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     CUDA_CHECK_THROW(cudaGetLastError());
 }
 
+void morton3d_launcher(cudaStream_t stream, void **buffers, char const *opaque, std::size_t opaque_len) {
+    // buffer indexing helper
+    std::uint32_t __buffer_idx = 0;
+    auto next_buffer = [&]() { return buffers[__buffer_idx++]; };
+
+    // inputs
+    /// static
+    Morton3DDescriptor const &desc = *deserialize<Morton3DDescriptor>(opaque, opaque_len);
+
+    /// array
+    std::uint32_t const * const __restrict__ xyzs = static_cast<std::uint32_t *>(next_buffer());  // [length, 3]
+
+    // output
+    std::uint32_t * const __restrict__ idcs = static_cast<std::uint32_t *>(next_buffer());  // [length]
+
+    // kernel launch
+    int blockSize = 256;
+    int numBlocks = (desc.length + blockSize - 1) / blockSize;
+    morton3d_kernel<<<numBlocks, blockSize, 0, stream>>>(
+        // inputs
+        /// static
+        desc.length
+        /// array
+        , xyzs
+        /// output
+        , idcs
+    );
+
+    // abort on error
+    CUDA_CHECK_THROW(cudaGetLastError());
+}
+
+void morton3d_invert_launcher(cudaStream_t stream, void **buffers, char const *opaque, std::size_t opaque_len) {
+    // buffer indexing helper
+    std::uint32_t __buffer_idx = 0;
+    auto next_buffer = [&]() { return buffers[__buffer_idx++]; };
+
+    // inputs
+    /// static
+    Morton3DDescriptor const &desc = *deserialize<Morton3DDescriptor>(opaque, opaque_len);
+
+    /// array
+    std::uint32_t const * const __restrict__ idcs = static_cast<std::uint32_t *>(next_buffer());  // [length]
+
+    /// output
+    std::uint32_t * const __restrict__ xyzs = static_cast<std::uint32_t *>(next_buffer());
+
+    // kernel launch
+    int blockSize = 256;
+    int numBlocks = (desc.length + blockSize - 1) / blockSize;
+    morton3d_invert_kernel<<<numBlocks, blockSize, 0, stream>>>(
+        // inputs
+        /// static
+        desc.length
+        /// array
+        , idcs
+        /// output
+        , xyzs
+    );
+}
+
 }
 
 void march_rays(
@@ -236,6 +333,24 @@ void march_rays(
     std::size_t opaque_len
 ) {
     march_rays_launcher(stream, buffers, opaque, opaque_len);
+}
+
+void morton3d(
+    cudaStream_t stream,
+    void **buffers,
+    char const *opaque,
+    std::size_t opaque_len
+) {
+    morton3d_launcher(stream, buffers, opaque, opaque_len);
+}
+
+void morton3d_invert(
+    cudaStream_t stream,
+    void **buffers,
+    char const *opaque,
+    std::size_t opaque_len
+) {
+    morton3d_invert_launcher(stream, buffers, opaque, opaque_len);
 }
 
 }
