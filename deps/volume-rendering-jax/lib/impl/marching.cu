@@ -72,7 +72,7 @@ __global__ void march_rays_kernel(
 
     // outputs
     , std::uint32_t * const __restrict__ rays_n_samples  // [n_rays]
-    , std::uint8_t * const __restrict__ valid_mask  // [n_rays, max_n_samples]
+    , bool * const __restrict__ valid_mask  // [n_rays, max_n_samples]
     , float * const __restrict__ xyzs  // [n_rays, max_n_samples, 3]
     , float * const __restrict__ dirs  // [n_rays, max_n_samples, 3]
     , float * const __restrict__ dss  // [n_rays, max_n_samples]
@@ -88,7 +88,7 @@ __global__ void march_rays_kernel(
     float const ray_t_end = t_ends[i];  // [] (a scalar has no shape)
 
     // output arrays
-    std::uint8_t * const __restrict__ ray_valid_mask = valid_mask + i * max_n_samples;
+    bool * const __restrict__ ray_valid_mask = valid_mask + i * max_n_samples;
     float * const __restrict__ ray_xyzs = xyzs + i * max_n_samples * 3;
     float * const __restrict__ ray_dirs = dirs + i * max_n_samples * 3;
     float * const __restrict__ ray_dss = dss + i * max_n_samples;
@@ -130,7 +130,7 @@ __global__ void march_rays_kernel(
 
         if (occupied) {
             auto sample_idx = rays_n_samples[i];
-            ray_valid_mask[sample_idx] = 1;  // set true
+            ray_valid_mask[sample_idx] = true;  // set true
             ray_xyzs[sample_idx * 3 + 0] = x;
             ray_xyzs[sample_idx * 3 + 1] = y;
             ray_xyzs[sample_idx * 3 + 2] = z;
@@ -181,7 +181,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
 
     // outputs
     std::uint32_t * const __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
-    std::uint8_t * const __restrict__ valid_mask = static_cast<std::uint8_t *>(next_buffer());  // [n_rays * max_n_samples]
+    bool * const __restrict__ valid_mask = static_cast<bool *>(next_buffer());  // [n_rays * max_n_samples]
     float * const __restrict__ xyzs = static_cast<float *>(next_buffer());  // [n_rays * max_n_samples, 3]
     float * const __restrict__ dirs = static_cast<float *>(next_buffer());  // [n_rays * max_n_samples, 3]
     float * const __restrict__ dss = static_cast<float *>(next_buffer());  // [n_rays * max_n_samples]
@@ -189,7 +189,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
 
     // reset outputs to zeros
     cudaMemset(rays_n_samples, 0x00, n_rays * sizeof(std::uint32_t));
-    cudaMemset(valid_mask, false, n_rays * max_n_samples * sizeof(std::uint8_t));
+    cudaMemset(valid_mask, false, n_rays * max_n_samples * sizeof(bool));
     cudaMemset(xyzs, 0x00, n_rays * max_n_samples * 3 * sizeof(float));
     cudaMemset(dirs, 0x00, n_rays * max_n_samples * 3 * sizeof(float));
     cudaMemset(dss, 0x00, n_rays * max_n_samples * sizeof(float));

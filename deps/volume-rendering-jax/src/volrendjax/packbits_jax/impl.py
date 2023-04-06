@@ -13,7 +13,7 @@ for name, value in volrendutils_cuda.get_packbits_registrations().items():
     xla_client.register_custom_call_target(name, value, platform="gpu")
 
 packbits_p = jax.core.Primitive("packbits🎱")
-packbits_p.multiple_results = False
+packbits_p.multiple_results = True
 packbits_p.def_impl(functools.partial(xla.apply_primitive, packbits_p))
 packbits_p.def_abstract_eval(abstract.pack_density_into_bits_abstract)
 

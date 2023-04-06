@@ -39,7 +39,7 @@ def march_rays_abstract(
 
     return (
         jax.ShapedArray(shape=out_shapes["rays_n_samples"], dtype=jnp.uint32),
-        jax.ShapedArray(shape=out_shapes["valid_mask"], dtype=jnp.uint8),
+        jax.ShapedArray(shape=out_shapes["valid_mask"], dtype=jnp.bool_),
         jax.ShapedArray(shape=out_shapes["xyzs"], dtype=jnp.float32),
         jax.ShapedArray(shape=out_shapes["dirs"], dtype=jnp.float32),
         jax.ShapedArray(shape=out_shapes["dss"], dtype=jnp.float32),

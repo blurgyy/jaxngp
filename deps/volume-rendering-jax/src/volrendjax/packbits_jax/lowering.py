@@ -35,12 +35,15 @@ def packbits_lowering_rule(
 
     shapes = {
         "in.density_grid": (n_bits,),
+
+        "out.occupied_mask": (n_bits,),
         "out.occupancy_bitfield": (n_bytes,),
     }
 
-    return [custom_call(
+    return custom_call(
         call_target_name="pack_density_into_bits",
         out_types = [
+            ir.RankedTensorType.get(shapes["out.occupied_mask"], ir.IntegerType.get_signless(1)),
             ir.RankedTensorType.get(shapes["out.occupancy_bitfield"], ir.IntegerType.get_unsigned(8)),
         ],
         operands=[
@@ -48,5 +51,8 @@ def packbits_lowering_rule(
         ],
         backend_config=opaque,
         operand_layouts=default_layouts(shapes["in.density_grid"]),
-        result_layouts=default_layouts(shapes["out.occupancy_bitfield"]),
-    )]
+        result_layouts=default_layouts(
+            shapes["out.occupied_mask"],
+            shapes["out.occupancy_bitfield"],
+        ),
+    )

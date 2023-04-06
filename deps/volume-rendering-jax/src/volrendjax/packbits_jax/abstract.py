@@ -30,6 +30,10 @@ def pack_density_into_bits_abstract(
         )
 
     out_shapes = {
+        "occupied_mask": (n_bits,),
         "occupancy_bitfield": (n_bytes,),
     }
-    return jax.ShapedArray(out_shapes["occupancy_bitfield"], jnp.uint8)
+    return (
+        jax.ShapedArray(out_shapes["occupied_mask"], jnp.bool_),
+        jax.ShapedArray(out_shapes["occupancy_bitfield"], jnp.uint8),
+    )

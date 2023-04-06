@@ -63,7 +63,7 @@ def march_rays_lowering_rule(
         call_target_name="march_rays",
         out_types=[
             ir.RankedTensorType.get(shapes["out.rays_n_samples"], ir.IntegerType.get_unsigned(32)),
-            ir.RankedTensorType.get(shapes["out.valid_mask"], ir.IntegerType.get_unsigned(8)),  # uint8 as bool
+            ir.RankedTensorType.get(shapes["out.valid_mask"], ir.IntegerType.get_signless(1)),
             ir.RankedTensorType.get(shapes["out.xyzs"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.dirs"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.dss"], ir.F32Type.get()),
