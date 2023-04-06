@@ -3,7 +3,6 @@ from typing import Tuple
 
 from PIL import Image
 from flax.training import checkpoints
-from flax.training.train_state import TrainState
 import jax
 import jax.numpy as jnp
 import jax.random as jran
@@ -13,11 +12,13 @@ from tqdm import tqdm
 import tyro
 
 from models.nerfs import make_nerf_ngp
-from models.renderers import march_rays, render_image
+from models.renderers import render_image, render_rays, update_ogrid
 from utils import common, data
 from utils.args import NeRFTrainingArgs
 from utils.types import (
     AABB,
+    NeRFTrainState,
+    OccupancyDensityGrid,
     PinholeCamera,
     RayMarchingOptions,
     RenderingOptions,
@@ -25,10 +26,10 @@ from utils.types import (
 )
 
 
-@common.jit_jaxfn_with(static_argnames=["raymarch_options", "render_options"])
+@common.jit_jaxfn_with(static_argnames=["aabb", "raymarch_options", "render_options"])
 def train_step(
-        K: jran.KeyArray,
-        state: TrainState,
+        KEY: jran.KeyArray,
+        state: NeRFTrainState,
         aabb: AABB,
         camera: PinholeCamera,
         raymarch_options: RayMarchingOptions,
@@ -75,25 +76,26 @@ def train_step(
 
         return o_world, d_world
 
-    def loss(params, gt, K):
+    def loss(params, gt, KEY):
         o_world, d_world = make_rays_worldspace()
-        K, key = jran.split(K, 2)
-        weights, preds, _ = march_rays(
+        KEY, key = jran.split(KEY, 2)
+        opacities, preds, _ = render_rays(
             key,
             o_world,
             d_world,
             aabb,
+            state.ogrid,
             raymarch_options,
             {"params": params},
             state.apply_fn,
         )
         if render_options.random_bg:
-            K, key = jran.split(K, 2)
+            KEY, key = jran.split(KEY, 2)
             bg = jran.uniform(key, preds.shape, dtype=preds.dtype, minval=0, maxval=1)
         else:
             bg = render_options.bg
         pred_rgbs = data.blend_alpha_channel(
-            imgarr=jnp.concatenate([preds, weights.sum(axis=-1, keepdims=True)], axis=-1),
+            imgarr=jnp.concatenate([preds, opacities[:, None]], axis=-1),
             bg=bg,
         )
         gt_rgbs = data.blend_alpha_channel(imgarr=gt, bg=bg)
@@ -108,7 +110,7 @@ def train_step(
 
     loss_grad_fn = jax.value_and_grad(loss)
 
-    K, key = jran.split(K, 2)
+    KEY, key = jran.split(KEY, 2)
     loss, grads = loss_grad_fn(state.params, all_rgbs[perm], key)
     state = state.apply_gradients(grads=grads)
     metrics = {
@@ -118,20 +120,20 @@ def train_step(
 
 
 def train_epoch(
-        K: jran.KeyArray,
+        KEY: jran.KeyArray,
         aabb: AABB,
         scene_metadata: data.SceneMetadata,
         raymarch_options: RayMarchingOptions,
         render_options: RenderingOptions,
         permutation: data.Dataset,
-        state: TrainState,
+        state: NeRFTrainState,
         total_batches: int,
         ep_log: int,
         total_epochs: int,
     ):
     loss, running_loss = 0, -1
-    for perm in (pbar := tqdm(permutation, total=total_batches, desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs), bar_format=common.tqdm_format)):
-        K, key = jran.split(K)
+    for i, perm in enumerate(pbar := tqdm(permutation, total=total_batches, desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs), bar_format=common.tqdm_format)):
+        KEY, key = jran.split(KEY, 2)
         state, metrics = train_step(
             key,
             state,
@@ -158,6 +160,18 @@ def train_epoch(
                 data.linear2psnr(running_loss, maxval=1)
             )
         )
+
+        if i > 0 and i % 16 == 0:
+            # update occupancy grid
+            KEY, key = jran.split(KEY, 2)
+            state = update_ogrid(
+                KEY=key,
+                update_all=int(state.step) < 256,
+                bound=aabb[0][1],
+                raymarch=raymarch_options,
+                state=state,
+            )
+
     return loss, state
 
 
@@ -173,15 +187,16 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
     logger.setLevel(args.common.logging.upper())
 
     # deterministic
-    K = common.set_deterministic(args.common.seed)
+    KEY = common.set_deterministic(args.common.seed)
 
     # model parameters
-    aabb = [[-args.bound, args.bound]] * 3
+    # TODO: do not use `aabb`, simply use `bound` and presume the scene/object is centered at origin
+    aabb = ((-args.bound, args.bound),) * 3
     model, init_input = (
         make_nerf_ngp(aabb=aabb),
         (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
     )
-    K, key = jran.split(K, 2)
+    KEY, key = jran.split(KEY, 2)
     variables = model.init(key, *init_input)
     if args.common.display_model_summary:
         print(model.tabulate(key, *init_input))
@@ -220,31 +235,37 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
     )
 
     # training state
-    state = TrainState.create(
+    state = NeRFTrainState.create(
         apply_fn=model.apply,
         # unfreeze the frozen dict so that below weight_decay mask can apply, see:
         #   <https://github.com/deepmind/optax/issues/160>
         #   <https://github.com/google/flax/issues/1223>
         params=variables["params"].unfreeze(),
         tx=optimizer,
+        ogrid=OccupancyDensityGrid.create(
+            cascades=data.cascades_from_bound(args.bound),
+            grid_resolution=args.raymarch.density_grid_res,
+        ),
     )
 
     # data
     scene_metadata_train, _ = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split="train",
+        scale=args.scale,
     )
 
     scene_metadata_val, val_views = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split="val",
+        scale=args.scale,
     )
 
     logger.info("starting training")
     # training loop
     for ep in range(args.train.n_epochs):
         ep_log = ep + 1
-        K, key = jran.split(K, 2)
+        KEY, key = jran.split(KEY, 2)
         permutation = data.make_permutation_dataset(
             key,
             size=scene_metadata_train.all_xys.shape[0],
@@ -254,9 +275,9 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
             .repeat(args.train.data_loop)
 
         try:
-            K, key = jran.split(K, 2)
+            KEY, key = jran.split(KEY, 2)
             loss, state = train_epoch(
-                K=key,
+                KEY=key,
                 aabb=aabb,
                 scene_metadata=scene_metadata_train,
                 raymarch_options=args.raymarch,
@@ -289,7 +310,7 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
         logger.info("training state of epoch {} saved to: {}".format(ep_log, ckpt_name))
 
         # validate on `args.val_num` random camera transforms
-        K, key = jran.split(K, 2)
+        KEY, key = jran.split(KEY, 2)
         for val_i in jran.choice(
                 key,
                 jnp.arange(len(val_views)),
@@ -301,14 +322,15 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
                 rotation=scene_metadata_val.all_transforms[val_i, :9].reshape(3, 3),
                 translation=scene_metadata_val.all_transforms[val_i, -3:].reshape(3),
             )
-            K, key = jran.split(K, 2)
+            KEY, key = jran.split(KEY, 2)
             rgb, depth = render_image(
-                K=key,
+                KEY=key,
                 aabb=aabb,
                 camera=scene_metadata_val.camera,
                 transform_cw=val_transform,
                 options=args.render_eval,
                 raymarch_options=args.raymarch_eval,
+                ogrid=state.ogrid,
                 param_dict={"params": state.params},
                 nerf_fn=state.apply_fn,
             )

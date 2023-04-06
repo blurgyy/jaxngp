@@ -6,12 +6,11 @@ import jax.numpy as jnp
 # jit rules
 def pack_density_into_bits_abstract(
     # input array
+    density_threshold: jax.ShapedArray,
     density_grid: jax.ShapedArray,
-
-    # static args
-    density_threshold: float,
 ):
-    chex.assert_rank(density_grid, 1)
+    chex.assert_rank([density_threshold, density_grid], 1)
+    chex.assert_shape(density_threshold, density_grid.shape)
     n_bits = density_grid.shape[0]
     if n_bits % 8 != 0:
         raise ValueError(

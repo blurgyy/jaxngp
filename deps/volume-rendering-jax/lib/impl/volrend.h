@@ -63,8 +63,6 @@ struct Morton3DDescriptor {
 // Static parameters passed to `pack_density_into_bits`
 struct PackbitsDescriptor {
     std::uint32_t n_bytes;
-    // grid cells with densityes larger than this threshold is considered occupied
-    float density_threshold;
 };
 
 // functions to register

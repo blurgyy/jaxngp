@@ -1,5 +1,5 @@
 import functools
-from typing import Callable, List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import flax.linen as nn
 import jax
@@ -34,11 +34,12 @@ class NeRF(nn.Module):
     #   * input "dir" does not need to be batched
     #   * use vmap
     @nn.compact
-    def __call__(self, xyz: jax.Array, dir: jax.Array) -> Tuple[jax.Array, jax.Array]:
+    def __call__(self, xyz: jax.Array, dir: Optional[jax.Array]) -> Tuple[jax.Array, jax.Array]:
         """
         Inputs:
             xyz [..., 3]: coordinates in $\R^3$.
-            dirs [..., 3]: **unit** vectors, representing viewing directions.
+            dirs [..., 3]: **unit** vectors, representing viewing directions.  If `None`, only
+                           return densities.
 
         Returns:
             density [..., 1]: density (ray terminating probability) of each query points
@@ -54,6 +55,9 @@ class NeRF(nn.Module):
         x = self.density_mlp(pos_enc)
         # [..., 1], [..., density_MLP_out-1]
         density, _ = jnp.split(x, [1], axis=-1)
+
+        if dir is None:
+            return density
 
         # [..., D_dir]
         dir_enc = self.direction_encoder(dir)
@@ -342,8 +346,8 @@ def main():
     import jax.numpy as jnp
     import jax.random as jran
 
-    K = jran.PRNGKey(0)
-    K, key = jran.split(K, 2)
+    KEY = jran.PRNGKey(0)
+    KEY, key = jran.split(KEY, 2)
 
     m = make_nerf_ngp()
 

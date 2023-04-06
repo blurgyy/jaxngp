@@ -24,6 +24,7 @@ def march_rays_lowering_rule(
     rays_d: ir.Value,
     t_starts: ir.Value,
     t_ends: ir.Value,
+    noises: ir.Value,
     occupancy_bitfield: ir.Value,
 
     # static args
@@ -49,6 +50,7 @@ def march_rays_lowering_rule(
         "in.rays_d": (n_rays, 3),
         "in.t_starts": (n_rays,),
         "in.t_ends": (n_rays,),
+        "in.noises": (n_rays,),
         "in.occupancy_bitfield": (K*G*G*G//8,),
 
         "out.rays_n_samples": (n_rays,),
@@ -74,6 +76,7 @@ def march_rays_lowering_rule(
             rays_d,
             t_starts,
             t_ends,
+            noises,
             occupancy_bitfield,
         ],
         backend_config=opaque,
@@ -82,6 +85,7 @@ def march_rays_lowering_rule(
             shapes["in.rays_d"],
             shapes["in.t_starts"],
             shapes["in.t_ends"],
+            shapes["in.noises"],
             shapes["in.occupancy_bitfield"],
         ),
         result_layouts=default_layouts(

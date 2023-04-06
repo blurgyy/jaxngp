@@ -20,20 +20,16 @@ def packbits_lowering_rule(
     ctx: mlir.LoweringRule,
 
     # input array
+    density_threshold: ir.Value,
     density_grid: ir.Value,
-
-    # static args
-    density_threshold: float,
 ):
     n_bits = ir.RankedTensorType(density_grid.type).shape[0]
     n_bytes = n_bits // 8
 
-    opaque = volrendutils_cuda.make_packbits_descriptor(
-        n_bytes,
-        density_threshold,
-    )
+    opaque = volrendutils_cuda.make_packbits_descriptor(n_bytes)
 
     shapes = {
+        "in.density_threshold": (n_bits,),
         "in.density_grid": (n_bits,),
 
         "out.occupied_mask": (n_bits,),
@@ -47,10 +43,14 @@ def packbits_lowering_rule(
             ir.RankedTensorType.get(shapes["out.occupancy_bitfield"], ir.IntegerType.get_unsigned(8)),
         ],
         operands=[
+            density_threshold,
             density_grid,
         ],
         backend_config=opaque,
-        operand_layouts=default_layouts(shapes["in.density_grid"]),
+        operand_layouts=default_layouts(
+            shapes["in.density_threshold"],
+            shapes["in.density_grid"],
+        ),
         result_layouts=default_layouts(
             shapes["out.occupied_mask"],
             shapes["out.occupancy_bitfield"],

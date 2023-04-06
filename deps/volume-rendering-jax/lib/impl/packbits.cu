@@ -9,9 +9,9 @@ __global__ void pack_bits_kernel(
     // inputs
     /// static
     std::uint32_t n_bytes
-    , float const density_threshold
 
     /// array
+    , float const * const __restrict__ density_threshold
     , float const * __restrict__ density_grid
 
     // output
@@ -25,10 +25,10 @@ __global__ void pack_bits_kernel(
 
     #pragma unroll
     for (std::uint8_t idx = 0; idx < 8; ++idx) {
-        byte |= (density_grid[i * 8 + idx] > density_threshold) ? ((std::uint8_t)0x01 << idx) : (std::uint8_t)0x00;
-        occupied_mask[i * 8 + idx] = byte & ((std::uint8_t)0x01 << idx);
+        bool predicate = (density_grid[i*8+idx] > density_threshold[i*8+idx]);
+        occupied_mask[i*8+idx] = predicate;
+        byte |= predicate ? ((std::uint8_t)0x01 << idx) : (std::uint8_t)0x00;
     }
-
     occupancy_bitfield[i] = byte;
 }
 
@@ -40,10 +40,9 @@ void pack_bits_launcher(cudaStream_t stream, void **buffers, const char *opaque,
     // inputs
     /// static
     PackbitsDescriptor const &desc = *deserialize<PackbitsDescriptor>(opaque, opaque_len);
-    std::uint32_t const n_bytes = desc.n_bytes;
-    float const density_threshold = desc.density_threshold;
 
     /// array
+    float const * const __restrict__ density_threshold = static_cast<float *>(next_buffer());
     float const * __restrict__ density_grid = static_cast<float *>(next_buffer());
 
     // output
@@ -52,14 +51,14 @@ void pack_bits_launcher(cudaStream_t stream, void **buffers, const char *opaque,
 
     // kernel launch
     int blockSize = 256;
-    int numBlocks = (n_bytes + blockSize - 1) / blockSize;
+    int numBlocks = (desc.n_bytes + blockSize - 1) / blockSize;
     pack_bits_kernel<<<numBlocks, blockSize, 0, stream>>>(
         // inputs
         /// static
-        n_bytes
-        , density_threshold
+        desc.n_bytes
 
         /// array
+        , density_threshold
         , density_grid
 
         /// output

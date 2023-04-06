@@ -1,44 +1,113 @@
 from collections.abc import Callable
 
+import chex
 from flax.core.scope import FrozenVariableDict
-from flax.struct import dataclass
 from icecream import ic
 import jax
 import jax.numpy as jnp
 import jax.random as jran
-from volrendjax import integrate_rays, march_rays
+from tqdm import tqdm
+from volrendjax import integrate_rays, march_rays, morton3d_invert, packbits
 
-from utils.common import jit_jaxfn_with
-from utils.types import AABB, DensityAndRGB, RayMarchingOptions
+from utils.common import jit_jaxfn_with, tqdm_format
+from utils.data import blend_alpha_channel, cascades_from_bound, set_pixels
+from utils.types import (
+    AABB,
+    DensityAndRGB,
+    NeRFTrainState,
+    OccupancyDensityGrid,
+    PinholeCamera,
+    RayMarchingOptions,
+    RenderingOptions,
+    RigidTransformation,
+)
+
+from ._utils import get_indices_chunks, make_rays_worldspace
 
 
-@dataclass
-class OccupancyDensityGrid:
-    # number of cascades
-    # paper:
-    #   𝐾 = 1 for all synthetic NeRF scenes (single grid) and 𝐾 ∈ [1, 5] for larger real-world
-    #   scenes (up to 5 grids, depending on scene size)
-    K: int
-    # uint8, each bit is an occupancy value of a grid cell
-    occupancy: jax.Array
-    # float32, full-precision density values
-    density: jax.Array
+@jit_jaxfn_with(static_argnames=["update_all", "bound", "raymarch"])
+def update_ogrid(
+    KEY: jran.KeyArray,
+    update_all: bool,
+    bound: float,
+    raymarch: RayMarchingOptions,
+    state: NeRFTrainState,
+) -> NeRFTrainState:
+    # (1) decay the density value in each grid cell by a factor of 0.95.
+    decay = .95
+    density_grid = state.ogrid.density * decay
 
-    @classmethod
-    def create(cls, cascades: int, grid_resolution: int=128):
-        """
-        Example usage:
-            ogrid = OccupancyDensityGrid.create(cascades=5, grid_resolution=128)
-        """
-        occupancy = jnp.zeros(
-            shape=(cascades*grid_resolution**3 // 8,),  # every bit is an occupancy value
-            dtype=jnp.uint8,
+    # (2) randomly sample 𝑀 candidate cells, and set their value to the maximum of their current
+    # value and the density component of the NeRF model at a random location within the cell.
+    G3 = raymarch.density_grid_res ** 3
+    cascades = cascades_from_bound(bound)
+    for cas in range(cascades):
+        if update_all:
+            # During the first 256 training steps, we sample 𝑀 = 𝐾 · 128^{3} cells uniformly without
+            # repetition.
+            M = G3
+            indices = jnp.arange(M, dtype=jnp.uint32)
+        else:
+            # For subsequent training steps we set 𝑀 = 𝐾 · 128^{3}/2 which we partition into two
+            # sets.
+            M = G3 // 2
+            # The first 𝑀/2 cells are sampled uniformly among all cells.
+            KEY, key = jran.split(KEY, 2)
+            indices_firsthalf = jran.choice(key=key, a=jnp.arange(G3, dtype=jnp.uint32), shape=(M//2,), replace=True)  # allow duplicated choices
+            # Rejection sampling is used for the remaining samples to restrict selection to cells
+            # that are currently occupied.
+            # NOTE: Below is just uniformly sampling the occupied cells, not rejection sampling.
+            cas_occ_mask = state.ogrid.occ_mask[cas*G3:(cas+1)*G3]
+            p = cas_occ_mask.astype(jnp.float32)
+            KEY, key = jran.split(KEY, 2)
+            indices_secondhalf = jran.choice(key=key, a=jnp.arange(G3, dtype=jnp.uint32), shape=(M//2,), replace=True, p=p)
+            indices = jnp.concatenate([indices_firsthalf, indices_secondhalf])
+
+        coordinates = morton3d_invert(indices).astype(jnp.float32)
+        coordinates = coordinates / (raymarch.density_grid_res - 1) * 2 - 1  # in [-1, 1]
+        bound = min(bound, 2**cas)
+        half_cell_width = bound / raymarch.density_grid_res
+        coordinates *= bound - half_cell_width  # in [-bound+half_cell_width, bound-half_cell_width]
+        # random point inside grid cells
+        KEY, key = jran.split(KEY, 2)
+        coordinates += jran.uniform(
+            key,
+            coordinates.shape,
+            coordinates.dtype,
+            minval=-half_cell_width,
+            maxval=half_cell_width,
         )
-        density = jnp.zeros(
-            shape=(cascades*grid_resolution**3,),
-            dtype=jnp.float32,
+
+        new_densities = state.apply_fn(
+            {"params": state.params},
+            coordinates,
+            None,
         )
-        return cls(K=cascades, occupancy=occupancy, density=density)
+
+        # set their value to the maximum of their current value and the density component of the
+        # NeRF model at a random location within the cell.
+        density_grid = density_grid.at[indices + cas*G3].set(
+            jnp.maximum(density_grid[indices + cas*G3], new_densities.ravel())
+        )
+
+    # (3) update the occupancy bits by thresholding each cell’s density with 𝑡 = 0.01 · 1024/√3,
+    # which corresponds to thresholding the opacity of a minimal ray marching step by 1 − exp(−0.01)
+    # ≈ 0.01.
+    # density_threshold = .01 * raymarch.steps / 3**.5
+    density_threshold = 1e-2
+    mean_density = jnp.sum(jnp.where(density_grid > 0, density_grid, 0)) / jnp.sum(jnp.where(density_grid > 0, 1, 0))
+    density_threshold = jnp.minimum(density_threshold, mean_density)
+    # density_threshold = 1e-2
+    occupied_mask, occupancy_bitfield = packbits(
+        density_threshold=density_threshold,
+        density_grid=density_grid,
+    )
+
+    return state.with_ogrid(OccupancyDensityGrid(
+        density=density_grid,
+        occ_mask=occupied_mask,
+        occupancy=occupancy_bitfield,
+    ))
 
 
 def make_near_far_from_aabb(
@@ -85,37 +154,17 @@ def make_near_far_from_aabb(
     return t_start, t_end
 
 
-@jit_jaxfn_with(static_argnames=["options", "nerf_fn"])
+@jit_jaxfn_with(static_argnames=["aabb", "options", "nerf_fn"])
 def render_rays(
-    K: jran.KeyArray,
+    KEY: jran.KeyArray,
     o_world: jax.Array,
     d_world: jax.Array,
     aabb: AABB,
+    ogrid: OccupancyDensityGrid,
     options: RayMarchingOptions,
     param_dict: FrozenVariableDict,
     nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
 ):
-    """
-    Given a pack of rays, do:
-        1. generate samples on each ray
-        2. predict densities and RGBs on each sample
-        3. composite the predicted values along each ray to get rays' opacities, final colors, and
-           estimated depths
-
-    Inputs:
-        o_world [n_rays, 3]: ray origins, in world space
-        d_world [n_rays, 3]: ray directions (unit vectors), in world space
-        aabb [3, 2]: scene bounds on each of x, y, z axes
-        options: see :class:`RayMarchingOptions`
-        param_dict: :class:`NeRF` model params
-        nerf_fn: function that takes the param_dict, xyz, and viewing directions as inputs, and
-                 outputs densities and rgbs.
-
-    Returns:
-        opacities [n_rays]: accumulated opacities along each ray
-        rgbs [n_rays, 3]: rendered colors
-        depths [n_rays]: rays' expected termination depths
-    """
     if options.n_importance > 0:
         raise NotImplementedError(
             "CUDA-based raymarching is not designed for importance sampling.\n"
@@ -132,17 +181,21 @@ def render_rays(
         d=d_world
     )
 
+    bound = max(map(lambda axis: axis[1] - axis[0], aabb)) / 2
+
+    KEY, key = jran.split(KEY, 2)
     rays_n_samples, ray_pts, ray_dirs, dss, z_vals = march_rays(
         max_n_samples=options.steps,
-        K=1,
-        G=128,
-        bound=1,
-        stepsize_portion=1/256,
+        K=cascades_from_bound(bound),
+        G=options.density_grid_res,
+        bound=bound,
+        stepsize_portion=options.stepsize_portion,
         rays_o=o_world,
         rays_d=d_world,
         t_starts=t_starts.ravel(),
         t_ends=t_ends.ravel(),
-        occupancy_bitfield=jnp.ones((128**3)//8, dtype=jnp.uint8) * 255,
+        noises=jran.uniform(key, (o_world.shape[0],), o_world.dtype),
+        occupancy_bitfield=ogrid.occupancy,
     )
 
     densities, rgbs = nerf_fn(
@@ -167,3 +220,57 @@ def render_rays(
     )
 
     return opacities, final_rgbs, depths
+
+
+def render_image(
+    KEY: jran.KeyArray,
+    aabb: AABB,
+    camera: PinholeCamera,
+    transform_cw: RigidTransformation,
+    options: RenderingOptions,
+    raymarch_options: RayMarchingOptions,
+    ogrid: OccupancyDensityGrid,
+    param_dict: FrozenVariableDict,
+    nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
+):
+    chex.assert_shape([transform_cw.rotation, transform_cw.translation], [(3, 3), (3,)])
+
+    o_world, d_world = make_rays_worldspace(camera=camera, transform_cw=transform_cw)
+
+    KEY, key = jran.split(KEY, 2)
+    xys, indices = get_indices_chunks(key, camera.H, camera.W, options.ray_chunk_size)
+
+    bound_max = max(
+        [
+            aabb[0][1] - aabb[0][0],
+            aabb[1][1] - aabb[1][0],
+            aabb[2][1] - aabb[2][0],
+        ]
+    ) / 2
+
+    image_array = jnp.empty((camera.H, camera.W, 3), dtype=jnp.uint8)
+    depth_array = jnp.empty((camera.H, camera.W), dtype=jnp.uint8)
+    for idcs in tqdm(indices, desc="| rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
+        # rgbs = raymarcher(o_world[idcs], d_world[idcs], param_dict)
+        KEY, key = jran.split(KEY, 2)
+        opacities, rgbs, depths = render_rays(
+            key,
+            o_world[idcs],
+            d_world[idcs],
+            aabb,
+            ogrid,
+            raymarch_options,
+            param_dict,
+            nerf_fn,
+        )
+        if options.random_bg:
+            KEY, key = jran.split(KEY, 2)
+            bg = jran.uniform(key, rgbs.shape, rgbs.dtype, minval=0, maxval=1)
+        else:
+            bg = options.bg
+        rgbs = blend_alpha_channel(jnp.concatenate([rgbs, opacities[:, None]], axis=-1), bg=bg)
+        depths = depths / (bound_max * 2 + jnp.linalg.norm(transform_cw.translation))
+        image_array = set_pixels(image_array, xys, idcs, rgbs)
+        depth_array = set_pixels(depth_array, xys, idcs, depths)
+
+    return image_array, depth_array

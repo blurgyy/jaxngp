@@ -114,6 +114,10 @@ def psnr(lhs: jax.Array, rhs: jax.Array):
         return float(20 * jnp.log10(255 / jnp.sqrt(mse)))
 
 
+def cascades_from_bound(bound: float) -> int:
+    return int(1 + math.ceil(math.log2(bound)))
+
+
 @jax.jit
 def set_pixels(imgarr: jax.Array, xys: jax.Array, selected: jax.Array, preds: jax.Array) -> jax.Array:
     H, W = imgarr.shape[:2]
@@ -230,6 +234,7 @@ def make_view(
 def make_nerf_synthetic_scene_metadata(
         rootdir: Union[Path, str],
         split: Literal["train", "val", "test"],
+        scale: float,
     ) -> Tuple[SceneMetadata, list[ViewMetadata]]:
     rootdir = Path(rootdir)
 
@@ -279,6 +284,7 @@ def make_nerf_synthetic_scene_metadata(
         list(map(lambda view: view.transform.translation.reshape(-1, 3), views)),
         axis=0,
     )
+    all_Ts *= scale
     # float,[n_views, 3+9+3]
     all_transforms = jnp.concatenate([all_Rs, all_Ts], axis=-1)
 

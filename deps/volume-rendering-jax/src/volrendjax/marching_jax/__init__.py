@@ -19,6 +19,7 @@ def march_rays(
     rays_d: jax.Array,
     t_starts: jax.Array,
     t_ends: jax.Array,
+    noises: jax.Array,
     occupancy_bitfield: jax.Array,
 ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
     """
@@ -38,6 +39,7 @@ def march_rays(
         rays_d `[n_rays, 3]`: **unit** vectors representing ray directions
         t_starts `[n_rays]`: time of the ray entering the scene bounding box
         t_ends `[n_rays]`: time of the ray leaving the scene bounding box
+        noises `[n_rays]`: noises to perturb the starting point of ray marching
         occupancy_bitfield `[K*(G**3)//8]`: the occupancy grid represented as a bit array, grid
                                             cells are laid out in Morton (z-curve) order, as
                                             described in appendix E.2 of the NGP paper
@@ -60,7 +62,7 @@ def march_rays(
     n_rays, _ = rays_o.shape
 
     chex.assert_shape([rays_o, rays_d], (n_rays, 3))
-    chex.assert_shape([t_starts, t_ends], (n_rays,))
+    chex.assert_shape([t_starts, t_ends, noises], (n_rays,))
 
     chex.assert_scalar_positive(max_n_samples)
     chex.assert_scalar_positive(K)
@@ -77,6 +79,7 @@ def march_rays(
         rays_d,
         t_starts,
         t_ends,
+        noises,
         occupancy_bitfield,
 
         # static args

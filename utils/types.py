@@ -1,7 +1,10 @@
-from typing import Literal, Tuple
+import functools
+from typing import Literal, Optional, Tuple
 
 from flax.struct import dataclass
+from flax.training.train_state import TrainState
 import jax
+import jax.numpy as jnp
 
 
 PositionalEncodingType = Literal["identity", "frequency", "hashgrid"]
@@ -22,6 +25,56 @@ RGBColor = Tuple[float, float, float]
 
 
 @dataclass
+class OccupancyDensityGrid:
+    # float32, full-precision density values
+    density: jax.Array
+    # bool, a non-compact representation of the occupancy bitfield
+    occ_mask: jax.Array
+    # uint8, each bit is an occupancy value of a grid cell
+    occupancy: jax.Array
+
+    @classmethod
+    def create(cls, cascades: int, grid_resolution: int=128):
+        """
+        Inputs:
+            cascades: number of cascades, paper: 𝐾 = 1 for all synthetic NeRF scenes (single grid)
+                      and 𝐾 ∈ [1, 5] for larger real-world scenes (up to 5 grids, depending on scene
+                      size)
+            grid_resolution: resolution of the occupancy grid, the NGP paper uses 128.
+
+        Example usage:
+            ogrid = OccupancyDensityGrid.create(cascades=5, grid_resolution=128)
+        """
+        occupancy = 255 * jnp.ones(
+            shape=(cascades*grid_resolution**3 // 8,),  # each bit is an occupancy value
+            dtype=jnp.uint8,
+        )
+        density = jnp.zeros(
+            shape=(cascades*grid_resolution**3,),
+            dtype=jnp.float32,
+        )
+        occ_mask = jnp.zeros(
+            shape=(cascades*grid_resolution**3,),
+            dtype=jnp.bool_,
+        )
+        return cls(density=density, occ_mask=occ_mask, occupancy=occupancy)
+
+
+class NeRFTrainState(TrainState):
+    ogrid: OccupancyDensityGrid
+
+    def with_ogrid(self, ogrid):
+        return NeRFTrainState(
+            step=self.step,
+            apply_fn=self.apply_fn,
+            params=self.params,
+            tx=self.tx,
+            opt_state=self.opt_state,
+            ogrid=ogrid,
+        )
+
+
+@dataclass
 class PinholeCamera:
     # resolutions
     W: int
@@ -36,6 +89,10 @@ class RayMarchingOptions:
     steps: int
     stratified: bool
     n_importance: int
+
+    # this is the same thing as `dt_gamma` in ashawkey/torch-ngp
+    stepsize_portion: float
+    density_grid_res: int
 
 
 @dataclass

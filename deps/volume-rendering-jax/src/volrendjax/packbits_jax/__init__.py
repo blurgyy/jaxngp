@@ -1,5 +1,6 @@
 from typing import Tuple
 import jax
+import jax.numpy as jnp
 
 from . import impl
 
@@ -14,7 +15,7 @@ def packbits(
     otherwise.
 
     Inputs:
-        density_threshold `float`
+        density_threshold `broadcastable to [N]`
         density_grid `[N]`
 
     Returns:
@@ -22,6 +23,6 @@ def packbits(
         occ_bitfield `[N//8]`
     """
     return impl.packbits_p.bind(
+        jnp.broadcast_to(density_threshold, density_grid.shape),
         density_grid,
-        density_threshold=density_threshold,
     )

@@ -9,6 +9,7 @@ def march_rays_abstract(
     rays_d: jax.ShapedArray,
     t_starts: jax.ShapedArray,
     t_ends: jax.ShapedArray,
+    noises: jax.ShapedArray,
     occupancy_bitfield: jax.ShapedArray,
 
     # static args

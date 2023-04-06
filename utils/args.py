@@ -69,6 +69,9 @@ class ImageFitArgs:
 
 @dataclass(frozen=True, kw_only=True)
 class _NeRFArgs:
+    # scale camera positions with this scalar
+    scale: float
+
     # a nerf-synthetic format directory
     data_root: Path
 
@@ -79,13 +82,15 @@ class _NeRFArgs:
     render: RenderingOptions
 
     # half width of axis-aligned bounding-box, i.e. aabb's width is `bound*2`
-    bound: float=1.5
+    bound: float=1.0
 
     common: CommonArgs=CommonArgs()
 
 
 @dataclass(frozen=True, kw_only=True)
 class NeRFTrainingArgs(_NeRFArgs):
+    scale: float=0.8
+
     # number of images to validate
     val_num: int=3
 
@@ -106,9 +111,12 @@ class NeRFTrainingArgs(_NeRFArgs):
 
     # raymarching/rendering options during training
     raymarch: RayMarchingOptions=RayMarchingOptions(
-        steps=2**7,  # TODO: add coarse network, or implement ray-marching with early stop
+        steps=2**8,
         stratified=True,
-        n_importance=2**7,
+        n_importance=0,
+
+        stepsize_portion=0,
+        density_grid_res=128,
     )
     render: RenderingOptions=RenderingOptions(
         ray_chunk_size=2**10,
@@ -120,7 +128,9 @@ class NeRFTrainingArgs(_NeRFArgs):
     raymarch_eval: RayMarchingOptions=RayMarchingOptions(
         steps=2**8,
         stratified=True,
-        n_importance=2**8+2**9,
+        n_importance=0,
+        stepsize_portion=0,
+        density_grid_res=128,
     )
     render_eval: RenderingOptions=RenderingOptions(
         ray_chunk_size=2**10,
@@ -131,6 +141,8 @@ class NeRFTrainingArgs(_NeRFArgs):
 
 @dataclass(frozen=True, kw_only=True)
 class NeRFTestingArgs(_NeRFArgs):
+    scale: float=0.8
+
     # if specified, switch to test mode and use this checkpoint
     test_ckpt: Path
 
@@ -142,9 +154,11 @@ class NeRFTestingArgs(_NeRFArgs):
 
     # raymarching/rendering options during testing
     raymarch: RayMarchingOptions=RayMarchingOptions(
-        steps=2**8,
+        steps=2**10,
         stratified=True,
-        n_importance=2**8+2**9,
+        n_importance=0,
+        stepsize_portion=0,
+        density_grid_res=128,
     )
     render: RenderingOptions=RenderingOptions(
         ray_chunk_size=2**10,

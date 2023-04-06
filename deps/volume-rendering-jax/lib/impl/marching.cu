@@ -26,7 +26,7 @@ inline __device__ std::uint32_t mip_from_xyz(float x, float y, float z, std:: ui
 inline __device__ std::uint32_t mip_from_ds(float ds, std::uint32_t G, std::uint32_t K) {
     int exponent;
     frexpf(ds * G, &exponent);
-    return min(max(exponent, 0), K-1);
+    return clampf(exponent, 0, K-1);
 }
 
 inline __device__ std::uint32_t expand_bits(std::uint32_t v) {
@@ -68,6 +68,7 @@ __global__ void march_rays_kernel(
     , float const * __restrict__ rays_d  // [n_rays]
     , float const * __restrict__ t_starts  // [n_rays]
     , float const * __restrict__ t_ends  // [n_rays]
+    , float const * __restrict__ noises  // [nrays]
     , std::uint8_t const * __restrict__ occupancy_bitfield  // [K*G*G*G//8]
 
     // outputs
@@ -86,6 +87,7 @@ __global__ void march_rays_kernel(
     float const * __restrict__ ray_d = rays_d + i * 3;  // [3]
     float const ray_t_start = t_starts[i];  // [] (a scalar has no shape)
     float const ray_t_end = t_ends[i];  // [] (a scalar has no shape)
+    float const ray_noise = noises[i];  // [] (a scalar has no shape)
 
     // output arrays
     bool * const __restrict__ ray_valid_mask = valid_mask + i * max_n_samples;
@@ -103,6 +105,7 @@ __global__ void march_rays_kernel(
 
     // actually march rays
     float ray_t = ray_t_start;
+    ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_n_samples) * ray_noise;
     while (rays_n_samples[i] < max_n_samples && ray_t < ray_t_end) {
         float const x = ray_o[0] + ray_t * ray_d[0];
         float const y = ray_o[1] + ray_t * ray_d[1];
@@ -121,9 +124,9 @@ __global__ void march_rays_kernel(
         float const mip_bound = fminf(scalbnf(1.f, cascade), bound);
 
         // round down
-        int const grid_x = clampi((int)(.5f * (x / mip_bound + 1) * G), 0, G-1);
-        int const grid_y = clampi((int)(.5f * (y / mip_bound + 1) * G), 0, G-1);
-        int const grid_z = clampi((int)(.5f * (z / mip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_x = clampi((int)(.5f * (x / mip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_y = clampi((int)(.5f * (y / mip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_z = clampi((int)(.5f * (z / mip_bound + 1) * G), 0, G-1);
 
         std::uint32_t const occupancy_grid_idx = cascade * G3 + __morton3D(grid_x, grid_y, grid_z);
         bool const occupied = occupancy_bitfield[occupancy_grid_idx / 8] & (1 << (occupancy_grid_idx & 7));  // (x&7) is the same as (x%8)
@@ -213,6 +216,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     float const * __restrict__ rays_d = static_cast<float *>(next_buffer());  // [n_rays, 3]
     float const * __restrict__ t_starts = static_cast<float *>(next_buffer());  // [n_rays]
     float const * __restrict__ t_ends = static_cast<float *>(next_buffer());  // [n_rays]
+    float const * __restrict__ noises = static_cast<float *>(next_buffer());  // [n_rays]
     std::uint8_t * __restrict__ occupancy_bitfield = static_cast<std::uint8_t *>(next_buffer());  // [K*G*G*G//8]
 
     // outputs
@@ -248,6 +252,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
         , rays_d
         , t_starts
         , t_ends
+        , noises
         , occupancy_bitfield
 
         // outputs
