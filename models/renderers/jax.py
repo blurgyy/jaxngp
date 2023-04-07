@@ -10,7 +10,6 @@ from tqdm import tqdm
 from utils.common import jit_jaxfn_with, tqdm_format, vmap_jaxfn_with
 from utils.data import blend_alpha_channel, set_pixels
 from utils.types import (
-    AABB,
     DensityAndRGB,
     PinholeCamera,
     RayMarchingOptions,
@@ -76,12 +75,12 @@ def integrate_ray(
         return weights, final_rgb, depth
 
 
-def make_near_far_from_aabb(
-        aabb: AABB,  # [3, 2]
+def make_near_far_from_bound(
+        bound: float,
         o: jax.Array,  # [3]
         d: jax.Array,  # [3]
     ):
-    "Finds a smallest non-negative `t` for each ray, such that o+td is inside the given aabb."
+    "Finds a smallest non-negative `t` for each ray, such that o+td is inside the given bound."
 
     # make sure d is normalized
     d /= jnp.linalg.norm(d, axis=-1, keepdims=True) + 1e-15
@@ -95,16 +94,16 @@ def make_near_far_from_aabb(
     )
 
     tx0, tx1 = (
-        (aabb[0][0] - o[0]) / d[0],
-        (aabb[0][1] - o[0]) / d[0],
+        (-bound - o[0]) / d[0],
+        (bound - o[0]) / d[0],
     )
     ty0, ty1 = (
-        (aabb[1][0] - o[1]) / d[1],
-        (aabb[1][1] - o[1]) / d[1],
+        (-bound - o[1]) / d[1],
+        (bound - o[1]) / d[1],
     )
     tz0, tz1 = (
-        (aabb[2][0] - o[2]) / d[2],
-        (aabb[2][1] - o[2]) / d[2],
+        (-bound - o[2]) / d[2],
+        (bound - o[2]) / d[2],
     )
     tx_start, tx_end = jnp.minimum(tx0, tx1), jnp.maximum(tx0, tx1)
     ty_start, ty_end = jnp.minimum(ty0, ty1), jnp.maximum(ty0, ty1)
@@ -178,7 +177,7 @@ def march_rays(
         KEY: jran.KeyArray,
         o_world: jax.Array,
         d_world: jax.Array,
-        aabb: AABB,
+        bound: float,
         options: RayMarchingOptions,
         param_dict: FrozenVariableDict,
         nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
@@ -191,7 +190,7 @@ def march_rays(
     Inputs:
         o_world [3]: ray origins, in world space
         d_world [3]: ray directions (unit vectors), in world space
-        aabb [3, 2]: scene bounds on each of x, y, z axes
+        bound `float`: scene bounds on each of x, y, z axes
         options: see :class:`RayMarchingOptions`
         param_dict: :class:`NeRF` model params
         nerf_fn: function that takes the param_dict, xyz, and viewing directions as inputs, and
@@ -207,8 +206,8 @@ def march_rays(
     # make sure d_world is normalized
     d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
     # skip the empty space between camera and scene bbox
-    t_start, t_end = make_near_far_from_aabb(
-        aabb=aabb,
+    t_start, t_end = make_near_far_from_bound(
+        bound=bound,
         o=o_world,
         d=d_world
     )
@@ -274,7 +273,7 @@ def march_rays(
 # @jit_jaxfn_with(static_argnames=["camera", "options", "raymarch_options", "nerf_fn"])
 def render_image(
         KEY: jran.KeyArray,
-        aabb: AABB,
+        bound: float,
         camera: PinholeCamera,
         transform_cw: RigidTransformation,
         options: RenderingOptions,
@@ -306,14 +305,6 @@ def render_image(
     KEY, key = jran.split(KEY, 2)
     xys, indices = get_indices_chunks(key, camera.H, camera.W, options.ray_chunk_size)
 
-    bound_max = max(
-        [
-            aabb[0][1] - aabb[0][0],
-            aabb[1][1] - aabb[1][0],
-            aabb[2][1] - aabb[2][0],
-        ]
-    ) / 2
-
     image_array = jnp.empty((camera.H, camera.W, 3), dtype=jnp.uint8)
     depth_array = jnp.empty((camera.H, camera.W), dtype=jnp.uint8)
     for idcs in tqdm(indices, desc="| rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
@@ -323,7 +314,7 @@ def render_image(
             key,
             o_world[idcs],
             d_world[idcs],
-            aabb,
+            bound,
             raymarch_options,
             param_dict,
             nerf_fn,
@@ -334,7 +325,7 @@ def render_image(
         else:
             bg = options.bg
         rgbs = blend_alpha_channel(jnp.concatenate([preds, weights.sum(axis=-1, keepdims=True)], axis=-1), bg=bg)
-        depths = depths / (bound_max * 2 + jnp.linalg.norm(transform_cw.translation))
+        depths = depths / (bound * 2 + jnp.linalg.norm(transform_cw.translation))
         image_array = set_pixels(image_array, xys, idcs, rgbs)
         depth_array = set_pixels(depth_array, xys, idcs, depths)
 
@@ -396,7 +387,6 @@ def main():
         n_importance=0,
     )
     bound = 1.5
-    aabb = [[-bound, bound]] * 3
     render_options = RenderingOptions(
         ray_chunk_size=2**13,
         bg=[.68, .75, .43],
@@ -404,7 +394,7 @@ def main():
     )
     nerf_fn = make_test_cube(
         width=1,
-        aabb=aabb,
+        bound=bound,
         density=32,
     ).apply
 
@@ -434,7 +424,7 @@ def main():
         KEY, key = jran.split(KEY, 2)
         img, depth = render_image(
             KEY=key,
-            aabb=aabb,
+            bound=bound,
             camera=camera,
             transform_cw=RigidTransformation(rotation=R_cw, translation=T_cw),
             options=render_options,

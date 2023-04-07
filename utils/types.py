@@ -18,7 +18,6 @@ ActivationType = Literal[
     "truncated_thresholded_exponential",
 ]
 
-AABB = Tuple[Tuple[float, float], Tuple[float, float], Tuple[float, float]]
 DensityAndRGB = Tuple[jax.Array, jax.Array]
 LogLevel = Literal["DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL"]
 RGBColor = Tuple[float, float, float]

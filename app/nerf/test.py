@@ -31,10 +31,9 @@ def test(args: NeRFTestingArgs, logger: logging.Logger):
     KEY = common.set_deterministic(seed=args.common.seed)
 
     # model parameters
-    aabb = ((-args.bound, args.bound),) * 3
     KEY, key = jran.split(KEY, 2)
     model, init_input = (
-        make_nerf_ngp(aabb=aabb),
+        make_nerf_ngp(bound=args.bound),
         (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
     )
     # initialize model structure but discard parameters, as parameters are loaded later
@@ -65,7 +64,7 @@ def test(args: NeRFTestingArgs, logger: logging.Logger):
         KEY, key = jran.split(KEY, 2)
         rgb, depth = render_image(
             KEY=key,
-            aabb=aabb,
+            bound=args.bound,
             camera=scene_metadata_test.camera,
             transform_cw=transform,
             options=args.render,

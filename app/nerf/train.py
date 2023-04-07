@@ -16,7 +16,6 @@ from models.renderers import render_image, render_rays, update_ogrid
 from utils import common, data
 from utils.args import NeRFTrainingArgs
 from utils.types import (
-    AABB,
     NeRFTrainState,
     OccupancyDensityGrid,
     PinholeCamera,
@@ -26,11 +25,11 @@ from utils.types import (
 )
 
 
-@common.jit_jaxfn_with(static_argnames=["aabb", "raymarch_options", "render_options"])
+@common.jit_jaxfn_with(static_argnames=["bound", "raymarch_options", "render_options"])
 def train_step(
         KEY: jran.KeyArray,
         state: NeRFTrainState,
-        aabb: AABB,
+        bound: float,
         camera: PinholeCamera,
         raymarch_options: RayMarchingOptions,
         render_options: RenderingOptions,
@@ -83,7 +82,7 @@ def train_step(
             key,
             o_world,
             d_world,
-            aabb,
+            bound,
             state.ogrid,
             raymarch_options,
             {"params": params},
@@ -121,7 +120,7 @@ def train_step(
 
 def train_epoch(
         KEY: jran.KeyArray,
-        aabb: AABB,
+        bound: float,
         scene_metadata: data.SceneMetadata,
         raymarch_options: RayMarchingOptions,
         render_options: RenderingOptions,
@@ -137,7 +136,7 @@ def train_epoch(
         state, metrics = train_step(
             key,
             state,
-            aabb,
+            bound,
             scene_metadata.camera,
             raymarch_options,
             render_options,
@@ -167,7 +166,7 @@ def train_epoch(
             state = update_ogrid(
                 KEY=key,
                 update_all=int(state.step) < 256,
-                bound=aabb[0][1],
+                bound=bound,
                 raymarch=raymarch_options,
                 state=state,
             )
@@ -190,10 +189,8 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
     KEY = common.set_deterministic(args.common.seed)
 
     # model parameters
-    # TODO: do not use `aabb`, simply use `bound` and presume the scene/object is centered at origin
-    aabb = ((-args.bound, args.bound),) * 3
     model, init_input = (
-        make_nerf_ngp(aabb=aabb),
+        make_nerf_ngp(bound=args.bound),
         (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
     )
     KEY, key = jran.split(KEY, 2)
@@ -278,7 +275,7 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
             KEY, key = jran.split(KEY, 2)
             loss, state = train_epoch(
                 KEY=key,
-                aabb=aabb,
+                bound=args.bound,
                 scene_metadata=scene_metadata_train,
                 raymarch_options=args.raymarch,
                 render_options=args.render,
@@ -325,7 +322,7 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
             KEY, key = jran.split(KEY, 2)
             rgb, depth = render_image(
                 KEY=key,
-                aabb=aabb,
+                bound=args.bound,
                 camera=scene_metadata_val.camera,
                 transform_cw=val_transform,
                 options=args.render_eval,

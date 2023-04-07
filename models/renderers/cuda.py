@@ -12,7 +12,6 @@ from volrendjax import integrate_rays, march_rays, morton3d_invert, packbits
 from utils.common import jit_jaxfn_with, tqdm_format
 from utils.data import blend_alpha_channel, cascades_from_bound, set_pixels
 from utils.types import (
-    AABB,
     DensityAndRGB,
     NeRFTrainState,
     OccupancyDensityGrid,
@@ -110,8 +109,8 @@ def update_ogrid(
     ))
 
 
-def make_near_far_from_aabb(
-        aabb: AABB,  # [3, 2]
+def make_near_far_from_bound(
+        bound: float,
         o: jax.Array,  # [n_rays, 3]
         d: jax.Array,  # [n_rays, 3]
     ):
@@ -130,16 +129,16 @@ def make_near_far_from_aabb(
 
     # [n_rays, 1]
     tx0, tx1 = (
-        (aabb[0][0] - o[:, 0:1]) / d[:, 0:1],
-        (aabb[0][1] - o[:, 0:1]) / d[:, 0:1],
+        (-bound - o[:, 0:1]) / d[:, 0:1],
+        (bound - o[:, 0:1]) / d[:, 0:1],
     )
     ty0, ty1 = (
-        (aabb[1][0] - o[:, 1:2]) / d[:, 1:2],
-        (aabb[1][1] - o[:, 1:2]) / d[:, 1:2],
+        (-bound - o[:, 1:2]) / d[:, 1:2],
+        (bound - o[:, 1:2]) / d[:, 1:2],
     )
     tz0, tz1 = (
-        (aabb[2][0] - o[:, 2:3]) / d[:, 2:3],
-        (aabb[2][1] - o[:, 2:3]) / d[:, 2:3],
+        (-bound - o[:, 2:3]) / d[:, 2:3],
+        (bound - o[:, 2:3]) / d[:, 2:3],
     )
     tx_start, tx_end = jnp.minimum(tx0, tx1), jnp.maximum(tx0, tx1)
     ty_start, ty_end = jnp.minimum(ty0, ty1), jnp.maximum(ty0, ty1)
@@ -154,12 +153,12 @@ def make_near_far_from_aabb(
     return t_start, t_end
 
 
-@jit_jaxfn_with(static_argnames=["aabb", "options", "nerf_fn"])
+@jit_jaxfn_with(static_argnames=["bound", "options", "nerf_fn"])
 def render_rays(
     KEY: jran.KeyArray,
     o_world: jax.Array,
     d_world: jax.Array,
-    aabb: AABB,
+    bound: float,
     ogrid: OccupancyDensityGrid,
     options: RayMarchingOptions,
     param_dict: FrozenVariableDict,
@@ -175,13 +174,11 @@ def render_rays(
     d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
     # skip the empty space between camera and scene bbox
     # [n_rays], [n_rays]
-    t_starts, t_ends = make_near_far_from_aabb(
-        aabb=aabb,
+    t_starts, t_ends = make_near_far_from_bound(
+        bound=bound,
         o=o_world,
         d=d_world
     )
-
-    bound = max(map(lambda axis: axis[1] - axis[0], aabb)) / 2
 
     KEY, key = jran.split(KEY, 2)
     rays_n_samples, ray_pts, ray_dirs, dss, z_vals = march_rays(
@@ -224,7 +221,7 @@ def render_rays(
 
 def render_image(
     KEY: jran.KeyArray,
-    aabb: AABB,
+    bound: float,
     camera: PinholeCamera,
     transform_cw: RigidTransformation,
     options: RenderingOptions,
@@ -240,14 +237,6 @@ def render_image(
     KEY, key = jran.split(KEY, 2)
     xys, indices = get_indices_chunks(key, camera.H, camera.W, options.ray_chunk_size)
 
-    bound_max = max(
-        [
-            aabb[0][1] - aabb[0][0],
-            aabb[1][1] - aabb[1][0],
-            aabb[2][1] - aabb[2][0],
-        ]
-    ) / 2
-
     image_array = jnp.empty((camera.H, camera.W, 3), dtype=jnp.uint8)
     depth_array = jnp.empty((camera.H, camera.W), dtype=jnp.uint8)
     for idcs in tqdm(indices, desc="| rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
@@ -257,7 +246,7 @@ def render_image(
             key,
             o_world[idcs],
             d_world[idcs],
-            aabb,
+            bound,
             ogrid,
             raymarch_options,
             param_dict,
@@ -269,7 +258,7 @@ def render_image(
         else:
             bg = options.bg
         rgbs = blend_alpha_channel(jnp.concatenate([rgbs, opacities[:, None]], axis=-1), bg=bg)
-        depths = depths / (bound_max * 2 + jnp.linalg.norm(transform_cw.translation))
+        depths = depths / (bound * 2 + jnp.linalg.norm(transform_cw.translation))
         image_array = set_pixels(image_array, xys, idcs, rgbs)
         depth_array = set_pixels(depth_array, xys, idcs, depths)
 

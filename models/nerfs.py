@@ -15,11 +15,10 @@ from models.encoders import (
 )
 from utils.common import mkValueError
 from utils.types import ActivationType, DirectionalEncodingType, PositionalEncodingType
-from utils.types import AABB
 
 
 class NeRF(nn.Module):
-    aabb: AABB
+    bound: float
 
     position_encoder: Encoder
     direction_encoder: Encoder
@@ -46,8 +45,7 @@ class NeRF(nn.Module):
             rgb [..., 3]: predicted color for each query point
         """
         # scale and translate xyz coordinates into unit cube
-        bbox = jnp.asarray(self.aabb)
-        xyz = (xyz - bbox[:, 0]) / (bbox[:, 1] - bbox[:, 0])
+        xyz = (xyz + self.bound) / (2 * self.bound)
 
         # [..., D_pos]
         pos_enc = self.position_encoder(xyz)
@@ -172,7 +170,7 @@ def make_activation(act: ActivationType):
 
 
 def make_nerf(
-        aabb: AABB,
+        bound: float,
 
         # encodings
         pos_enc: PositionalEncodingType,
@@ -204,20 +202,13 @@ def make_nerf(
         raise NotImplementedError("Frequency encoding for NeRF is not tuned")
         position_encoder = FrequencyEncoder(dim=3, L=10)
     elif pos_enc == "hashgrid":
-        bound_max = max(
-            [
-                aabb[0][1] - aabb[0][0],
-                aabb[1][1] - aabb[1][0],
-                aabb[2][1] - aabb[2][0],
-            ]
-        ) / 2
         position_encoder = HashGridEncoder(
             dim=3,
             L=pos_levels,
             T=2**19,
             F=2,
             N_min=2**4,
-            N_max=int(2**11 * bound_max),
+            N_max=int(2**11 * bound),
             param_dtype=jnp.float32,
         )
     else:
@@ -255,7 +246,7 @@ def make_nerf(
     rgb_activation = make_activation(rgb_act)
 
     model = NeRF(
-        aabb=aabb,
+        bound=bound,
 
         position_encoder=position_encoder,
         direction_encoder=direction_encoder,
@@ -270,9 +261,9 @@ def make_nerf(
     return model
 
 
-def make_nerf_ngp(aabb: AABB) -> NeRF:
+def make_nerf_ngp(bound: float) -> NeRF:
     return make_nerf(
-        aabb=aabb,
+        bound=bound,
 
         pos_enc="hashgrid",
         dir_enc="sh",
@@ -292,9 +283,9 @@ def make_nerf_ngp(aabb: AABB) -> NeRF:
     )
 
 
-def make_debug_nerf(aabb: AABB) -> NeRF:
+def make_debug_nerf(bound: float) -> NeRF:
     return NeRF(
-        aabb=aabb,
+        bound=bound,
         position_encoder=lambda x: x,
         direction_encoder=lambda x: x,
         density_mlp=CoordinateBasedMLP(
@@ -312,13 +303,12 @@ def make_debug_nerf(aabb: AABB) -> NeRF:
     )
 
 
-def make_test_cube(width: int, aabb: AABB, density: float=32) -> NeRF:
+def make_test_cube(width: int, bound: float, density: float=32) -> NeRF:
     @jax.jit
     @jax.vmap
     def cube_density_fn(x: jax.Array) -> jax.Array:
         # x is pre-normalized unit cube, we map it back to specified aabb.
-        bbox = jnp.asarray(aabb)  # [3, 2]
-        x = x * (bbox[:, 1] - bbox[:, 0]) + bbox[:, 0]
+        x = (x + bound) / (2 * bound)
         mask = (abs(x).max(axis=-1, keepdims=True) <= width/2).astype(float)
         # concatenate input xyz for use in later rgb querying
         return jnp.concatenate([density * mask, x], axis=-1)
@@ -332,7 +322,7 @@ def make_test_cube(width: int, aabb: AABB, density: float=32) -> NeRF:
         return x / width + .5
 
     return NeRF(
-        aabb=aabb,
+        bound=bound,
         position_encoder=lambda x: x,
         direction_encoder=lambda x: x,
         density_mlp=cube_density_fn,
@@ -358,7 +348,7 @@ def main():
 
     m = make_test_cube(
         width=2,
-        aabb=[[-1, 1]] * 3,
+        bound=1,
         density=32,
     )
     # params = m.init(key, xyz, dir)
