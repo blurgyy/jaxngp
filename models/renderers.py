@@ -36,8 +36,8 @@ def integrate_ray(
     # [steps-1]
     delta_ts = z_vals[1:] - z_vals[:-1]
     # [steps]
-    # set infinite delta_t for last sample since we want to stop ray marching at the last sample
-    delta_ts = jnp.concatenate([delta_ts, 1e10 * jnp.ones_like(delta_ts[:1])])
+    # use average delta_t of previouse samples as the delta_t for the last sample
+    delta_ts = jnp.concatenate([delta_ts, jnp.mean(delta_ts, axis=-1, keepdims=True)])
 
     # NOTE:
     #   jax.lax.fori_loop is slower than vectorized operations (below is vectorized version)
