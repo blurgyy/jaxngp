@@ -23,14 +23,14 @@ __global__ void integrate_rays_kernel(
     std::uint32_t n_rays
 
     // input arrays (7)
-    , float const * __restrict__ transmittance_threshold  // [n_rays]
-    , std::uint32_t const * __restrict__ rays_sample_startidx  // [n_rays]
-    , std::uint32_t const * __restrict__ rays_n_samples  // [n_rays]
+    , float const * const __restrict__ transmittance_threshold  // [n_rays]
+    , std::uint32_t const * const __restrict__ rays_sample_startidx  // [n_rays]
+    , std::uint32_t const * const __restrict__ rays_n_samples  // [n_rays]
 
-    , float const * __restrict__ dss  // [total_samples]
-    , float const * __restrict__ z_vals  // [\sum rays_n_samples] = [total_samples]
-    , float const * __restrict__ densities  // [\sum rays_n_samples, 1] = [total_samples, 1]
-    , float const * __restrict__ rgbs  // [\sum rays_n_samples, 3] = [total_samples, 3]
+    , float const * const __restrict__ dss  // [total_samples]
+    , float const * const __restrict__ z_vals  // [\sum rays_n_samples] = [total_samples]
+    , float const * const __restrict__ densities  // [\sum rays_n_samples, 1] = [total_samples, 1]
+    , float const * const __restrict__ rgbs  // [\sum rays_n_samples, 3] = [total_samples, 3]
 
     // output arrays (4)
     , std::uint32_t * const __restrict__ effective_samples  // [n_rays]
@@ -45,10 +45,10 @@ __global__ void integrate_rays_kernel(
     std::uint32_t start_idx = rays_sample_startidx[i];
     std::uint32_t n_samples = rays_n_samples[i];
 
-    float const * __restrict__ ray_dss = dss + start_idx;  // [n_samples]
-    float const * __restrict__ ray_z_vals = z_vals + start_idx;  // [n_samples]
-    float const * __restrict__ ray_densities = densities + start_idx;  // [n_samples]
-    float const * __restrict__ ray_rgbs = rgbs + start_idx * 3;  // [n_samples, 3]
+    float const * const __restrict__ ray_dss = dss + start_idx;  // [n_samples]
+    float const * const __restrict__ ray_z_vals = z_vals + start_idx;  // [n_samples]
+    float const * const __restrict__ ray_densities = densities + start_idx;  // [n_samples]
+    float const * const __restrict__ ray_rgbs = rgbs + start_idx * 3;  // [n_samples, 3]
 
     // output
     std::uint32_t * const __restrict__ ray_effective_samples = effective_samples + i;  // [1]
@@ -90,25 +90,25 @@ __global__ void integrate_rays_backward_kernel(
     std::uint32_t n_rays
 
     // input arrays
-    , float const * __restrict__ transmittance_threshold
-    , std::uint32_t const * __restrict__ rays_sample_startidx  // [n_rays]
-    , std::uint32_t const * __restrict__ rays_n_samples  // [n_rays]
+    , float const * const __restrict__ transmittance_threshold
+    , std::uint32_t const * const __restrict__ rays_sample_startidx  // [n_rays]
+    , std::uint32_t const * const __restrict__ rays_n_samples  // [n_rays]
 
     /// original inputs
-    , float const * __restrict__ dss  // [n_rays, ray's n_samples]
-    , float const * __restrict__ z_vals  // [n_rays, ray's n_samples]
-    , float const * __restrict__ densities  // [n_rays, ray's n_samples]
-    , float const * __restrict__ rgbs  // [n_rays, ray's n_samples, 3]
+    , float const * const __restrict__ dss  // [n_rays, ray's n_samples]
+    , float const * const __restrict__ z_vals  // [n_rays, ray's n_samples]
+    , float const * const __restrict__ densities  // [n_rays, ray's n_samples]
+    , float const * const __restrict__ rgbs  // [n_rays, ray's n_samples, 3]
 
     // original outputs
-    , float const * __restrict__ opacities  // [n_rays]
-    , float const * __restrict__ final_rgbs  // [n_rays, 3]
-    , float const * __restrict__ depths  // [n_rays]
+    , float const * const __restrict__ opacities  // [n_rays]
+    , float const * const __restrict__ final_rgbs  // [n_rays, 3]
+    , float const * const __restrict__ depths  // [n_rays]
 
     /// gradient inputs
-    , float const * __restrict__ dL_dopacities  // [n_rays]
-    , float const * __restrict__ dL_dfinal_rgbs  // [n_rays, 3]
-    , float const * __restrict__ dL_ddepths  // [n_rays]
+    , float const * const __restrict__ dL_dopacities  // [n_rays]
+    , float const * const __restrict__ dL_dfinal_rgbs  // [n_rays, 3]
+    , float const * const __restrict__ dL_ddepths  // [n_rays]
 
     // output arrays
     , float * const __restrict__ dL_dz_vals  // [n_rays, ray's n_samples]
@@ -123,19 +123,19 @@ __global__ void integrate_rays_backward_kernel(
     std::uint32_t n_samples = rays_n_samples[i];
 
     /// original inputs
-    float const * __restrict__ ray_dss = dss + start_idx;  // [n_samples]
-    float const * __restrict__ ray_z_vals = z_vals + start_idx;  // [n_samples]
-    float const * __restrict__ ray_densities = densities + start_idx;  // [n_samples]
-    float const * __restrict__ ray_rgbs = rgbs + start_idx * 3;  // [n_samples, 3]
+    float const * const __restrict__ ray_dss = dss + start_idx;  // [n_samples]
+    float const * const __restrict__ ray_z_vals = z_vals + start_idx;  // [n_samples]
+    float const * const __restrict__ ray_densities = densities + start_idx;  // [n_samples]
+    float const * const __restrict__ ray_rgbs = rgbs + start_idx * 3;  // [n_samples, 3]
 
     /// original outputs
     float const ray_opacity = opacities[i];  // [] (a scalar has no shape)
-    float const * __restrict__ ray_final_rgb = final_rgbs + i * 3;  // [3]
+    float const * const __restrict__ ray_final_rgb = final_rgbs + i * 3;  // [3]
     float const ray_depth = depths[i];  // [] (a scalar has no shape)
 
     /// gradient inputs
     float const ray_dL_dopacity = dL_dopacities[i];  // [] (a scalar has no shape)
-    float const * __restrict__ ray_dL_dfinal_rgb = dL_dfinal_rgbs + i * 3;  // [3]
+    float const * const __restrict__ ray_dL_dfinal_rgb = dL_dfinal_rgbs + i * 3;  // [3]
     float const ray_dL_ddepth = dL_ddepths[i];  // [] (a scalar has no shape)
 
     // outputs
@@ -199,13 +199,13 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
     std::uint32_t n_rays = desc.n_rays;
     std::uint32_t total_samples = desc.total_samples;
     /// arrays
-    float const * __restrict__ transmittance_threshold = static_cast<float *>(next_buffer());
-    std::uint32_t const * __restrict__ rays_sample_startidx = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
-    std::uint32_t const * __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
-    float const * __restrict__ dss = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
-    float const * __restrict__ z_vals = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
-    float const * __restrict__ densities = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
-    float const * __restrict__ rgbs = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples, 3] = [total_samples, 3]
+    float const * const __restrict__ transmittance_threshold = static_cast<float *>(next_buffer());
+    std::uint32_t const * const __restrict__ rays_sample_startidx = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
+    std::uint32_t const * const __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
+    float const * const __restrict__ dss = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
+    float const * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
+    float const * const __restrict__ densities = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
+    float const * const __restrict__ rgbs = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples, 3] = [total_samples, 3]
 
     // outputs
     std::uint32_t * const __restrict__ effective_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
@@ -257,22 +257,22 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
     std::uint32_t total_samples = desc.total_samples;
 
     /// arrays
-    float const * __restrict__ transmittance_threshold = static_cast<float *>(next_buffer());
-    std::uint32_t const * __restrict__ rays_sample_startidx = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
-    std::uint32_t const * __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
+    float const * const __restrict__ transmittance_threshold = static_cast<float *>(next_buffer());
+    std::uint32_t const * const __restrict__ rays_sample_startidx = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
+    std::uint32_t const * const __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     //// original inputs
-    float const * __restrict__ dss = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
-    float const * __restrict__ z_vals = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
-    float const * __restrict__ densities = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
-    float const * __restrict__ rgbs = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples, 3] = [total_samples, 3]
+    float const * const __restrict__ dss = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
+    float const * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
+    float const * const __restrict__ densities = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
+    float const * const __restrict__ rgbs = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples, 3] = [total_samples, 3]
     //// original outputs
-    float const * __restrict__ opacities = static_cast<float *>(next_buffer());  // [n_rays]
-    float const * __restrict__ final_rgbs = static_cast<float *>(next_buffer());  // [n_rays, 3]
-    float const * __restrict__ depths = static_cast<float *>(next_buffer());  // [n_rays]
+    float const * const __restrict__ opacities = static_cast<float *>(next_buffer());  // [n_rays]
+    float const * const __restrict__ final_rgbs = static_cast<float *>(next_buffer());  // [n_rays, 3]
+    float const * const __restrict__ depths = static_cast<float *>(next_buffer());  // [n_rays]
     //// gradient inputs
-    float const * __restrict__ dL_dopacities = static_cast<float *>(next_buffer());  // [n_rays]
-    float const * __restrict__ dL_dfinal_rgbs = static_cast<float *>(next_buffer());  // [n_rays, 3]
-    float const * __restrict__ dL_ddepths = static_cast<float *>(next_buffer());  // [n_rays]
+    float const * const __restrict__ dL_dopacities = static_cast<float *>(next_buffer());  // [n_rays]
+    float const * const __restrict__ dL_dfinal_rgbs = static_cast<float *>(next_buffer());  // [n_rays, 3]
+    float const * const __restrict__ dL_ddepths = static_cast<float *>(next_buffer());  // [n_rays]
 
     // outputs
     float * const __restrict__ dL_dz_vals = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]

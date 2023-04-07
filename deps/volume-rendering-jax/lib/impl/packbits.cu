@@ -12,7 +12,7 @@ __global__ void pack_bits_kernel(
 
     /// array
     , float const * const __restrict__ density_threshold
-    , float const * __restrict__ density_grid
+    , float const * const __restrict__ density_grid
 
     // output
     , bool * const __restrict__ occupied_mask
@@ -43,7 +43,7 @@ void pack_bits_launcher(cudaStream_t stream, void **buffers, const char *opaque,
 
     /// array
     float const * const __restrict__ density_threshold = static_cast<float *>(next_buffer());
-    float const * __restrict__ density_grid = static_cast<float *>(next_buffer());
+    float const * const __restrict__ density_grid = static_cast<float *>(next_buffer());
 
     // output
     bool * const __restrict__ occupied_mask = static_cast<bool *>(next_buffer());

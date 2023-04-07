@@ -64,12 +64,12 @@ __global__ void march_rays_kernel(
     , float stepsize_portion
 
     // inputs
-    , float const * __restrict__ rays_o  // [n_rays]
-    , float const * __restrict__ rays_d  // [n_rays]
-    , float const * __restrict__ t_starts  // [n_rays]
-    , float const * __restrict__ t_ends  // [n_rays]
-    , float const * __restrict__ noises  // [nrays]
-    , std::uint8_t const * __restrict__ occupancy_bitfield  // [K*G*G*G//8]
+    , float const * const __restrict__ rays_o  // [n_rays]
+    , float const * const __restrict__ rays_d  // [n_rays]
+    , float const * const __restrict__ t_starts  // [n_rays]
+    , float const * const __restrict__ t_ends  // [n_rays]
+    , float const * const __restrict__ noises  // [nrays]
+    , std::uint8_t const * const __restrict__ occupancy_bitfield  // [K*G*G*G//8]
 
     // outputs
     , std::uint32_t * const __restrict__ rays_n_samples  // [n_rays]
@@ -83,8 +83,8 @@ __global__ void march_rays_kernel(
     if (i >= n_rays) { return; }
 
     // input arrays
-    float const * __restrict__ ray_o = rays_o + i * 3;  // [3]
-    float const * __restrict__ ray_d = rays_d + i * 3;  // [3]
+    float const * const __restrict__ ray_o = rays_o + i * 3;  // [3]
+    float const * const __restrict__ ray_d = rays_d + i * 3;  // [3]
     float const ray_t_start = t_starts[i];  // [] (a scalar has no shape)
     float const ray_t_end = t_ends[i];  // [] (a scalar has no shape)
     float const ray_noise = noises[i];  // [] (a scalar has no shape)
@@ -212,12 +212,12 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     float stepsize_portion = desc.stepsize_portion;
 
     /// arrays
-    float const * __restrict__ rays_o = static_cast<float *>(next_buffer());  // [n_rays, 3]
-    float const * __restrict__ rays_d = static_cast<float *>(next_buffer());  // [n_rays, 3]
-    float const * __restrict__ t_starts = static_cast<float *>(next_buffer());  // [n_rays]
-    float const * __restrict__ t_ends = static_cast<float *>(next_buffer());  // [n_rays]
-    float const * __restrict__ noises = static_cast<float *>(next_buffer());  // [n_rays]
-    std::uint8_t * __restrict__ occupancy_bitfield = static_cast<std::uint8_t *>(next_buffer());  // [K*G*G*G//8]
+    float const * const __restrict__ rays_o = static_cast<float *>(next_buffer());  // [n_rays, 3]
+    float const * const __restrict__ rays_d = static_cast<float *>(next_buffer());  // [n_rays, 3]
+    float const * const __restrict__ t_starts = static_cast<float *>(next_buffer());  // [n_rays]
+    float const * const __restrict__ t_ends = static_cast<float *>(next_buffer());  // [n_rays]
+    float const * const __restrict__ noises = static_cast<float *>(next_buffer());  // [n_rays]
+    std::uint8_t const * const __restrict__ occupancy_bitfield = static_cast<std::uint8_t *>(next_buffer());  // [K*G*G*G//8]
 
     // outputs
     std::uint32_t * const __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]

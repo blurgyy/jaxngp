@@ -130,7 +130,7 @@ template <typename real_t>
 __global__ void spherical_harmonics_encoding_kernel(
     std::uint32_t n,
     std::uint32_t degree,
-    float const * __restrict__ xyz,
+    float const * const __restrict__ xyz,
     real_t * const __restrict__ output
 ) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
