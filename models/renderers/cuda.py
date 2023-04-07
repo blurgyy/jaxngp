@@ -180,7 +180,11 @@ def render_rays(
         d=d_world
     )
 
-    KEY, key = jran.split(KEY, 2)
+    if options.perturb:
+        KEY, key = jran.split(KEY, 2)
+        noises = jran.uniform(key, (o_world.shape[0],), o_world.dtype)
+    else:
+        noises = 0.
     rays_n_samples, ray_pts, ray_dirs, dss, z_vals = march_rays(
         max_n_samples=options.steps,
         K=cascades_from_bound(bound),
@@ -191,7 +195,7 @@ def render_rays(
         rays_d=d_world,
         t_starts=t_starts.ravel(),
         t_ends=t_ends.ravel(),
-        noises=jran.uniform(key, (o_world.shape[0],), o_world.dtype),
+        noises=noises,
         occupancy_bitfield=ogrid.occupancy,
     )
 
@@ -240,7 +244,6 @@ def render_image(
     image_array = jnp.empty((camera.H, camera.W, 3), dtype=jnp.uint8)
     depth_array = jnp.empty((camera.H, camera.W), dtype=jnp.uint8)
     for idcs in tqdm(indices, desc="| rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
-        # rgbs = raymarcher(o_world[idcs], d_world[idcs], param_dict)
         KEY, key = jran.split(KEY, 2)
         opacities, rgbs, depths = render_rays(
             key,

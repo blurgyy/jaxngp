@@ -39,7 +39,7 @@ def march_rays(
         rays_d `[n_rays, 3]`: **unit** vectors representing ray directions
         t_starts `[n_rays]`: time of the ray entering the scene bounding box
         t_ends `[n_rays]`: time of the ray leaving the scene bounding box
-        noises `[n_rays]`: noises to perturb the starting point of ray marching
+        noises `broadcastable to [n_rays]`: noises to perturb the starting point of ray marching
         occupancy_bitfield `[K*(G**3)//8]`: the occupancy grid represented as a bit array, grid
                                             cells are laid out in Morton (z-curve) order, as
                                             described in appendix E.2 of the NGP paper
@@ -60,6 +60,8 @@ def march_rays(
                                           locations are masked out with zeros.
     """
     n_rays, _ = rays_o.shape
+
+    noises = jnp.broadcast_to(noises, (n_rays,))
 
     chex.assert_shape([rays_o, rays_d], (n_rays, 3))
     chex.assert_shape([t_starts, t_ends, noises], (n_rays,))

@@ -87,6 +87,7 @@ class PinholeCamera:
 class RayMarchingOptions:
     steps: int
     stratified: bool
+    perturb: bool
     n_importance: int
 
     # this is the same thing as `dt_gamma` in ashawkey/torch-ngp

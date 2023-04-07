@@ -113,6 +113,7 @@ class NeRFTrainingArgs(_NeRFArgs):
     raymarch: RayMarchingOptions=RayMarchingOptions(
         steps=2**8,
         stratified=True,
+        perturb=True,
         n_importance=0,
 
         stepsize_portion=0,
@@ -128,6 +129,7 @@ class NeRFTrainingArgs(_NeRFArgs):
     raymarch_eval: RayMarchingOptions=RayMarchingOptions(
         steps=2**8,
         stratified=True,
+        perturb=False,
         n_importance=0,
         stepsize_portion=0,
         density_grid_res=128,
@@ -156,6 +158,7 @@ class NeRFTestingArgs(_NeRFArgs):
     raymarch: RayMarchingOptions=RayMarchingOptions(
         steps=2**10,
         stratified=True,
+        perturb=False,
         n_importance=0,
         stepsize_portion=0,
         density_grid_res=128,
