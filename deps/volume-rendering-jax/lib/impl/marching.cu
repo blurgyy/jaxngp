@@ -104,9 +104,10 @@ __global__ void march_rays_kernel(
     std::uint32_t G3 = G*G*G;
 
     // actually march rays
+    std::uint32_t sample_idx = 0;
     float ray_t = ray_t_start;
     ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_n_samples) * ray_noise;
-    while (rays_n_samples[i] < max_n_samples && ray_t < ray_t_end) {
+    while(sample_idx < max_n_samples && ray_t < ray_t_end) {
         float const x = ray_o[0] + ray_t * ray_d[0];
         float const y = ray_o[1] + ray_t * ray_d[1];
         float const z = ray_o[2] + ray_t * ray_d[2];
@@ -132,7 +133,6 @@ __global__ void march_rays_kernel(
         bool const occupied = occupancy_bitfield[occupancy_grid_idx / 8] & (1 << (occupancy_grid_idx & 7));  // (x&7) is the same as (x%8)
 
         if (occupied) {
-            auto sample_idx = rays_n_samples[i];
             ray_valid_mask[sample_idx] = true;  // set true
             ray_xyzs[sample_idx * 3 + 0] = x;
             ray_xyzs[sample_idx * 3 + 1] = y;
@@ -143,7 +143,7 @@ __global__ void march_rays_kernel(
             ray_dss[sample_idx] = ds;
             ray_z_vals[sample_idx] = ray_t;
 
-            ++rays_n_samples[i];
+            ++sample_idx;
             ray_t += ds;
         } else {
             float const tx = (((grid_x + .5f + .5f * signf(ray_d[0])) / G * 2 - 1) * mip_bound - x) / ray_d[0];
@@ -158,6 +158,7 @@ __global__ void march_rays_kernel(
             } while (ray_t < tt);
         }
     }
+    rays_n_samples[i] = sample_idx;
 }
 
 __global__ void morton3d_kernel(

@@ -57,11 +57,10 @@ __global__ void integrate_rays_kernel(
     float * const __restrict__ ray_depth = depths + i;  // [1]
 
     // front-to-back composition, with early stop
+    std::uint32_t sample_idx = 0;
     float transmittance = 1.f;
-    // directly increment the output `effective_samples` in for loop
-    for (*ray_effective_samples = 0; transmittance > transmittance_threshold[i] && *ray_effective_samples < n_samples; ++(*ray_effective_samples)) {
-        std::uint32_t sample_idx = *ray_effective_samples;
-
+    float r = 0.f, g = 0.f, b = 0.f;
+    for (; transmittance > transmittance_threshold[i] && sample_idx < n_samples; ++sample_idx) {
         float z_val = ray_z_vals[sample_idx];
         float delta_t = ray_dss[sample_idx];
         float alpha = 1.f - __expf(-ray_densities[sample_idx] * delta_t);
@@ -73,9 +72,9 @@ __global__ void integrate_rays_kernel(
         *ray_opacity += weight;
 
         /// composite colors
-        ray_final_rgb[0] += weight * ray_rgbs[sample_idx * 3 + 0];
-        ray_final_rgb[1] += weight * ray_rgbs[sample_idx * 3 + 1];
-        ray_final_rgb[2] += weight * ray_rgbs[sample_idx * 3 + 2];
+        r += weight * ray_rgbs[sample_idx * 3 + 0];
+        g += weight * ray_rgbs[sample_idx * 3 + 1];
+        b += weight * ray_rgbs[sample_idx * 3 + 2];
 
         /// composite depth
         *ray_depth += weight * z_val;
@@ -83,6 +82,12 @@ __global__ void integrate_rays_kernel(
         // decay transmittance at last, reflects the probability of the ray not hitting this sample
         transmittance *= 1.f - alpha;
     }
+
+    // write to global memory at last
+    ray_final_rgb[0] = r;
+    ray_final_rgb[1] = g;
+    ray_final_rgb[2] = b;
+    *ray_effective_samples = sample_idx;
 }
 
 __global__ void integrate_rays_backward_kernel(
