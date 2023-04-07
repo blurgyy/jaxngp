@@ -62,16 +62,6 @@ class OccupancyDensityGrid:
 class NeRFTrainState(TrainState):
     ogrid: OccupancyDensityGrid
 
-    def with_ogrid(self, ogrid):
-        return NeRFTrainState(
-            step=self.step,
-            apply_fn=self.apply_fn,
-            params=self.params,
-            tx=self.tx,
-            opt_state=self.opt_state,
-            ogrid=ogrid,
-        )
-
 
 @dataclass
 class PinholeCamera:

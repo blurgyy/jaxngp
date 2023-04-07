@@ -102,7 +102,7 @@ def update_ogrid(
         density_grid=density_grid,
     )
 
-    return state.with_ogrid(OccupancyDensityGrid(
+    return state.replace(ogrid=OccupancyDensityGrid(
         density=density_grid,
         occ_mask=occupied_mask,
         occupancy=occupancy_bitfield,
