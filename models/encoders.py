@@ -289,7 +289,7 @@ class SphericalHarmonicsEncoderCuda(Encoder):
     @nn.jit
     def __call__(self, dirs: jax.Array) -> jax.Array:
         "Just a thin wrapper on top of :func:`shjax.spherical_harmonics_encoding()`"
-        dirs /= jnp.linalg.norm(dirs, axis=-1, keepdims=True)
+        dirs /= jnp.linalg.norm(dirs, axis=-1, keepdims=True) + 1e-15
         return shjax.spherical_harmonics_encoding(dirs, self.L)
 
 
@@ -309,7 +309,7 @@ class SphericalHarmonicsEncoder(Encoder):
             encodings [..., L**2]: real parts of the spherical harmonics up to the L-th degree.
         """
         chex.assert_axis_dimension(dirs, -1, 3)
-        dirs /= jnp.linalg.norm(dirs, axis=-1, keepdims=True)
+        dirs /= jnp.linalg.norm(dirs, axis=-1, keepdims=True) + 1e-15
         x, y, z = dirs[..., 0], dirs[..., 1], dirs[..., 2]
         xy, xz, yz = x*y, x*z, y*z
         x2, y2, z2 = x*x, y*y, z*z
@@ -412,12 +412,14 @@ def bench_sh():
     @jax.jit
     def shjax_jitted(x):
         return sh(x)
-    @jax.jit
-    def shcuda_jitted(x):
-        return shcuda(x)
+    @jit_jaxfn_with(static_argnames=["L"])
+    # def shcuda_jitted(x):
+    #     return shcuda(x)
+    def shcuda_jitted(x, L):
+        return shjax.spherical_harmonics_encoding(x, L)
 
     d = jnp.asarray([[.1, .5, -.7]])
-    d /= jnp.linalg.norm(d, axis=-1, keepdims=True)
+    d /= jnp.linalg.norm(d, axis=-1, keepdims=True) + 1e-15
 
     result = sh(d)
     result_cuda = shcuda(d)
@@ -428,7 +430,7 @@ def bench_sh():
         K, key = jran.split(K, 2)
         n = 800*800
         d = jran.normal(key, (n, 3))
-        d /= jnp.linalg.norm(d)
+        d /= jnp.linalg.norm(d) + 1e-15
 
         print("{:03d}-th check ({} coordinates, degree={}): ".format(i+1, n, L), end="")
 
@@ -441,7 +443,7 @@ def bench_sh():
 
         stime = time.time()
         print("|cuda...", end="")
-        result_cuda = shcuda_jitted(d).block_until_ready()
+        result_cuda = shcuda_jitted(d, L).block_until_ready()
         etime = time.time()
         durms = 1000 * (etime - stime)
         print("{:.2f}ms|".format(durms), end="")
@@ -488,8 +490,8 @@ def bench_hg():
 
 
 if __name__ == "__main__":
-    print("bench_hg")
-    bench_hg()
+    # print("bench_hg")
+    # bench_hg()
 
     print()
     print("bench_sh:")

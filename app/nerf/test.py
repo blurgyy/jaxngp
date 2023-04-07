@@ -12,7 +12,7 @@ from models.renderers import render_image
 from utils import common, data
 from utils.args import NeRFTestingArgs
 from utils.data import make_nerf_synthetic_scene_metadata
-from utils.types import RigidTransformation
+from utils.types import OccupancyDensityGrid, RigidTransformation
 
 
 def test(args: NeRFTestingArgs, logger: logging.Logger):
@@ -28,13 +28,12 @@ def test(args: NeRFTestingArgs, logger: logging.Logger):
     logger.setLevel(args.common.logging.upper())
 
     # deterministic
-    K = common.set_deterministic(seed=args.common.seed)
+    KEY = common.set_deterministic(seed=args.common.seed)
 
     # model parameters
-    aabb = [[-args.bound, args.bound]] * 3
-    K, key = jran.split(K, 2)
+    KEY, key = jran.split(KEY, 2)
     model, init_input = (
-        make_nerf_ngp(aabb=aabb),
+        make_nerf_ngp(bound=args.bound),
         (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
     )
     # initialize model structure but discard parameters, as parameters are loaded later
@@ -43,12 +42,14 @@ def test(args: NeRFTestingArgs, logger: logging.Logger):
         print(model.tabulate(key, *init_input))
 
     # load parameters
-    params = checkpoints.restore_checkpoint(args.test_ckpt, target=None)["params"]
+    ckpt = checkpoints.restore_checkpoint(args.test_ckpt, target=None)
+    ogrid, params = OccupancyDensityGrid(**ckpt["ogrid"]), ckpt["params"]
     params = jax.tree_util.tree_map(lambda x: jnp.asarray(x), params)
 
     scene_metadata_test, test_views = make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split=args.test_split,
+        scale=args.scale,
     )
 
     logger.info("starting testing (totally {} image(s) to test)".format(len(args.test_indices)))
@@ -60,14 +61,15 @@ def test(args: NeRFTestingArgs, logger: logging.Logger):
             rotation=scene_metadata_test.all_transforms[test_i, :9].reshape(3, 3),
             translation=scene_metadata_test.all_transforms[test_i, -3:].reshape(3),
         )
-        K, key = jran.split(K, 2)
+        KEY, key = jran.split(KEY, 2)
         rgb, depth = render_image(
-            K=key,
-            aabb=aabb,
+            KEY=key,
+            bound=args.bound,
             camera=scene_metadata_test.camera,
             transform_cw=transform,
             options=args.render,
             raymarch_options=args.raymarch,
+            ogrid=ogrid,
             param_dict={"params": params},
             nerf_fn=model.apply,
         )
