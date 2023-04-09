@@ -44,6 +44,7 @@ def test(args: NeRFTestingArgs, logger: logging.Logger):
     # load parameters
     ckpt = checkpoints.restore_checkpoint(args.test_ckpt, target=None)
     batch_config = NeRFBatchConfig(**ckpt["batch_config"])
+    batch_config = batch_config.replace(n_rays=batch_config.n_rays * 2)
     ogrid, params = OccupancyDensityGrid(**ckpt["ogrid"]), ckpt["params"]
     params = jax.tree_util.tree_map(lambda x: jnp.asarray(x), params)
 
