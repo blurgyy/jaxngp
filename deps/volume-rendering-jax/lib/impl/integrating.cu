@@ -45,6 +45,8 @@ __global__ void integrate_rays_kernel(
     std::uint32_t start_idx = rays_sample_startidx[i];
     std::uint32_t n_samples = rays_n_samples[i];
 
+    if (n_samples == 0) { return; }
+
     float const * const __restrict__ ray_dss = dss + start_idx;  // [n_samples]
     float const * const __restrict__ ray_z_vals = z_vals + start_idx;  // [n_samples]
     float const * const __restrict__ ray_densities = densities + start_idx;  // [n_samples]
@@ -126,6 +128,8 @@ __global__ void integrate_rays_backward_kernel(
     // input
     std::uint32_t start_idx = rays_sample_startidx[i];
     std::uint32_t n_samples = rays_n_samples[i];
+
+    if (n_samples == 0) { return; }
 
     /// original inputs
     float const * const __restrict__ ray_dss = dss + start_idx;  // [n_samples]
