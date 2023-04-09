@@ -12,7 +12,7 @@ from models.renderers import render_image
 from utils import common, data
 from utils.args import NeRFTestingArgs
 from utils.data import make_nerf_synthetic_scene_metadata
-from utils.types import OccupancyDensityGrid, RigidTransformation
+from utils.types import NeRFBatchConfig, OccupancyDensityGrid, RigidTransformation
 
 
 def test(args: NeRFTestingArgs, logger: logging.Logger):
@@ -43,6 +43,7 @@ def test(args: NeRFTestingArgs, logger: logging.Logger):
 
     # load parameters
     ckpt = checkpoints.restore_checkpoint(args.test_ckpt, target=None)
+    batch_config = NeRFBatchConfig(**ckpt["batch_config"])
     ogrid, params = OccupancyDensityGrid(**ckpt["ogrid"]), ckpt["params"]
     params = jax.tree_util.tree_map(lambda x: jnp.asarray(x), params)
 
@@ -69,6 +70,7 @@ def test(args: NeRFTestingArgs, logger: logging.Logger):
             transform_cw=transform,
             options=args.render,
             raymarch_options=args.raymarch,
+            batch_config=batch_config,
             ogrid=ogrid,
             param_dict={"params": params},
             nerf_fn=model.apply,

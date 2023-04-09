@@ -298,17 +298,18 @@ def make_nerf_synthetic_scene_metadata(
     return scene, views
 
 
-def make_permutation_dataset(
-        key: jran.KeyArray,
-        size: int,
-        shuffle: True,
-    ) -> Dataset:
+def make_permutation(
+    key: jran.KeyArray,
+    size: int,
+    loop: int=1,
+    shuffle: bool=True,
+) -> jax.Array:
     if shuffle:
-        perm = jran.permutation(key, size)
+        perm = jran.permutation(key, size * loop)
     else:
-        perm = jnp.arange(size)
+        perm = jnp.arange(size * loop)
 
-    return Dataset.from_tensor_slices(perm)
+    return perm % size
 
 
 def main():

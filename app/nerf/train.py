@@ -16,6 +16,7 @@ from models.renderers import render_image, render_rays, update_ogrid
 from utils import common, data
 from utils.args import NeRFTrainingArgs
 from utils.types import (
+    NeRFBatchConfig,
     NeRFTrainState,
     OccupancyDensityGrid,
     PinholeCamera,
@@ -25,13 +26,14 @@ from utils.types import (
 )
 
 
-@common.jit_jaxfn_with(static_argnames=["bound", "raymarch_options", "render_options"])
+@common.jit_jaxfn_with(static_argnames=["bound", "raymarch_options", "max_n_samples", "render_options"])
 def train_step(
         KEY: jran.KeyArray,
         state: NeRFTrainState,
         bound: float,
         camera: PinholeCamera,
         raymarch_options: RayMarchingOptions,
+        max_n_samples: int,
         render_options: RenderingOptions,
         all_xys: jax.Array,
         all_rgbs: jax.Array,
@@ -75,16 +77,17 @@ def train_step(
 
         return o_world, d_world
 
-    def loss(params, gt, KEY):
+    def loss_fn(params, gt, KEY):
         o_world, d_world = make_rays_worldspace()
         KEY, key = jran.split(KEY, 2)
-        opacities, preds, _ = render_rays(
+        effective_samples, opacities, preds, _ = render_rays(
             key,
             o_world,
             d_world,
             bound,
             state.ogrid,
             raymarch_options,
+            max_n_samples,
             {"params": params},
             state.apply_fn,
         )
@@ -105,15 +108,16 @@ def train_step(
         # with other NeRF methods. Self-normalizing optimizers such as Adam are agnostic to such
         # constant factors; optimization is therefore unaffected.
         loss = optax.huber_loss(pred_rgbs, gt_rgbs, delta=0.1).mean() / 5.0
-        return loss
+        return loss, effective_samples
 
-    loss_grad_fn = jax.value_and_grad(loss)
+    loss_grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
 
     KEY, key = jran.split(KEY, 2)
-    loss, grads = loss_grad_fn(state.params, all_rgbs[perm], key)
+    (loss, effective_samples), grads = loss_grad_fn(state.params, all_rgbs[perm], key)
     state = state.apply_gradients(grads=grads)
     metrics = {
         "loss": loss * perm.shape[0],
+        "effective_samples": effective_samples,
     }
     return state, metrics
 
@@ -124,54 +128,78 @@ def train_epoch(
         scene_metadata: data.SceneMetadata,
         raymarch_options: RayMarchingOptions,
         render_options: RenderingOptions,
-        permutation: data.Dataset,
         state: NeRFTrainState,
-        total_batches: int,
+        permutation: jax.Array,
+        n_batches: int,
+        target_batch_size: int,
         ep_log: int,
         total_epochs: int,
     ):
+    n_processed_rays = 0
     loss, running_loss = 0, -1
-    for i, perm in enumerate(pbar := tqdm(permutation, total=total_batches, desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs), bar_format=common.tqdm_format)):
+    running_max_eff_samp = -1
+
+    beg_idx = 0
+    for _ in (pbar := tqdm(range(n_batches), desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs), bar_format=common.tqdm_format)):
         KEY, key = jran.split(KEY, 2)
+        perm = permutation[beg_idx:beg_idx+state.batch_config.n_rays]
+        beg_idx += state.batch_config.n_rays
         state, metrics = train_step(
             key,
             state,
             bound,
             scene_metadata.camera,
             raymarch_options,
+            int(state.batch_config.n_samples_per_ray),
             render_options,
             scene_metadata.all_xys,
             scene_metadata.all_rgbs,
             scene_metadata.all_transforms,
             perm,
         )
+        n_processed_rays += state.batch_config.n_rays
         loss += metrics["loss"]
-        loss_log = metrics["loss"] / perm.shape[0]
+        loss_log = metrics["loss"] / state.batch_config.n_rays
         if running_loss < 0:
             running_loss = loss_log
         else:
             running_loss = running_loss * 0.99 + 0.01 * loss_log
+        max_eff_samp = metrics["effective_samples"].max()
+        if running_max_eff_samp < 0:
+            running_max_eff_samp = max_eff_samp
+        else:
+            running_max_eff_samp = running_max_eff_samp * .95 + .05 * max_eff_samp
         pbar.set_description_str(
-            desc="Training epoch#{:03d}/{:d} loss={:.3e} psnr~{:.2f}dB".format(
+            desc="Training epoch#{:03d}/{:d} max_eff_samp={:.1f} eff_batch_size={} n_rays={} max_n_samples={} loss={:.3e} psnr~{:.2f}dB".format(
                 ep_log,
                 total_epochs,
+                running_max_eff_samp,
+                state.batch_config.batch_size, state.batch_config.n_rays, state.batch_config.n_samples_per_ray,
                 running_loss,
                 data.linear2psnr(running_loss, maxval=1)
             )
         )
 
-        if i > 0 and i % 16 == 0:
+        step = int(state.step)
+        if step > 0 and step % 16 == 0:
             # update occupancy grid
             KEY, key = jran.split(KEY, 2)
             state = update_ogrid(
                 KEY=key,
-                update_all=int(state.step) < 256,
+                update_all=step < 256,
                 bound=bound,
                 raymarch=raymarch_options,
                 state=state,
             )
+            new_n_samples_per_ray = int(running_max_eff_samp) + 2
+            state = state.replace(
+                batch_config=NeRFBatchConfig(
+                    n_samples_per_ray=new_n_samples_per_ray,
+                    n_rays=target_batch_size // new_n_samples_per_ray,
+                ),
+            )
 
-    return loss, state
+    return loss / n_processed_rays, state
 
 
 def train(args: NeRFTrainingArgs, logger: logging.Logger):
@@ -243,6 +271,10 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
             cascades=data.cascades_from_bound(args.bound),
             grid_resolution=args.raymarch.density_grid_res,
         ),
+        batch_config=NeRFBatchConfig(
+            n_samples_per_ray=256,
+            n_rays=args.train.bs // 256,
+        ),
     )
 
     # data
@@ -263,25 +295,25 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
     for ep in range(args.train.n_epochs):
         ep_log = ep + 1
         KEY, key = jran.split(KEY, 2)
-        permutation = data.make_permutation_dataset(
+        permutation = data.make_permutation(
             key,
             size=scene_metadata_train.all_xys.shape[0],
+            loop=args.train.data_loop,
             shuffle=True
-        )\
-            .batch(args.render.ray_chunk_size, drop_remainder=True)\
-            .repeat(args.train.data_loop)
+        )
 
         try:
             KEY, key = jran.split(KEY, 2)
-            loss, state = train_epoch(
+            loss_log, state = train_epoch(
                 KEY=key,
                 bound=args.bound,
                 scene_metadata=scene_metadata_train,
                 raymarch_options=args.raymarch,
                 render_options=args.render,
-                permutation=permutation.take(args.train.n_batches).as_numpy_iterator(),
                 state=state,
-                total_batches=args.train.n_batches,
+                permutation=permutation,
+                n_batches=args.train.n_batches,
+                target_batch_size=args.train.bs,
                 ep_log=ep_log,
                 total_epochs=args.train.n_epochs,
             )
@@ -293,7 +325,6 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
             logger.info("exiting cleanly ...")
             exit()
 
-        loss_log = loss / (args.train.n_batches * args.render.ray_chunk_size)
         logger.info("epoch#{:03d}: loss={:.2e} psnr~{:.2f}dB".format(ep_log, loss_log, data.linear2psnr(loss_log, maxval=1)))
 
         logger.info("saving training state ... ")
@@ -327,6 +358,7 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
                 transform_cw=val_transform,
                 options=args.render_eval,
                 raymarch_options=args.raymarch_eval,
+                batch_config=state.batch_config,
                 ogrid=state.ogrid,
                 param_dict={"params": state.params},
                 nerf_fn=state.apply_fn,

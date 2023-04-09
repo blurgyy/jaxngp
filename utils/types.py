@@ -1,5 +1,4 @@
-import functools
-from typing import Literal, Optional, Tuple
+from typing import Literal, Tuple
 
 from flax.struct import dataclass
 from flax.training.train_state import TrainState
@@ -59,8 +58,19 @@ class OccupancyDensityGrid:
         return cls(density=density, occ_mask=occ_mask, occupancy=occupancy)
 
 
+@dataclass
+class NeRFBatchConfig:
+    n_samples_per_ray: int
+    n_rays: int
+
+    @property
+    def batch_size(self):
+        return self.n_rays * self.n_samples_per_ray
+
+
 class NeRFTrainState(TrainState):
     ogrid: OccupancyDensityGrid
+    batch_config: NeRFBatchConfig
 
 
 @dataclass
@@ -75,7 +85,8 @@ class PinholeCamera:
 
 @dataclass
 class RayMarchingOptions:
-    steps: int
+    # the NGP paper uses 1024 (appendix E.1)
+    max_steps: int
     stratified: bool
     perturb: bool
     n_importance: int
@@ -87,7 +98,6 @@ class RayMarchingOptions:
 
 @dataclass
 class RenderingOptions:
-    ray_chunk_size: int
     # background color for transparent parts of the image, has no effect if `random_bg` is True
     bg: RGBColor
     # ignore `bg` specification and use random color for transparent parts of the image

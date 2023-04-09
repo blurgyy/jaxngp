@@ -13,6 +13,7 @@ from utils.common import jit_jaxfn_with, tqdm_format
 from utils.data import blend_alpha_channel, cascades_from_bound, set_pixels
 from utils.types import (
     DensityAndRGB,
+    NeRFBatchConfig,
     NeRFTrainState,
     OccupancyDensityGrid,
     PinholeCamera,
@@ -92,8 +93,8 @@ def update_ogrid(
     # (3) update the occupancy bits by thresholding each cell’s density with 𝑡 = 0.01 · 1024/√3,
     # which corresponds to thresholding the opacity of a minimal ray marching step by 1 − exp(−0.01)
     # ≈ 0.01.
-    # density_threshold = .01 * raymarch.steps / 3**.5
-    density_threshold = 1e-2
+    density_threshold = .01 * raymarch.max_steps / 3**.5
+    # density_threshold = 1e-2
     mean_density = jnp.sum(jnp.where(density_grid > 0, density_grid, 0)) / jnp.sum(jnp.where(density_grid > 0, 1, 0))
     density_threshold = jnp.minimum(density_threshold, mean_density)
     # density_threshold = 1e-2
@@ -153,7 +154,7 @@ def make_near_far_from_bound(
     return t_start, t_end
 
 
-@jit_jaxfn_with(static_argnames=["bound", "options", "nerf_fn"])
+@jit_jaxfn_with(static_argnames=["bound", "options", "max_n_samples", "nerf_fn"])
 def render_rays(
     KEY: jran.KeyArray,
     o_world: jax.Array,
@@ -161,6 +162,7 @@ def render_rays(
     bound: float,
     ogrid: OccupancyDensityGrid,
     options: RayMarchingOptions,
+    max_n_samples: int,
     param_dict: FrozenVariableDict,
     nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
 ):
@@ -186,7 +188,7 @@ def render_rays(
     else:
         noises = 0.
     rays_n_samples, ray_pts, ray_dirs, dss, z_vals = march_rays(
-        max_n_samples=options.steps,
+        max_n_samples=max_n_samples,
         K=cascades_from_bound(bound),
         G=options.density_grid_res,
         bound=bound,
@@ -206,7 +208,7 @@ def render_rays(
     )
 
     rays_sample_startidx = jnp.concatenate(
-        [jnp.zeros_like(rays_n_samples[:1]), jnp.cumsum(options.steps * jnp.ones_like(rays_n_samples[:-1]))],
+        [jnp.zeros_like(rays_n_samples[:1]), jnp.cumsum(max_n_samples * jnp.ones_like(rays_n_samples[:-1]))],
         axis=-1,
     )
 
@@ -220,7 +222,7 @@ def render_rays(
         rgbs,
     )
 
-    return opacities, final_rgbs, depths
+    return effective_samples, opacities, final_rgbs, depths
 
 
 def render_image(
@@ -230,6 +232,7 @@ def render_image(
     transform_cw: RigidTransformation,
     options: RenderingOptions,
     raymarch_options: RayMarchingOptions,
+    batch_config: NeRFBatchConfig,
     ogrid: OccupancyDensityGrid,
     param_dict: FrozenVariableDict,
     nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
@@ -239,19 +242,20 @@ def render_image(
     o_world, d_world = make_rays_worldspace(camera=camera, transform_cw=transform_cw)
 
     KEY, key = jran.split(KEY, 2)
-    xys, indices = get_indices_chunks(key, camera.H, camera.W, options.ray_chunk_size)
+    xys, indices = get_indices_chunks(key, camera.H, camera.W, int(batch_config.n_rays))
 
     image_array = jnp.empty((camera.H, camera.W, 3), dtype=jnp.uint8)
     depth_array = jnp.empty((camera.H, camera.W), dtype=jnp.uint8)
     for idcs in tqdm(indices, desc="| rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
         KEY, key = jran.split(KEY, 2)
-        opacities, rgbs, depths = render_rays(
+        _, opacities, rgbs, depths = render_rays(
             key,
             o_world[idcs],
             d_world[idcs],
             bound,
             ogrid,
             raymarch_options,
+            int(batch_config.n_samples_per_ray),
             param_dict,
             nerf_fn,
         )

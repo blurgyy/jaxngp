@@ -103,7 +103,7 @@ class NeRFTrainingArgs(_NeRFArgs):
         # transparent pixels.
         lr=1e-2,
         momentum=None,
-        bs=2**10,
+        bs=256 * (1<<10),  # 256ki
         n_epochs=32,
         n_batches=2**12,
         data_loop=1,
@@ -111,7 +111,7 @@ class NeRFTrainingArgs(_NeRFArgs):
 
     # raymarching/rendering options during training
     raymarch: RayMarchingOptions=RayMarchingOptions(
-        steps=2**8,
+        max_steps=1<<10,
         stratified=True,
         perturb=True,
         n_importance=0,
@@ -120,14 +120,13 @@ class NeRFTrainingArgs(_NeRFArgs):
         density_grid_res=128,
     )
     render: RenderingOptions=RenderingOptions(
-        ray_chunk_size=2**10,
         bg=(1.0, 1.0, 1.0),  # white, but ignored by default due to random_bg=True
         random_bg=True,
     )
 
     # raymarching/rendering options for validating during training
     raymarch_eval: RayMarchingOptions=RayMarchingOptions(
-        steps=2**8,
+        max_steps=1<<10,
         stratified=True,
         perturb=False,
         n_importance=0,
@@ -135,7 +134,6 @@ class NeRFTrainingArgs(_NeRFArgs):
         density_grid_res=128,
     )
     render_eval: RenderingOptions=RenderingOptions(
-        ray_chunk_size=2**10,
         bg=(0.0, 0.0, 0.0),  # black
         random_bg=False,
     )
@@ -156,7 +154,7 @@ class NeRFTestingArgs(_NeRFArgs):
 
     # raymarching/rendering options during testing
     raymarch: RayMarchingOptions=RayMarchingOptions(
-        steps=2**10,
+        max_steps=1<<10,
         stratified=True,
         perturb=False,
         n_importance=0,
@@ -164,7 +162,6 @@ class NeRFTestingArgs(_NeRFArgs):
         density_grid_res=128,
     )
     render: RenderingOptions=RenderingOptions(
-        ray_chunk_size=2**10,
         bg=(0.0, 0.0, 0.0),  # black
         random_bg=False,
     )
