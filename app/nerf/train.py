@@ -141,6 +141,9 @@ def train_epoch(
 
     beg_idx = 0
     for _ in (pbar := tqdm(range(n_batches), desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs), bar_format=common.tqdm_format)):
+        if beg_idx >= len(permutation):
+            pbar.close()
+            break
         KEY, key = jran.split(KEY, 2)
         perm = permutation[beg_idx:beg_idx+state.batch_config.n_rays]
         beg_idx += state.batch_config.n_rays
