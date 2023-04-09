@@ -68,7 +68,7 @@ __global__ void march_rays_kernel(
     , float const * const __restrict__ rays_d  // [n_rays]
     , float const * const __restrict__ t_starts  // [n_rays]
     , float const * const __restrict__ t_ends  // [n_rays]
-    , float const * const __restrict__ noises  // [nrays]
+    , float const * const __restrict__ noises  // [n_rays]
     , std::uint8_t const * const __restrict__ occupancy_bitfield  // [K*G*G*G//8]
 
     // outputs

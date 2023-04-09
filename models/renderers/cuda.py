@@ -128,18 +128,18 @@ def make_near_far_from_bound(
         jnp.clip(d, eps * jnp.ones_like(d)),  # if non-negative, lower-bound is eps
     )
 
-    # [n_rays, 1]
+    # [n_rays]
     tx0, tx1 = (
-        (-bound - o[:, 0:1]) / d[:, 0:1],
-        (bound - o[:, 0:1]) / d[:, 0:1],
+        (-bound - o[:, 0]) / d[:, 0],
+        (bound - o[:, 0]) / d[:, 0],
     )
     ty0, ty1 = (
-        (-bound - o[:, 1:2]) / d[:, 1:2],
-        (bound - o[:, 1:2]) / d[:, 1:2],
+        (-bound - o[:, 1]) / d[:, 1],
+        (bound - o[:, 1]) / d[:, 1],
     )
     tz0, tz1 = (
-        (-bound - o[:, 2:3]) / d[:, 2:3],
-        (bound - o[:, 2:3]) / d[:, 2:3],
+        (-bound - o[:, 2]) / d[:, 2],
+        (bound - o[:, 2]) / d[:, 2],
     )
     tx_start, tx_end = jnp.minimum(tx0, tx1), jnp.maximum(tx0, tx1)
     ty_start, ty_end = jnp.minimum(ty0, ty1), jnp.maximum(ty0, ty1)
@@ -150,7 +150,7 @@ def make_near_far_from_bound(
     t_start = jnp.maximum(jnp.maximum(tx_start, ty_start), tz_start)  # last axis that gose inside the bbox
     t_end = jnp.minimum(jnp.minimum(tx_end, ty_end), tz_end)  # first axis that goes out of the bbox
 
-    # [n_rays, 1], [n_rays, 1]
+    # [n_rays], [n_rays]
     return t_start, t_end
 
 
@@ -184,7 +184,7 @@ def render_rays(
 
     if options.perturb:
         KEY, key = jran.split(KEY, 2)
-        noises = jran.uniform(key, (o_world.shape[0],), o_world.dtype)
+        noises = jran.uniform(key, shape=t_starts.shape, dtype=t_starts.dtype, minval=0., maxval=1.)
     else:
         noises = 0.
     rays_n_samples, ray_pts, ray_dirs, dss, z_vals = march_rays(
