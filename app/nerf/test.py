@@ -84,7 +84,7 @@ def test(args: NeRFTestingArgs, logger: logging.Logger):
         dest.mkdir(parents=True, exist_ok=True)
 
         # rgb
-        dest_rgb = dest.joinpath("{:03d}-pred.png".format(test_i))
+        dest_rgb = dest.joinpath("{:03d}-rgb.png".format(test_i))
         logger.debug("saving comparison image to {}".format(dest_rgb))
         Image.fromarray(np.asarray(rgb)).save(dest_rgb)
 
