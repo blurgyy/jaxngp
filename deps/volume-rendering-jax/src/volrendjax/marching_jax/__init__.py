@@ -9,6 +9,7 @@ from . import impl
 def march_rays(
     # static
     max_n_samples: int,
+    max_steps: int,
     K: int,
     G: int,
     bound: float,
@@ -29,6 +30,9 @@ def march_rays(
 
     Inputs:
         max_n_samples `int`: maximum samples to generate on each ray
+        max_steps `int`: the length of a minimal ray marching step is calculated internally as:
+                            Δ𝑡 := √3 / max_steps;
+                         the NGP paper uses max_steps=1024 (as described in appendix E.1).
         K `int`: total number of cascades of `occupancy_bitfield`
         G `int`: occupancy grid resolution, the paper uses 128 for every cascade
         bound `float`: the half length of the longest axis of the scene’s bounding box,
@@ -67,6 +71,7 @@ def march_rays(
     chex.assert_shape([t_starts, t_ends, noises], (n_rays,))
 
     chex.assert_scalar_positive(max_n_samples)
+    chex.assert_scalar_positive(max_steps)
     chex.assert_scalar_positive(K)
     chex.assert_scalar_positive(G)
     chex.assert_scalar_positive(bound)
@@ -86,6 +91,7 @@ def march_rays(
 
         # static args
         max_n_samples=max_n_samples,
+        max_steps=max_steps,
         K=K,
         G=G,
         bound=bound,

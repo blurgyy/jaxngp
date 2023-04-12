@@ -14,6 +14,7 @@ def march_rays_abstract(
 
     # static args
     max_n_samples: int,
+    max_steps: int,
     K: int,
     G: int,
     bound: float,

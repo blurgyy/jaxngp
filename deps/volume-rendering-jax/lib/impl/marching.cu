@@ -6,12 +6,13 @@ namespace volrendjax {
 namespace {
 
 // this is the same function as `calc_dt` in ngp_pl's implementation
-inline __device__ float calc_ds(float ray_t, float stepsize_portion, float bound, std::uint32_t grid_res, std::uint32_t max_n_samples) {
-    // from appendix E.1 of the NGP paper (the paper sets stepsize_portion = 1/256)
+inline __device__ float calc_ds(float ray_t, float stepsize_portion, float bound, std::uint32_t grid_res, std::uint32_t max_steps) {
+    // from appendix E.1 of the NGP paper (the paper sets stepsize_portion=0 for synthetic scenes
+    // and 1/256 for others)
     return clampf(
         ray_t * stepsize_portion,
-        float(SQRT3) / grid_res,
-        2 * bound * float(SQRT3) / grid_res
+        2 * (float)SQRT3 / max_steps,
+        2 * (float)SQRT3 * bound / grid_res
     );
 }
 
@@ -58,6 +59,7 @@ __global__ void march_rays_kernel(
     // static
     std::uint32_t n_rays
     , std::uint32_t max_n_samples
+    , std::uint32_t max_steps
     , std::uint32_t K
     , std::uint32_t G
     , float bound
@@ -106,13 +108,13 @@ __global__ void march_rays_kernel(
     // actually march rays
     std::uint32_t sample_idx = 0;
     float ray_t = ray_t_start;
-    ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_n_samples) * ray_noise;
+    ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_steps) * ray_noise;
     while(sample_idx < max_n_samples && ray_t < ray_t_end) {
         float const x = ray_o[0] + ray_t * ray_d[0];
         float const y = ray_o[1] + ray_t * ray_d[1];
         float const z = ray_o[2] + ray_t * ray_d[2];
 
-        float const ds = calc_ds(ray_t, stepsize_portion, bound, G, max_n_samples);
+        float const ds = calc_ds(ray_t, stepsize_portion, bound, G, max_steps);
 
         // among the grids covering xyz, the finest one with cell side-length larger than Δ𝑡 is
         // queried.
@@ -154,7 +156,7 @@ __global__ void march_rays_kernel(
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
             // step until next voxel
             do { 
-                ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_n_samples);
+                ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_steps);
             } while (ray_t < tt);
         }
     }
@@ -207,6 +209,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     MarchingDescriptor const &desc = *deserialize<MarchingDescriptor>(opaque, opaque_len);
     std::uint32_t n_rays = desc.n_rays;
     std::uint32_t max_n_samples = desc.max_n_samples;
+    std::uint32_t max_steps = desc.max_steps;
     std::uint32_t K = desc.K;
     std::uint32_t G = desc.G;
     float bound = desc.bound;
@@ -243,6 +246,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
         // static
         n_rays
         , max_n_samples
+        , max_steps
         , K
         , G
         , bound

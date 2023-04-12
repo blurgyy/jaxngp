@@ -275,8 +275,8 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
             grid_resolution=args.raymarch.density_grid_res,
         ),
         batch_config=NeRFBatchConfig(
-            n_samples_per_ray=256,
-            n_rays=args.train.bs // 256,
+            n_samples_per_ray=args.raymarch.max_steps,
+            n_rays=args.train.bs // args.raymarch.max_steps,
         ),
     )
 

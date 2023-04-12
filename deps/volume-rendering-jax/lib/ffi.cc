@@ -66,13 +66,14 @@ PYBIND11_MODULE(volrendutils_cuda, m) {
 
     m.def("get_marching_registrations", &get_marching_registrations);
     m.def("make_marching_descriptor",
-          [](std::uint32_t n_rays, std::uint32_t max_n_samples, std::uint32_t K, std::uint32_t G, float bound, float stepsize_portion) {
+          [](std::uint32_t n_rays, std::uint32_t max_n_samples, std::uint32_t max_steps, std::uint32_t K, std::uint32_t G, float bound, float stepsize_portion) {
             if (K == 0) {
                 throw std::runtime_error("expected K to be a positive integer, got 0");
             }
             return to_pybind11_bytes(MarchingDescriptor{
                 .n_rays = n_rays,
                 .max_n_samples = max_n_samples,
+                .max_steps = max_steps,
                 .K = K,
                 .G = G,
                 .bound = bound,
@@ -83,6 +84,7 @@ PYBIND11_MODULE(volrendutils_cuda, m) {
           "Args:\n"
           "    n_rays: number of input rays\n"
           "    max_n_samples: maximum number of samples to generate per ray\n"
+          "    max_steps: used to calculate the length of a minimal ray marching step\n"
           "    K: total number of cascades of the occupancy bitfield\n"
           "    G: occupancy grid resolution, the paper uses 128 for every cascade\n"
           "    bound: the half length of the longest axis of the scene’s bounding box,\n"
