@@ -17,17 +17,19 @@ inline __device__ float calc_ds(float ray_t, float stepsize_portion, float bound
 }
 
 inline __device__ std::uint32_t mip_from_xyz(float x, float y, float z, std:: uint32_t K) {
+    if (K == 1) { return 0; }
     float max_coord = fmaxf(fabsf(x), fmaxf(fabsf(y), fabsf(z)));
     int exponent;
     frexpf(max_coord, &exponent);
-    return clampf(exponent, 0, K-1);
+    return static_cast<std::uint32_t>(clampi(exponent, 0, K-1));
 }
 
 // return the finest cascade of occupancy grids that has cell side-length larger than ds (appendix E.2)
 inline __device__ std::uint32_t mip_from_ds(float ds, std::uint32_t G, std::uint32_t K) {
+    if (K == 1) { return 0; }
     int exponent;
     frexpf(ds * G, &exponent);
-    return clampf(exponent, 0, K-1);
+    return static_cast<std::uint32_t>(clampi(exponent, 0, K-1));
 }
 
 inline __device__ std::uint32_t expand_bits(std::uint32_t v) {
@@ -130,7 +132,7 @@ __global__ void march_rays_kernel(
         std::uint32_t const grid_z = clampi((int)(.5f * (z / mip_bound + 1) * G), 0, G-1);
 
         std::uint32_t const occupancy_grid_idx = cascade * G3 + __morton3D(grid_x, grid_y, grid_z);
-        bool const occupied = occupancy_bitfield[occupancy_grid_idx / 8] & (1 << (occupancy_grid_idx & 7));  // (x&7) is the same as (x%8)
+        bool const occupied = occupancy_bitfield[occupancy_grid_idx >> 3] & (1 << (occupancy_grid_idx & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
 
         if (occupied) {
             ++ray_n_samples;
@@ -200,7 +202,7 @@ __global__ void march_rays_kernel(
         std::uint32_t const grid_z = clampi((int)(.5f * (z / mip_bound + 1) * G), 0, G-1);
 
         std::uint32_t const occupancy_grid_idx = cascade * G3 + __morton3D(grid_x, grid_y, grid_z);
-        bool const occupied = occupancy_bitfield[occupancy_grid_idx / 8] & (1 << (occupancy_grid_idx & 7));  // (x&7) is the same as (x%8)
+        bool const occupied = occupancy_bitfield[occupancy_grid_idx >> 3] & (1 << (occupancy_grid_idx & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
 
         if (occupied) {
             ray_xyzs[steps * 3 + 0] = x;
