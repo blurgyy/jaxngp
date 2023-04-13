@@ -28,7 +28,8 @@ def march_rays_lowering_rule(
     occupancy_bitfield: ir.Value,
 
     # static args
-    max_n_samples: int,  # int
+    max_n_samples_per_ray: int,  # int
+    total_samples: int,  # int
     max_steps: int,  # int
     K: int,  # int
     G: int,  # int
@@ -39,7 +40,8 @@ def march_rays_lowering_rule(
 
     opaque = volrendutils_cuda.make_marching_descriptor(
         n_rays,
-        max_n_samples,
+        max_n_samples_per_ray,
+        total_samples,
         max_steps,
         K,
         G,
@@ -55,19 +57,22 @@ def march_rays_lowering_rule(
         "in.noises": (n_rays,),
         "in.occupancy_bitfield": (K*G*G*G//8,),
 
+        "helper.counter": (1,),
+
         "out.rays_n_samples": (n_rays,),
-        "out.valid_mask": (n_rays * max_n_samples,),
-        "out.xyzs": (n_rays * max_n_samples, 3),
-        "out.dirs": (n_rays * max_n_samples, 3),
-        "out.dss": (n_rays * max_n_samples,),
-        "out.z_vals": (n_rays * max_n_samples,),
+        "out.rays_sample_startidx": (n_rays,),
+        "out.xyzs": (total_samples, 3),
+        "out.dirs": (total_samples, 3),
+        "out.dss": (total_samples,),
+        "out.z_vals": (total_samples,),
     }
 
     return custom_call(
         call_target_name="march_rays",
         out_types=[
+            ir.RankedTensorType.get(shapes["helper.counter"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.rays_n_samples"], ir.IntegerType.get_unsigned(32)),
-            ir.RankedTensorType.get(shapes["out.valid_mask"], ir.IntegerType.get_signless(1)),
+            ir.RankedTensorType.get(shapes["out.rays_sample_startidx"], ir.IntegerType.get_signless(32)),
             ir.RankedTensorType.get(shapes["out.xyzs"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.dirs"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.dss"], ir.F32Type.get()),
@@ -91,8 +96,9 @@ def march_rays_lowering_rule(
             shapes["in.occupancy_bitfield"],
         ),
         result_layouts=default_layouts(
+            shapes["helper.counter"],
             shapes["out.rays_n_samples"],
-            shapes["out.valid_mask"],
+            shapes["out.rays_sample_startidx"],
             shapes["out.xyzs"],
             shapes["out.dirs"],
             shapes["out.dss"],

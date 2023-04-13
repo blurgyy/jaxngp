@@ -8,7 +8,8 @@ from . import impl
 
 def march_rays(
     # static
-    max_n_samples: int,
+    max_n_samples_per_ray: int,
+    total_samples: int,
     max_steps: int,
     K: int,
     G: int,
@@ -29,7 +30,8 @@ def march_rays(
     each ray.
 
     Inputs:
-        max_n_samples `int`: maximum samples to generate on each ray
+        max_n_samples_per_ray `int`: maximum samples to generate on each ray
+        total_samples `int`: ,
         max_steps `int`: the length of a minimal ray marching step is calculated internally as:
                             Δ𝑡 := √3 / max_steps;
                          the NGP paper uses max_steps=1024 (as described in appendix E.1).
@@ -52,16 +54,15 @@ def march_rays(
         rays_sample_startidx `[n_rays]`: indices of each ray's first sample
         rays_n_samples `[n_rays]`: number of samples of each ray, its sum is `total_samples`
                                    referenced below
-        xyzs `[n_rays, max_n_samples, 3]`: spatial coordinates of the generated samples, invalid
-                                           array locations are masked out with zeros
-        dirs `[n_rays, max_n_samples, 3]`: spatial coordinates of the generated samples, invalid
-                                           array locations are masked out with zeros.
-        dss `[n_rays, max_n_samples]`: `ds`s of each sample, for a more detailed explanation of
-                                        this notation, see documentation of function
-                                        `volrendjax.integrat_rays`, invalid array locations are
-                                        masked out with zeros.
-        z_vals `[n_rays, max_n_samples]`: samples' distances to their origins, invalid array
-                                          locations are masked out with zeros.
+        xyzs `[total_samples, 3]`: spatial coordinates of the generated samples, invalid array
+                                   locations are masked out with zeros
+        dirs `[total_samples, 3]`: spatial coordinates of the generated samples, invalid array
+                                   locations are masked out with zeros.
+        dss `[total_samples]`: `ds`s of each sample, for a more detailed explanation of this
+                               notation, see documentation of function `volrendjax.integrat_rays`,
+                               invalid array locations are masked out with zeros.
+        z_vals `[total_samples]`: samples' distances to their origins, invalid array
+                                  locations are masked out with zeros.
     """
     n_rays, _ = rays_o.shape
 
@@ -70,7 +71,8 @@ def march_rays(
     chex.assert_shape([rays_o, rays_d], (n_rays, 3))
     chex.assert_shape([t_starts, t_ends, noises], (n_rays,))
 
-    chex.assert_scalar_positive(max_n_samples)
+    chex.assert_scalar_positive(max_n_samples_per_ray)
+    chex.assert_scalar_positive(total_samples)
     chex.assert_scalar_positive(max_steps)
     chex.assert_scalar_positive(K)
     chex.assert_scalar_positive(G)
@@ -80,7 +82,7 @@ def march_rays(
     chex.assert_shape(occupancy_bitfield, (K*G*G*G//8,))
     chex.assert_type(occupancy_bitfield, jnp.uint8)
 
-    rays_n_samples, valid_mask, xyzs, dirs, dss, z_vals = impl.march_rays_p.bind(
+    _counter, rays_n_samples, rays_sample_startidx, xyzs, dirs, dss, z_vals = impl.march_rays_p.bind(
         # arrays
         rays_o,
         rays_d,
@@ -90,7 +92,8 @@ def march_rays(
         occupancy_bitfield,
 
         # static args
-        max_n_samples=max_n_samples,
+        max_n_samples_per_ray=max_n_samples_per_ray,
+        total_samples=total_samples,
         max_steps=max_steps,
         K=K,
         G=G,
@@ -98,9 +101,4 @@ def march_rays(
         stepsize_portion=stepsize_portion,
     )
 
-    xyzs = jnp.where(jnp.broadcast_to(valid_mask[:, None], xyzs.shape), xyzs, jnp.zeros_like(xyzs))
-    dirs = jnp.where(jnp.broadcast_to(valid_mask[:, None], dirs.shape), dirs, jnp.zeros_like(dirs))
-    dss = jnp.where(jnp.broadcast_to(valid_mask, dss.shape), dss, jnp.zeros_like(dss))
-    z_vals = jnp.where(jnp.broadcast_to(valid_mask, z_vals.shape), z_vals, jnp.zeros_like(z_vals))
-
-    return rays_n_samples, xyzs, dirs, dss, z_vals
+    return rays_n_samples, rays_sample_startidx, xyzs, dirs, dss, z_vals

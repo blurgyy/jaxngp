@@ -26,14 +26,15 @@ from utils.types import (
 )
 
 
-@common.jit_jaxfn_with(static_argnames=["bound", "raymarch_options", "max_n_samples", "render_options"])
+@common.jit_jaxfn_with(static_argnames=["bound", "target_batch_size", "max_samples_per_ray", "raymarch_options", "render_options"])
 def train_step(
         KEY: jran.KeyArray,
         state: NeRFTrainState,
         bound: float,
+        target_batch_size: int,
+        max_samples_per_ray: int,
         camera: PinholeCamera,
         raymarch_options: RayMarchingOptions,
-        max_n_samples: int,
         render_options: RenderingOptions,
         all_xys: jax.Array,
         all_rgbs: jax.Array,
@@ -80,16 +81,17 @@ def train_step(
     def loss_fn(params, gt, KEY):
         o_world, d_world = make_rays_worldspace()
         KEY, key = jran.split(KEY, 2)
-        effective_samples, opacities, preds, _ = render_rays(
-            key,
-            o_world,
-            d_world,
-            bound,
-            state.ogrid,
-            raymarch_options,
-            max_n_samples,
-            {"params": params},
-            state.apply_fn,
+        mean_samples_per_ray, max_effective_samples, opacities, preds, _ = render_rays(
+            KEY=key,
+            o_world=o_world,
+            d_world=d_world,
+            bound=bound,
+            target_batch_size=target_batch_size,
+            ogrid=state.ogrid,
+            options=raymarch_options,
+            max_n_samples=max_samples_per_ray,
+            param_dict={"params": params},
+            nerf_fn=state.apply_fn,
         )
         if render_options.random_bg:
             KEY, key = jran.split(KEY, 2)
@@ -108,16 +110,17 @@ def train_step(
         # with other NeRF methods. Self-normalizing optimizers such as Adam are agnostic to such
         # constant factors; optimization is therefore unaffected.
         loss = optax.huber_loss(pred_rgbs, gt_rgbs, delta=0.1).mean() / 5.0
-        return loss, effective_samples
+        return loss, (mean_samples_per_ray, max_effective_samples)
 
     loss_grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
 
     KEY, key = jran.split(KEY, 2)
-    (loss, effective_samples), grads = loss_grad_fn(state.params, all_rgbs[perm], key)
+    (loss, (mean_samples_per_ray, max_effective_samples)), grads = loss_grad_fn(state.params, all_rgbs[perm], key)
     state = state.apply_gradients(grads=grads)
     metrics = {
         "loss": loss * perm.shape[0],
-        "effective_samples": effective_samples,
+        "mean_samples_per_ray": mean_samples_per_ray,
+        "max_effective_samples": max_effective_samples,
     }
     return state, metrics
 
@@ -137,7 +140,7 @@ def train_epoch(
     ):
     n_processed_rays = 0
     loss, running_loss = 0, -1
-    running_max_eff_samp = -1
+    running_mean_samp_per_ray = state.batch_config.mean_samples_per_ray
 
     beg_idx = 0
     for _ in (pbar := tqdm(range(n_batches), desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs), bar_format=common.tqdm_format)):
@@ -148,17 +151,18 @@ def train_epoch(
         perm = permutation[beg_idx:beg_idx+state.batch_config.n_rays]
         beg_idx += state.batch_config.n_rays
         state, metrics = train_step(
-            key,
-            state,
-            bound,
-            scene_metadata.camera,
-            raymarch_options,
-            int(state.batch_config.n_samples_per_ray),
-            render_options,
-            scene_metadata.all_xys,
-            scene_metadata.all_rgbs,
-            scene_metadata.all_transforms,
-            perm,
+            KEY=key,
+            state=state,
+            bound=bound,
+            target_batch_size=target_batch_size,
+            max_samples_per_ray=raymarch_options.max_steps,  # use a fixed value of `max_samples_per_ray` to reduce jit compiliations
+            camera=scene_metadata.camera,
+            raymarch_options=raymarch_options,
+            render_options=render_options,
+            all_xys=scene_metadata.all_xys,
+            all_rgbs=scene_metadata.all_rgbs,
+            all_transforms=scene_metadata.all_transforms,
+            perm=perm,
         )
         n_processed_rays += state.batch_config.n_rays
         loss += metrics["loss"]
@@ -167,17 +171,16 @@ def train_epoch(
             running_loss = loss_log
         else:
             running_loss = running_loss * 0.99 + 0.01 * loss_log
-        max_eff_samp = metrics["effective_samples"].max()
-        if running_max_eff_samp < 0:
-            running_max_eff_samp = max_eff_samp
-        else:
-            running_max_eff_samp = running_max_eff_samp * .95 + .05 * max_eff_samp
+        running_mean_samp_per_ray = running_mean_samp_per_ray * .95 + .05 * metrics["mean_samples_per_ray"]
+
         pbar.set_description_str(
-            desc="Training epoch#{:03d}/{:d} max_eff_samp={:.1f} eff_batch_size={} n_rays={} max_n_samples={} loss={:.3e} psnr~{:.2f}dB".format(
+            desc="Training epoch#{:03d}/{:d} running_mean_samp/ray={:.1f} est_eff_batch_size={} n_rays={} mean_samples/ray={} loss={:.3e} psnr~{:.2f}dB".format(
                 ep_log,
                 total_epochs,
-                running_max_eff_samp,
-                state.batch_config.batch_size, state.batch_config.n_rays, state.batch_config.n_samples_per_ray,
+                running_mean_samp_per_ray,
+                state.batch_config.estimated_batch_size,
+                state.batch_config.n_rays,
+                state.batch_config.mean_samples_per_ray,
                 running_loss,
                 data.linear2psnr(running_loss, maxval=1)
             )
@@ -194,11 +197,12 @@ def train_epoch(
                 raymarch=raymarch_options,
                 state=state,
             )
-            new_n_samples_per_ray = int(running_max_eff_samp) + 2
+            new_mean_samples_per_ray = int(running_mean_samp_per_ray) + 1
+            new_n_rays = target_batch_size // new_mean_samples_per_ray
             state = state.replace(
                 batch_config=NeRFBatchConfig(
-                    n_samples_per_ray=new_n_samples_per_ray,
-                    n_rays=target_batch_size // new_n_samples_per_ray,
+                    mean_samples_per_ray=new_mean_samples_per_ray,
+                    n_rays=new_n_rays,
                 ),
             )
 
@@ -275,7 +279,7 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
             grid_resolution=args.raymarch.density_grid_res,
         ),
         batch_config=NeRFBatchConfig(
-            n_samples_per_ray=args.raymarch.max_steps,
+            mean_samples_per_ray=args.raymarch.max_steps,
             n_rays=args.train.bs // args.raymarch.max_steps,
         ),
     )

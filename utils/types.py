@@ -60,12 +60,12 @@ class OccupancyDensityGrid:
 
 @dataclass
 class NeRFBatchConfig:
-    n_samples_per_ray: int
+    mean_samples_per_ray: int
     n_rays: int
 
     @property
-    def batch_size(self):
-        return self.n_rays * self.n_samples_per_ray
+    def estimated_batch_size(self):
+        return self.n_rays * self.mean_samples_per_ray
 
 
 class NeRFTrainState(TrainState):

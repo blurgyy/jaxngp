@@ -38,7 +38,7 @@ def integrate_rays_abstract(
     }
 
     return (
-        jax.ShapedArray(shape=out_shapes["effective_samples"], dtype=jnp.uint32),  # effective_samples
+        jax.ShapedArray(shape=out_shapes["effective_samples"], dtype=jnp.int32),  # effective_samples
         jax.ShapedArray(shape=out_shapes["opacities"], dtype=jnp.float32),  # opacities
         jax.ShapedArray(shape=out_shapes["final_rgbs"], dtype=jnp.float32),  # final_rgbs
         jax.ShapedArray(shape=out_shapes["depths"], dtype=jnp.float32),  # depths

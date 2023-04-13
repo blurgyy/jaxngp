@@ -1,5 +1,6 @@
 #pragma once
 
+#undef __noinline__  // REF: <https://github.com/NVIDIA/thrust/issues/1703#issuecomment-1197072268>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>

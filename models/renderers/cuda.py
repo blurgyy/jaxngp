@@ -153,12 +153,13 @@ def make_near_far_from_bound(
     return t_start, t_end
 
 
-@jit_jaxfn_with(static_argnames=["bound", "options", "max_n_samples", "nerf_fn"])
+@jit_jaxfn_with(static_argnames=["bound", "target_batch_size", "options", "max_n_samples", "nerf_fn"])
 def render_rays(
     KEY: jran.KeyArray,
     o_world: jax.Array,
     d_world: jax.Array,
     bound: float,
+    target_batch_size: int,
     ogrid: OccupancyDensityGrid,
     options: RayMarchingOptions,
     max_n_samples: int,
@@ -186,8 +187,9 @@ def render_rays(
         noises = jran.uniform(key, shape=t_starts.shape, dtype=t_starts.dtype, minval=0., maxval=1.)
     else:
         noises = 0.
-    rays_n_samples, ray_pts, ray_dirs, dss, z_vals = march_rays(
-        max_n_samples=max_n_samples,
+    rays_n_samples, rays_sample_startidx, ray_pts, ray_dirs, dss, z_vals = march_rays(
+        max_n_samples_per_ray=max_n_samples,
+        total_samples=target_batch_size,
         max_steps=options.max_steps,
         K=cascades_from_bound(bound),
         G=options.density_grid_res,
@@ -207,11 +209,6 @@ def render_rays(
         ray_dirs,
     )
 
-    rays_sample_startidx = jnp.concatenate(
-        [jnp.zeros_like(rays_n_samples[:1]), jnp.cumsum(max_n_samples * jnp.ones_like(rays_n_samples[:-1]))],
-        axis=-1,
-    )
-
     effective_samples, opacities, final_rgbs, depths = integrate_rays(
         1e-4,
         rays_sample_startidx,
@@ -222,7 +219,15 @@ def render_rays(
         rgbs,
     )
 
-    return effective_samples, opacities, final_rgbs, depths
+    mean_samples_per_ray = rays_n_samples.mean()
+
+    is_integrated_mask = ~jnp.signbit(effective_samples)
+    n_integrated_rays = is_integrated_mask.sum()
+    mean_effective_samples = (is_integrated_mask * effective_samples).sum() / n_integrated_rays
+
+    max_effective_samples = effective_samples.max()
+
+    return mean_samples_per_ray, max_effective_samples, opacities, final_rgbs, depths
 
 
 def render_image(
@@ -248,16 +253,17 @@ def render_image(
     depth_array = jnp.empty((camera.H, camera.W), dtype=jnp.uint8)
     for idcs in tqdm(indices, desc="| rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
         KEY, key = jran.split(KEY, 2)
-        _, opacities, rgbs, depths = render_rays(
-            key,
-            o_world[idcs],
-            d_world[idcs],
-            bound,
-            ogrid,
-            raymarch_options,
-            int(batch_config.n_samples_per_ray),
-            param_dict,
-            nerf_fn,
+        _, _, opacities, rgbs, depths = render_rays(
+            KEY=key,
+            o_world=o_world[idcs],
+            d_world=d_world[idcs],
+            bound=bound,
+            target_batch_size=int(batch_config.estimated_batch_size * 1.25),  # FIXME: implement a reliable way to render all rays
+            ogrid=ogrid,
+            options=raymarch_options,
+            max_n_samples=raymarch_options.max_steps,
+            param_dict=param_dict,
+            nerf_fn=nerf_fn,
         )
         if options.random_bg:
             KEY, key = jran.split(KEY, 2)

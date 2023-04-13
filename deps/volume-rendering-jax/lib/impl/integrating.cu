@@ -24,7 +24,7 @@ __global__ void integrate_rays_kernel(
 
     // input arrays (7)
     , float const * const __restrict__ transmittance_threshold  // [n_rays]
-    , std::uint32_t const * const __restrict__ rays_sample_startidx  // [n_rays]
+    , int const * const __restrict__ rays_sample_startidx  // [n_rays]
     , std::uint32_t const * const __restrict__ rays_n_samples  // [n_rays]
 
     , float const * const __restrict__ dss  // [total_samples]
@@ -33,7 +33,7 @@ __global__ void integrate_rays_kernel(
     , float const * const __restrict__ rgbs  // [\sum rays_n_samples, 3] = [total_samples, 3]
 
     // output arrays (4)
-    , std::uint32_t * const __restrict__ effective_samples  // [n_rays]
+    , int * const __restrict__ effective_samples  // [n_rays]
     , float * const __restrict__ opacities  // [n_rays]
     , float * const __restrict__ final_rgbs  // [n_rays]
     , float * const __restrict__ depths  // [n_rays]
@@ -42,9 +42,13 @@ __global__ void integrate_rays_kernel(
     if (i >= n_rays) { return; }
 
     // input
-    std::uint32_t start_idx = rays_sample_startidx[i];
-    std::uint32_t n_samples = rays_n_samples[i];
+    int start_idx = rays_sample_startidx[i];
+    if (start_idx < 0) {
+        effective_samples[i] = -1;
+        return;
+    }
 
+    std::uint32_t n_samples = rays_n_samples[i];
     if (n_samples == 0) { return; }
 
     float const * const __restrict__ ray_dss = dss + start_idx;  // [n_samples]
@@ -53,7 +57,7 @@ __global__ void integrate_rays_kernel(
     float const * const __restrict__ ray_rgbs = rgbs + start_idx * 3;  // [n_samples, 3]
 
     // output
-    std::uint32_t * const __restrict__ ray_effective_samples = effective_samples + i;  // [1]
+    int * const __restrict__ ray_effective_samples = effective_samples + i;  // [1]
     float * const __restrict__ ray_opacity = opacities + i;  // [1]
     float * const __restrict__ ray_final_rgb = final_rgbs + i * 3;  // [3]
     float * const __restrict__ ray_depth = depths + i;  // [1]
@@ -98,7 +102,7 @@ __global__ void integrate_rays_backward_kernel(
 
     // input arrays
     , float const * const __restrict__ transmittance_threshold
-    , std::uint32_t const * const __restrict__ rays_sample_startidx  // [n_rays]
+    , int const * const __restrict__ rays_sample_startidx  // [n_rays]
     , std::uint32_t const * const __restrict__ rays_n_samples  // [n_rays]
 
     /// original inputs
@@ -126,9 +130,10 @@ __global__ void integrate_rays_backward_kernel(
     if (i >= n_rays) { return; }
 
     // input
-    std::uint32_t start_idx = rays_sample_startidx[i];
-    std::uint32_t n_samples = rays_n_samples[i];
+    int start_idx = rays_sample_startidx[i];
+    if (start_idx < 0) { return; }
 
+    std::uint32_t n_samples = rays_n_samples[i];
     if (n_samples == 0) { return; }
 
     /// original inputs
@@ -209,7 +214,7 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
     std::uint32_t total_samples = desc.total_samples;
     /// arrays
     float const * const __restrict__ transmittance_threshold = static_cast<float *>(next_buffer());
-    std::uint32_t const * const __restrict__ rays_sample_startidx = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
+    int const * const __restrict__ rays_sample_startidx = static_cast<int *>(next_buffer());  // [n_rays]
     std::uint32_t const * const __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     float const * const __restrict__ dss = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
     float const * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
@@ -217,16 +222,16 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
     float const * const __restrict__ rgbs = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples, 3] = [total_samples, 3]
 
     // outputs
-    std::uint32_t * const __restrict__ effective_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
+    int * const __restrict__ effective_samples = static_cast<int *>(next_buffer());  // [n_rays]
     float * const __restrict__ opacities = static_cast<float *>(next_buffer());  // [n_rays]
     float * const __restrict__ final_rgbs = static_cast<float *>(next_buffer());  // [n_rays, 3]
     float * const __restrict__ depths = static_cast<float *>(next_buffer());  // [n_rays]
 
     // reset all outputs to zero
-    cudaMemset(effective_samples, 0x00, n_rays * sizeof(std::uint32_t));
-    cudaMemset(opacities, 0x00, n_rays * sizeof(float));
-    cudaMemset(final_rgbs, 0x00, n_rays * 3 * sizeof(float));
-    cudaMemset(depths, 0x00, n_rays * sizeof(float));
+    CUDA_CHECK_THROW(cudaMemset(effective_samples, 0x00, n_rays * sizeof(int)));
+    CUDA_CHECK_THROW(cudaMemset(opacities, 0x00, n_rays * sizeof(float)));
+    CUDA_CHECK_THROW(cudaMemset(final_rgbs, 0x00, n_rays * 3 * sizeof(float)));
+    CUDA_CHECK_THROW(cudaMemset(depths, 0x00, n_rays * sizeof(float)));
 
     // kernel launch
     int blockSize = 256;
@@ -267,7 +272,7 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
 
     /// arrays
     float const * const __restrict__ transmittance_threshold = static_cast<float *>(next_buffer());
-    std::uint32_t const * const __restrict__ rays_sample_startidx = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
+    int const * const __restrict__ rays_sample_startidx = static_cast<int *>(next_buffer());  // [n_rays]
     std::uint32_t const * const __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     //// original inputs
     float const * const __restrict__ dss = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
@@ -289,9 +294,9 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
     float * const __restrict__ dL_drgbs = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples, 3] = [total_samples, 3]
 
     // reset all outputs to zero
-    cudaMemset(dL_dz_vals, 0x00, total_samples * sizeof(float));
-    cudaMemset(dL_ddensities, 0x00, total_samples * sizeof(float));
-    cudaMemset(dL_drgbs, 0x00, total_samples * 3 * sizeof(float));
+    CUDA_CHECK_THROW(cudaMemset(dL_dz_vals, 0x00, total_samples * sizeof(float)));
+    CUDA_CHECK_THROW(cudaMemset(dL_ddensities, 0x00, total_samples * sizeof(float)));
+    CUDA_CHECK_THROW(cudaMemset(dL_drgbs, 0x00, total_samples * 3 * sizeof(float)));
 
     // kernel launch
     int blockSize = 256;

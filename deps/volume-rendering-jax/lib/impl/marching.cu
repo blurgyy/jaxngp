@@ -58,7 +58,8 @@ inline __device__ std::uint32_t __morton3D_invert(std::uint32_t x) {
 __global__ void march_rays_kernel(
     // static
     std::uint32_t n_rays
-    , std::uint32_t max_n_samples
+    , std::uint32_t max_n_samples_per_ray
+    , std::uint32_t total_samples
     , std::uint32_t max_steps
     , std::uint32_t K
     , std::uint32_t G
@@ -66,20 +67,23 @@ __global__ void march_rays_kernel(
     , float stepsize_portion
 
     // inputs
-    , float const * const __restrict__ rays_o  // [n_rays]
-    , float const * const __restrict__ rays_d  // [n_rays]
+    , float const * const __restrict__ rays_o  // [n_rays, 3]
+    , float const * const __restrict__ rays_d  // [n_rays, 3]
     , float const * const __restrict__ t_starts  // [n_rays]
     , float const * const __restrict__ t_ends  // [n_rays]
     , float const * const __restrict__ noises  // [n_rays]
     , std::uint8_t const * const __restrict__ occupancy_bitfield  // [K*G*G*G//8]
 
+    // accumulator for writing a compact output samples array
+    , std::uint32_t * const __restrict__ counter
+
     // outputs
     , std::uint32_t * const __restrict__ rays_n_samples  // [n_rays]
-    , bool * const __restrict__ valid_mask  // [n_rays, max_n_samples]
-    , float * const __restrict__ xyzs  // [n_rays, max_n_samples, 3]
-    , float * const __restrict__ dirs  // [n_rays, max_n_samples, 3]
-    , float * const __restrict__ dss  // [n_rays, max_n_samples]
-    , float * const __restrict__ z_vals  // [n_rays, max_n_samples]
+    , int * const __restrict__ rays_sample_startidx  // [n_rays]
+    , float * const __restrict__ xyzs  // [total_samples, 3]
+    , float * const __restrict__ dirs  // [total_samples, 3]
+    , float * const __restrict__ dss  // [total_samples]
+    , float * const __restrict__ z_vals  // [total_samples]
 ) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_rays) { return; }
@@ -91,13 +95,6 @@ __global__ void march_rays_kernel(
     float const ray_t_end = t_ends[i];  // [] (a scalar has no shape)
     float const ray_noise = noises[i];  // [] (a scalar has no shape)
 
-    // output arrays
-    bool * const __restrict__ ray_valid_mask = valid_mask + i * max_n_samples;
-    float * const __restrict__ ray_xyzs = xyzs + i * max_n_samples * 3;
-    float * const __restrict__ ray_dirs = dirs + i * max_n_samples * 3;
-    float * const __restrict__ ray_dss = dss + i * max_n_samples;
-    float * const __restrict__ ray_z_vals = z_vals + i * max_n_samples;
-
     // if ray does not intersect with scene bounding box, no need to generate samples
     if (ray_t_start <= 0) { return; }
     if (ray_t_start >= ray_t_end) { return; }
@@ -106,10 +103,11 @@ __global__ void march_rays_kernel(
     std::uint32_t G3 = G*G*G;
 
     // actually march rays
-    std::uint32_t sample_idx = 0;
+    /// but not writing the samples to output!  Writing is done in another marching pass below
+    std::uint32_t ray_n_samples = 0;
     float ray_t = ray_t_start;
     ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_steps) * ray_noise;
-    while(sample_idx < max_n_samples && ray_t < ray_t_end) {
+    while (ray_n_samples < max_n_samples_per_ray && ray_t < ray_t_end) {
         float const x = ray_o[0] + ray_t * ray_d[0];
         float const y = ray_o[1] + ray_t * ray_d[1];
         float const z = ray_o[2] + ray_t * ray_d[2];
@@ -135,17 +133,7 @@ __global__ void march_rays_kernel(
         bool const occupied = occupancy_bitfield[occupancy_grid_idx / 8] & (1 << (occupancy_grid_idx & 7));  // (x&7) is the same as (x%8)
 
         if (occupied) {
-            ray_valid_mask[sample_idx] = true;  // set true
-            ray_xyzs[sample_idx * 3 + 0] = x;
-            ray_xyzs[sample_idx * 3 + 1] = y;
-            ray_xyzs[sample_idx * 3 + 2] = z;
-            ray_dirs[sample_idx * 3 + 0] = ray_d[0];
-            ray_dirs[sample_idx * 3 + 1] = ray_d[1];
-            ray_dirs[sample_idx * 3 + 2] = ray_d[2];
-            ray_dss[sample_idx] = ds;
-            ray_z_vals[sample_idx] = ray_t;
-
-            ++sample_idx;
+            ++ray_n_samples;
             ray_t += ds;
         } else {
             float const tx = (((grid_x + .5f + .5f * signf(ray_d[0])) / G * 2 - 1) * mip_bound - x) / ray_d[0];
@@ -160,7 +148,85 @@ __global__ void march_rays_kernel(
             } while (ray_t < tt);
         }
     }
-    rays_n_samples[i] = sample_idx;
+
+    // can safely return here because before launching the kernel we have `memset`ed every output
+    // array to zeros
+    if (ray_n_samples == 0) { return; }
+
+    // record how many samples are generated along this ray
+    rays_n_samples[i] = ray_n_samples;
+
+    // record the index of the first generated sample on this ray
+    std::uint32_t ray_sample_startidx = atomicAdd(counter, ray_n_samples);
+    if (ray_sample_startidx + ray_n_samples > total_samples) {
+        rays_sample_startidx[i] = -1;
+        return;
+    }
+    rays_sample_startidx[i] = ray_sample_startidx;
+
+    // output arrays
+    float * const __restrict__ ray_xyzs = xyzs + ray_sample_startidx * 3;
+    float * const __restrict__ ray_dirs = dirs + ray_sample_startidx * 3;
+    float * const __restrict__ ray_dss = dss + ray_sample_startidx;
+    float * const __restrict__ ray_z_vals = z_vals + ray_sample_startidx;
+
+    // march rays again, this time write sampled points to output
+    std::uint32_t steps = 0;
+    ray_t = ray_t_start;
+    ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_n_samples_per_ray) * ray_noise;
+    // NOTE:
+    //  we still need the condition (ray_t < ray_t_end) because if a ray never hits an occupied grid
+    //  cell, its `steps` won't increment, adding this condition avoids infinite loops.
+    while (steps < ray_n_samples && ray_t < ray_t_end) {
+        float const x = ray_o[0] + ray_t * ray_d[0];
+        float const y = ray_o[1] + ray_t * ray_d[1];
+        float const z = ray_o[2] + ray_t * ray_d[2];
+
+        float const ds = calc_ds(ray_t, stepsize_portion, bound, G, max_n_samples_per_ray);
+
+        // among the grids covering xyz, the finest one with cell side-length larger than Δ𝑡 is
+        // queried.
+        std::uint32_t cascade = max(
+            mip_from_xyz(x, y, z, K),
+            mip_from_ds(ds, G, K)
+        );
+
+        // the bound of this mip is [-mip_bound, mip_bound]
+        float const mip_bound = fminf(scalbnf(1.f, cascade), bound);
+
+        // round down
+        std::uint32_t const grid_x = clampi((int)(.5f * (x / mip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_y = clampi((int)(.5f * (y / mip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_z = clampi((int)(.5f * (z / mip_bound + 1) * G), 0, G-1);
+
+        std::uint32_t const occupancy_grid_idx = cascade * G3 + __morton3D(grid_x, grid_y, grid_z);
+        bool const occupied = occupancy_bitfield[occupancy_grid_idx / 8] & (1 << (occupancy_grid_idx & 7));  // (x&7) is the same as (x%8)
+
+        if (occupied) {
+            ray_xyzs[steps * 3 + 0] = x;
+            ray_xyzs[steps * 3 + 1] = y;
+            ray_xyzs[steps * 3 + 2] = z;
+            ray_dirs[steps * 3 + 0] = ray_d[0];
+            ray_dirs[steps * 3 + 1] = ray_d[1];
+            ray_dirs[steps * 3 + 2] = ray_d[2];
+            ray_dss[steps] = ds;
+            ray_z_vals[steps] = ray_t;
+
+            ++steps;
+            ray_t += ds;
+        } else {
+            float const tx = (((grid_x + .5f + .5f * signf(ray_d[0])) / G * 2 - 1) * mip_bound - x) / ray_d[0];
+            float const ty = (((grid_y + .5f + .5f * signf(ray_d[1])) / G * 2 - 1) * mip_bound - y) / ray_d[1];
+            float const tz = (((grid_z + .5f + .5f * signf(ray_d[2])) / G * 2 - 1) * mip_bound - z) / ray_d[2];
+
+            // distance to next voxel
+            float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
+            // step until next voxel
+            do { 
+                ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_n_samples_per_ray);
+            } while (ray_t < tt);
+        }
+    }
 }
 
 __global__ void morton3d_kernel(
@@ -208,7 +274,8 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     /// static
     MarchingDescriptor const &desc = *deserialize<MarchingDescriptor>(opaque, opaque_len);
     std::uint32_t n_rays = desc.n_rays;
-    std::uint32_t max_n_samples = desc.max_n_samples;
+    std::uint32_t max_n_samples_per_ray = desc.max_n_samples_per_ray;
+    std::uint32_t total_samples = desc.total_samples;
     std::uint32_t max_steps = desc.max_steps;
     std::uint32_t K = desc.K;
     std::uint32_t G = desc.G;
@@ -223,21 +290,25 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     float const * const __restrict__ noises = static_cast<float *>(next_buffer());  // [n_rays]
     std::uint8_t const * const __restrict__ occupancy_bitfield = static_cast<std::uint8_t *>(next_buffer());  // [K*G*G*G//8]
 
+    // helper
+    std::uint32_t * const __restrict__ counter = static_cast<std::uint32_t *>(next_buffer());
+
     // outputs
     std::uint32_t * const __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
-    bool * const __restrict__ valid_mask = static_cast<bool *>(next_buffer());  // [n_rays * max_n_samples]
-    float * const __restrict__ xyzs = static_cast<float *>(next_buffer());  // [n_rays * max_n_samples, 3]
-    float * const __restrict__ dirs = static_cast<float *>(next_buffer());  // [n_rays * max_n_samples, 3]
-    float * const __restrict__ dss = static_cast<float *>(next_buffer());  // [n_rays * max_n_samples]
-    float * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [n_rays * max_n_samples]
+    int * const __restrict__ rays_sample_startidx = static_cast<int *>(next_buffer());  // [n_rays]
+    float * const __restrict__ xyzs = static_cast<float *>(next_buffer());  // [total_samples, 3]
+    float * const __restrict__ dirs = static_cast<float *>(next_buffer());  // [total_samples, 3]
+    float * const __restrict__ dss = static_cast<float *>(next_buffer());  // [total_samples]
+    float * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [total_samples]
 
-    // reset outputs to zeros
-    cudaMemset(rays_n_samples, 0x00, n_rays * sizeof(std::uint32_t));
-    cudaMemset(valid_mask, false, n_rays * max_n_samples * sizeof(bool));
-    cudaMemset(xyzs, 0x00, n_rays * max_n_samples * 3 * sizeof(float));
-    cudaMemset(dirs, 0x00, n_rays * max_n_samples * 3 * sizeof(float));
-    cudaMemset(dss, 0x00, n_rays * max_n_samples * sizeof(float));
-    cudaMemset(z_vals, 0x00, n_rays * max_n_samples * sizeof(float));
+    // reset helper coutner and outputs to zeros
+    CUDA_CHECK_THROW(cudaMemset(counter, 0x00, sizeof(std::uint32_t)));
+    CUDA_CHECK_THROW(cudaMemset(rays_n_samples, 0x00, n_rays * sizeof(std::uint32_t)));
+    CUDA_CHECK_THROW(cudaMemset(rays_sample_startidx, 0x00, n_rays * sizeof(int)));
+    CUDA_CHECK_THROW(cudaMemset(xyzs, 0x00, total_samples * 3 * sizeof(float)));
+    CUDA_CHECK_THROW(cudaMemset(dirs, 0x00, total_samples * 3 * sizeof(float)));
+    CUDA_CHECK_THROW(cudaMemset(dss, 0x00, total_samples * sizeof(float)));
+    CUDA_CHECK_THROW(cudaMemset(z_vals, 0x00, total_samples * sizeof(float)));
 
     // kernel launch
     int blockSize = 256;
@@ -245,7 +316,8 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     march_rays_kernel<<<numBlocks, blockSize, 0, stream>>>(
         // static
         n_rays
-        , max_n_samples
+        , max_n_samples_per_ray
+        , total_samples
         , max_steps
         , K
         , G
@@ -260,9 +332,11 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
         , noises
         , occupancy_bitfield
 
+        , counter
+
         // outputs
         , rays_n_samples
-        , valid_mask
+        , rays_sample_startidx
         , xyzs
         , dirs
         , dss
