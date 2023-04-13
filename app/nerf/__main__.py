@@ -29,13 +29,14 @@ MainArgsType = Union[
 
 def main(args: MainArgsType):
     logger = common.setup_logging("nerf")
+    KEY = common.set_deterministic(args.common.seed)
 
     if isinstance(args, NeRFTrainingArgs):
         from app.nerf.train import train
-        train(args, logger)
+        train(KEY, args, logger)
     elif isinstance(args, NeRFTestingArgs):
         from app.nerf.test import test
-        test(args, logger)
+        test(KEY, args, logger)
     else:
         assert_never()
 

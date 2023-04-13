@@ -9,13 +9,13 @@ import numpy as np
 
 from models.nerfs import make_nerf_ngp
 from models.renderers import render_image
-from utils import common, data
+from utils import data
 from utils.args import NeRFTestingArgs
 from utils.data import make_nerf_synthetic_scene_metadata
 from utils.types import NeRFBatchConfig, OccupancyDensityGrid, RigidTransformation
 
 
-def test(args: NeRFTestingArgs, logger: logging.Logger):
+def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
     if not args.test_ckpt.exists():
         logger.warn("specified checkpoint '{}' does not exist".format(args.test_ckpt))
         exit(1)
@@ -26,9 +26,6 @@ def test(args: NeRFTestingArgs, logger: logging.Logger):
 
     dtype = getattr(jnp, "float{}".format(args.common.prec))
     logger.setLevel(args.common.logging.upper())
-
-    # deterministic
-    KEY = common.set_deterministic(seed=args.common.seed)
 
     # model parameters
     KEY, key = jran.split(KEY, 2)

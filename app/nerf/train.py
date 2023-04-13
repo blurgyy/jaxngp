@@ -208,7 +208,7 @@ def train_epoch(
     return loss / n_processed_rays, state
 
 
-def train(args: NeRFTrainingArgs, logger: logging.Logger):
+def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
     if args.exp_dir.exists():
         logger.error("specified experiment directory '{}' already exists".format(args.exp_dir))
         exit(2)
@@ -218,9 +218,6 @@ def train(args: NeRFTrainingArgs, logger: logging.Logger):
 
     dtype = getattr(jnp, "float{}".format(args.common.prec))
     logger.setLevel(args.common.logging.upper())
-
-    # deterministic
-    KEY = common.set_deterministic(args.common.seed)
 
     # model parameters
     model, init_input = (
