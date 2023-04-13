@@ -302,13 +302,13 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     float * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [total_samples]
 
     // reset helper coutner and outputs to zeros
-    CUDA_CHECK_THROW(cudaMemset(counter, 0x00, sizeof(std::uint32_t)));
-    CUDA_CHECK_THROW(cudaMemset(rays_n_samples, 0x00, n_rays * sizeof(std::uint32_t)));
-    CUDA_CHECK_THROW(cudaMemset(rays_sample_startidx, 0x00, n_rays * sizeof(int)));
-    CUDA_CHECK_THROW(cudaMemset(xyzs, 0x00, total_samples * 3 * sizeof(float)));
-    CUDA_CHECK_THROW(cudaMemset(dirs, 0x00, total_samples * 3 * sizeof(float)));
-    CUDA_CHECK_THROW(cudaMemset(dss, 0x00, total_samples * sizeof(float)));
-    CUDA_CHECK_THROW(cudaMemset(z_vals, 0x00, total_samples * sizeof(float)));
+    CUDA_CHECK_THROW(cudaMemsetAsync(counter, 0x00, sizeof(std::uint32_t), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(rays_n_samples, 0x00, n_rays * sizeof(std::uint32_t), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(rays_sample_startidx, 0x00, n_rays * sizeof(int), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(xyzs, 0x00, total_samples * 3 * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(dirs, 0x00, total_samples * 3 * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(dss, 0x00, total_samples * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(z_vals, 0x00, total_samples * sizeof(float), stream));
 
     // kernel launch
     int blockSize = 256;

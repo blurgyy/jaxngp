@@ -228,10 +228,10 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
     float * const __restrict__ depths = static_cast<float *>(next_buffer());  // [n_rays]
 
     // reset all outputs to zero
-    CUDA_CHECK_THROW(cudaMemset(effective_samples, 0x00, n_rays * sizeof(int)));
-    CUDA_CHECK_THROW(cudaMemset(opacities, 0x00, n_rays * sizeof(float)));
-    CUDA_CHECK_THROW(cudaMemset(final_rgbs, 0x00, n_rays * 3 * sizeof(float)));
-    CUDA_CHECK_THROW(cudaMemset(depths, 0x00, n_rays * sizeof(float)));
+    CUDA_CHECK_THROW(cudaMemsetAsync(effective_samples, 0x00, n_rays * sizeof(int), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(opacities, 0x00, n_rays * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(final_rgbs, 0x00, n_rays * 3 * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(depths, 0x00, n_rays * sizeof(float), stream));
 
     // kernel launch
     int blockSize = 256;
@@ -294,9 +294,9 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
     float * const __restrict__ dL_drgbs = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples, 3] = [total_samples, 3]
 
     // reset all outputs to zero
-    CUDA_CHECK_THROW(cudaMemset(dL_dz_vals, 0x00, total_samples * sizeof(float)));
-    CUDA_CHECK_THROW(cudaMemset(dL_ddensities, 0x00, total_samples * sizeof(float)));
-    CUDA_CHECK_THROW(cudaMemset(dL_drgbs, 0x00, total_samples * 3 * sizeof(float)));
+    CUDA_CHECK_THROW(cudaMemsetAsync(dL_dz_vals, 0x00, total_samples * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(dL_ddensities, 0x00, total_samples * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(dL_drgbs, 0x00, total_samples * 3 * sizeof(float), stream));
 
     // kernel launch
     int blockSize = 256;
