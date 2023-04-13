@@ -186,13 +186,12 @@ def train_epoch(
             )
         )
 
-        step = int(state.step)
-        if step > 0 and step % 16 == 0:
+        if state.should_call_update_ogrid:
             # update occupancy grid
             KEY, key = jran.split(KEY, 2)
             state = update_ogrid(
                 KEY=key,
-                update_all=step < 256,
+                update_all=state.should_update_all_ogrid_cells,
                 bound=bound,
                 raymarch=raymarch_options,
                 state=state,

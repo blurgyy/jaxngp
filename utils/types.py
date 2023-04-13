@@ -72,6 +72,18 @@ class NeRFTrainState(TrainState):
     ogrid: OccupancyDensityGrid
     batch_config: NeRFBatchConfig
 
+    @property
+    def update_ogrid_interval(self):
+        return min(2 ** (int(self.step) // 2048 + 4), 512)
+
+    @property
+    def should_call_update_ogrid(self):
+        return int(self.step) > 0 and int(self.step) % self.update_ogrid_interval == 0
+
+    @property
+    def should_update_all_ogrid_cells(self):
+        return int(self.step) < 256
+
 
 @dataclass
 class PinholeCamera:
