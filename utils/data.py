@@ -115,7 +115,7 @@ def psnr(lhs: jax.Array, rhs: jax.Array):
 
 
 def cascades_from_bound(bound: float) -> int:
-    return int(1 + math.ceil(math.log2(bound)))
+    return max(1, int(1 + math.ceil(math.log2(bound))))
 
 
 @jax.jit

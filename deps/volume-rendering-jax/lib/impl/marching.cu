@@ -11,7 +11,7 @@ inline __device__ float calc_ds(float ray_t, float stepsize_portion, float bound
     // and 1/256 for others)
     return clampf(
         ray_t * stepsize_portion,
-        2 * (float)SQRT3 / max_steps,
+        2 * (float)SQRT3 * fminf(bound, 1.f) / max_steps,
         2 * (float)SQRT3 * bound / grid_res
     );
 }
