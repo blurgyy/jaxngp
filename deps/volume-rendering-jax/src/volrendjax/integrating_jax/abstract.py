@@ -30,18 +30,20 @@ def integrate_rays_abstract(
             )
         )
 
-    out_shapes = {
-        "effective_samples": (n_rays,),
-        "opacities": (n_rays,),
-        "final_rgbs": (n_rays, 3),
-        "depths": (n_rays,),
+    shapes = {
+        "helper.counter": (1,),
+
+        "out.opacities": (n_rays,),
+        "out.final_rgbs": (n_rays, 3),
+        "out.depths": (n_rays,),
     }
 
     return (
-        jax.ShapedArray(shape=out_shapes["effective_samples"], dtype=jnp.int32),  # effective_samples
-        jax.ShapedArray(shape=out_shapes["opacities"], dtype=jnp.float32),  # opacities
-        jax.ShapedArray(shape=out_shapes["final_rgbs"], dtype=jnp.float32),  # final_rgbs
-        jax.ShapedArray(shape=out_shapes["depths"], dtype=jnp.float32),  # depths
+        jax.ShapedArray(shape=shapes["helper.counter"], dtype=jnp.uint32),
+
+        jax.ShapedArray(shape=shapes["out.opacities"], dtype=jnp.float32),  # opacities
+        jax.ShapedArray(shape=shapes["out.final_rgbs"], dtype=jnp.float32),  # final_rgbs
+        jax.ShapedArray(shape=shapes["out.depths"], dtype=jnp.float32),  # depths
     )
 
 def integrate_rays_backward_abstract(

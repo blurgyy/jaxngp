@@ -81,7 +81,7 @@ def train_step(
     def loss_fn(params, gt, KEY):
         o_world, d_world = make_rays_worldspace()
         KEY, key = jran.split(KEY, 2)
-        mean_samples_per_ray, max_effective_samples, opacities, preds, _ = render_rays(
+        batch_metrics, opacities, preds, _ = render_rays(
             KEY=key,
             o_world=o_world,
             d_world=d_world,
@@ -110,17 +110,16 @@ def train_step(
         # with other NeRF methods. Self-normalizing optimizers such as Adam are agnostic to such
         # constant factors; optimization is therefore unaffected.
         loss = optax.huber_loss(pred_rgbs, gt_rgbs, delta=0.1).mean() / 5.0
-        return loss, (mean_samples_per_ray, max_effective_samples)
+        return loss, batch_metrics
 
     loss_grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
 
     KEY, key = jran.split(KEY, 2)
-    (loss, (mean_samples_per_ray, max_effective_samples)), grads = loss_grad_fn(state.params, all_rgbs[perm], key)
+    (loss, batch_metrics), grads = loss_grad_fn(state.params, all_rgbs[perm], key)
     state = state.apply_gradients(grads=grads)
     metrics = {
         "loss": loss * perm.shape[0],
-        "mean_samples_per_ray": mean_samples_per_ray,
-        "max_effective_samples": max_effective_samples,
+        **batch_metrics,
     }
     return state, metrics
 
@@ -171,14 +170,14 @@ def train_epoch(
             running_loss = loss_log
         else:
             running_loss = running_loss * 0.99 + 0.01 * loss_log
-        running_mean_samp_per_ray = running_mean_samp_per_ray * .95 + .05 * metrics["mean_samples_per_ray"]
+        running_mean_samp_per_ray = running_mean_samp_per_ray * .95 + .05 * metrics["measured_batch_size_before_compaction"] / state.batch_config.n_rays
 
         pbar.set_description_str(
-            desc="Training epoch#{:03d}/{:d} running_mean_samp/ray={:.1f} est_eff_batch_size={} n_rays={} mean_samples/ray={} loss={:.3e} psnr~{:.2f}dB".format(
+            desc="Training epoch#{:03d}/{:d} batch_size={}/{} n_rays={} samp./ray={} loss={:.3e} psnr~{:.2f}dB".format(
                 ep_log,
                 total_epochs,
-                running_mean_samp_per_ray,
-                state.batch_config.estimated_batch_size,
+                metrics["measured_batch_size"],
+                metrics["measured_batch_size_before_compaction"],
                 state.batch_config.n_rays,
                 state.batch_config.mean_samples_per_ray,
                 running_loss,

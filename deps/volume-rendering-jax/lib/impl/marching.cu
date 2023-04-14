@@ -81,7 +81,7 @@ __global__ void march_rays_kernel(
 
     // outputs
     , std::uint32_t * const __restrict__ rays_n_samples  // [n_rays]
-    , int * const __restrict__ rays_sample_startidx  // [n_rays]
+    , std::uint32_t * const __restrict__ rays_sample_startidx  // [n_rays]
     , float * const __restrict__ xyzs  // [total_samples, 3]
     , float * const __restrict__ dirs  // [total_samples, 3]
     , float * const __restrict__ dss  // [total_samples]
@@ -160,10 +160,7 @@ __global__ void march_rays_kernel(
 
     // record the index of the first generated sample on this ray
     std::uint32_t ray_sample_startidx = atomicAdd(counter, ray_n_samples);
-    if (ray_sample_startidx + ray_n_samples > total_samples) {
-        rays_sample_startidx[i] = -1;
-        return;
-    }
+    if (ray_sample_startidx + ray_n_samples > total_samples) { return; }
     rays_sample_startidx[i] = ray_sample_startidx;
 
     // output arrays
@@ -297,7 +294,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
 
     // outputs
     std::uint32_t * const __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
-    int * const __restrict__ rays_sample_startidx = static_cast<int *>(next_buffer());  // [n_rays]
+    std::uint32_t * const __restrict__ rays_sample_startidx = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     float * const __restrict__ xyzs = static_cast<float *>(next_buffer());  // [total_samples, 3]
     float * const __restrict__ dirs = static_cast<float *>(next_buffer());  // [total_samples, 3]
     float * const __restrict__ dss = static_cast<float *>(next_buffer());  // [total_samples]

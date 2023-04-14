@@ -187,7 +187,7 @@ def render_rays(
         noises = jran.uniform(key, shape=t_starts.shape, dtype=t_starts.dtype, minval=0., maxval=1.)
     else:
         noises = 0.
-    rays_n_samples, rays_sample_startidx, ray_pts, ray_dirs, dss, z_vals = march_rays(
+    measured_batch_size_before_compaction, rays_n_samples, rays_sample_startidx, ray_pts, ray_dirs, dss, z_vals = march_rays(
         max_n_samples_per_ray=max_n_samples,
         total_samples=target_batch_size,
         max_steps=options.max_steps,
@@ -219,15 +219,12 @@ def render_rays(
         rgbs,
     )
 
-    mean_samples_per_ray = rays_n_samples.mean()
+    batch_metrics = {
+        "measured_batch_size_before_compaction": measured_batch_size_before_compaction,
+        "measured_batch_size": jnp.where(effective_samples > 0, effective_samples, 0).sum(),
+    }
 
-    is_integrated_mask = ~jnp.signbit(effective_samples)
-    n_integrated_rays = is_integrated_mask.sum()
-    mean_effective_samples = (is_integrated_mask * effective_samples).sum() / n_integrated_rays
-
-    max_effective_samples = effective_samples.max()
-
-    return mean_samples_per_ray, max_effective_samples, opacities, final_rgbs, depths
+    return batch_metrics, opacities, final_rgbs, depths
 
 
 def render_image(
@@ -253,7 +250,7 @@ def render_image(
     depth_array = jnp.empty((camera.H, camera.W), dtype=jnp.uint8)
     for idcs in tqdm(indices, desc="| rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
         KEY, key = jran.split(KEY, 2)
-        _, _, opacities, rgbs, depths = render_rays(
+        _, opacities, rgbs, depths = render_rays(
             KEY=key,
             o_world=o_world[idcs],
             d_world=d_world[idcs],

@@ -103,9 +103,9 @@ class NeRFTrainingArgs(_NeRFArgs):
         # transparent pixels.
         lr=1e-2,
         momentum=None,
-        bs=256 * (1<<10),
+        bs=1024 * (1<<10),
         n_epochs=32,
-        n_batches=2**12,
+        n_batches=2**10,
         data_loop=1,
     )
 

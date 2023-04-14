@@ -60,7 +60,7 @@ def __integrate_rays(
     chex.assert_shape(densities, (total_samples, 1))
     chex.assert_shape(rgbs, (total_samples, 3))
 
-    effective_samples, opacities, final_rgbs, depths = integrate_rays_p.bind(
+    counter, opacities, final_rgbs, depths = integrate_rays_p.bind(
         transmittance_threshold,
         rays_sample_startidx,
         rays_n_samples,
@@ -70,7 +70,7 @@ def __integrate_rays(
         rgbs,
     )
 
-    return effective_samples, opacities, final_rgbs, depths
+    return counter, opacities, final_rgbs, depths
 
 def __fwd_integrate_rays(
     transmittance_threshold: jax.Array,
@@ -91,7 +91,7 @@ def __fwd_integrate_rays(
         densities,
         rgbs,
     )
-    effective_samples, opacities, final_rgbs, depths = primal_outputs
+    counter, opacities, final_rgbs, depths = primal_outputs
     aux = {
         "in.transmittance_threshold": transmittance_threshold,
         "in.rays_sample_startidx": rays_sample_startidx,
@@ -101,7 +101,7 @@ def __fwd_integrate_rays(
         "in.densities": densities,
         "in.rgbs": rgbs,
 
-        "out.effective_samples": effective_samples,
+        "out.counter": counter,
         "out.opacities": opacities,
         "out.final_rgbs": final_rgbs,
         "out.depths": depths,

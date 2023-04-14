@@ -45,7 +45,7 @@ def march_rays_abstract(
     return (
         jax.ShapedArray(shape=shapes["helper.counter"], dtype=jnp.uint32),
         jax.ShapedArray(shape=shapes["out.rays_n_samples"], dtype=jnp.uint32),
-        jax.ShapedArray(shape=shapes["out.rays_sample_startidx"], dtype=jnp.int32),
+        jax.ShapedArray(shape=shapes["out.rays_sample_startidx"], dtype=jnp.uint32),
         jax.ShapedArray(shape=shapes["out.xyzs"], dtype=jnp.float32),
         jax.ShapedArray(shape=shapes["out.dirs"], dtype=jnp.float32),
         jax.ShapedArray(shape=shapes["out.dss"], dtype=jnp.float32),

@@ -51,9 +51,10 @@ def march_rays(
                                             described in appendix E.2 of the NGP paper
 
     Returns:
-        rays_sample_startidx `[n_rays]`: indices of each ray's first sample
+        measured_batch_size_before_compaction `int`: total number of generated samples of all rays
         rays_n_samples `[n_rays]`: number of samples of each ray, its sum is `total_samples`
                                    referenced below
+        rays_sample_startidx `[n_rays]`: indices of each ray's first sample
         xyzs `[total_samples, 3]`: spatial coordinates of the generated samples, invalid array
                                    locations are masked out with zeros
         dirs `[total_samples, 3]`: spatial coordinates of the generated samples, invalid array
@@ -82,7 +83,7 @@ def march_rays(
     chex.assert_shape(occupancy_bitfield, (K*G*G*G//8,))
     chex.assert_type(occupancy_bitfield, jnp.uint8)
 
-    _counter, rays_n_samples, rays_sample_startidx, xyzs, dirs, dss, z_vals = impl.march_rays_p.bind(
+    measured_batch_size_before_compaction, rays_n_samples, rays_sample_startidx, xyzs, dirs, dss, z_vals = impl.march_rays_p.bind(
         # arrays
         rays_o,
         rays_d,
@@ -101,4 +102,4 @@ def march_rays(
         stepsize_portion=stepsize_portion,
     )
 
-    return rays_n_samples, rays_sample_startidx, xyzs, dirs, dss, z_vals
+    return measured_batch_size_before_compaction[0], rays_n_samples, rays_sample_startidx, xyzs, dirs, dss, z_vals

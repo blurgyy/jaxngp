@@ -24,7 +24,7 @@ __global__ void integrate_rays_kernel(
 
     // input arrays (7)
     , float const * const __restrict__ transmittance_threshold  // [n_rays]
-    , int const * const __restrict__ rays_sample_startidx  // [n_rays]
+    , std::uint32_t const * const __restrict__ rays_sample_startidx  // [n_rays]
     , std::uint32_t const * const __restrict__ rays_n_samples  // [n_rays]
 
     , float const * const __restrict__ dss  // [total_samples]
@@ -32,8 +32,10 @@ __global__ void integrate_rays_kernel(
     , float const * const __restrict__ densities  // [\sum rays_n_samples, 1] = [total_samples, 1]
     , float const * const __restrict__ rgbs  // [\sum rays_n_samples, 3] = [total_samples, 3]
 
+    // helper
+    , std::uint32_t * const __restrict__ counter  // [1]
+
     // output arrays (4)
-    , int * const __restrict__ effective_samples  // [n_rays]
     , float * const __restrict__ opacities  // [n_rays]
     , float * const __restrict__ final_rgbs  // [n_rays]
     , float * const __restrict__ depths  // [n_rays]
@@ -43,11 +45,6 @@ __global__ void integrate_rays_kernel(
 
     // input
     int start_idx = rays_sample_startidx[i];
-    if (start_idx < 0) {
-        effective_samples[i] = -1;
-        return;
-    }
-
     std::uint32_t n_samples = rays_n_samples[i];
     if (n_samples == 0) { return; }
 
@@ -57,7 +54,6 @@ __global__ void integrate_rays_kernel(
     float const * const __restrict__ ray_rgbs = rgbs + start_idx * 3;  // [n_samples, 3]
 
     // output
-    int * const __restrict__ ray_effective_samples = effective_samples + i;  // [1]
     float * const __restrict__ ray_opacity = opacities + i;  // [1]
     float * const __restrict__ ray_final_rgb = final_rgbs + i * 3;  // [3]
     float * const __restrict__ ray_depth = depths + i;  // [1]
@@ -92,7 +88,7 @@ __global__ void integrate_rays_kernel(
     }
 
     // write to global memory at last
-    *ray_effective_samples = sample_idx;
+    atomicAdd(counter, sample_idx);  // `counter` stores effective batch size (`measured_batch_size` in NGP)
     *ray_opacity = opacity;
     *ray_depth = depth;
     ray_final_rgb[0] = r;
@@ -218,21 +214,23 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
     std::uint32_t total_samples = desc.total_samples;
     /// arrays
     float const * const __restrict__ transmittance_threshold = static_cast<float *>(next_buffer());
-    int const * const __restrict__ rays_sample_startidx = static_cast<int *>(next_buffer());  // [n_rays]
+    std::uint32_t const * const __restrict__ rays_sample_startidx = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     std::uint32_t const * const __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     float const * const __restrict__ dss = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
     float const * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
     float const * const __restrict__ densities = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples] = [total_samples]
     float const * const __restrict__ rgbs = static_cast<float *>(next_buffer());  // [n_rays, ray's n_samples, 3] = [total_samples, 3]
 
+    // helper counter for measured_batch_size
+    std::uint32_t * const __restrict__ counter = static_cast<std::uint32_t *>(next_buffer());  // [1]
+
     // outputs
-    int * const __restrict__ effective_samples = static_cast<int *>(next_buffer());  // [n_rays]
     float * const __restrict__ opacities = static_cast<float *>(next_buffer());  // [n_rays]
     float * const __restrict__ final_rgbs = static_cast<float *>(next_buffer());  // [n_rays, 3]
     float * const __restrict__ depths = static_cast<float *>(next_buffer());  // [n_rays]
 
     // reset all outputs to zero
-    CUDA_CHECK_THROW(cudaMemsetAsync(effective_samples, 0x00, n_rays * sizeof(int), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(counter, 0x00, sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(opacities, 0x00, n_rays * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(final_rgbs, 0x00, n_rays * 3 * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(depths, 0x00, n_rays * sizeof(float), stream));
@@ -251,8 +249,9 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
         , z_vals
         , densities
         , rgbs
-        // output arrays (4)
-        , effective_samples
+        // helper counter
+        , counter
+        // output arrays (3)
         , opacities
         , final_rgbs
         , depths
