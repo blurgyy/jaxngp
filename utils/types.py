@@ -78,7 +78,13 @@ class NeRFTrainState(TrainState):
 
     @property
     def should_call_update_ogrid(self):
-        return int(self.step) > 0 and int(self.step) % self.update_ogrid_interval == 0
+        return (
+            int(self.step) < 256
+            or (
+                int(self.step) > 0
+                and int(self.step) % self.update_ogrid_interval == 0
+            )
+        )
 
     @property
     def should_update_all_ogrid_cells(self):
