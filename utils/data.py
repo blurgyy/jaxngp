@@ -109,7 +109,7 @@ def psnr(lhs: jax.Array, rhs: jax.Array):
     chex.assert_type([lhs, rhs], jnp.uint8)
     mse = ((lhs.astype(float) - rhs.astype(float)) ** 2).mean()
     if mse == 0:
-        return 100
+        return 100.
     else:
         return float(20 * jnp.log10(255 / jnp.sqrt(mse)))
 

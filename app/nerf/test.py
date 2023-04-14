@@ -51,6 +51,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
         scale=args.scale,
     )
 
+    n_tested, mean_psnr = 0, 0.0
     logger.info("starting testing (totally {} image(s) to test)".format(len(args.test_indices)))
     for test_i in args.test_indices:
         if test_i < 0 or test_i >= len(test_views):
@@ -76,7 +77,8 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
         gt_image = Image.open(test_views[test_i].file)
         gt_image = np.asarray(gt_image)
         gt_image = data.blend_alpha_channel(gt_image, bg=args.render.bg)
-        logger.info("{}: psnr={}".format(test_views[test_i].file, data.psnr(gt_image, rgb)))
+        psnr = data.psnr(gt_image, rgb)
+        logger.info("{}: psnr={}".format(test_views[test_i].file, psnr))
         dest = args.exp_dir\
             .joinpath(args.test_split)
         dest.mkdir(parents=True, exist_ok=True)
@@ -103,4 +105,9 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
         logger.debug("saving predicted depth image to {}".format(dest_depth))
         Image.fromarray(np.asarray(depth)).save(dest_depth)
 
-    return params
+        mean_psnr += psnr
+        n_tested += 1
+
+    mean_psnr /= n_tested
+    logger.info("tested {} images, mean psnr={}".format(n_tested, mean_psnr))
+    return mean_psnr
