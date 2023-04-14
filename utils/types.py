@@ -90,6 +90,13 @@ class NeRFTrainState(TrainState):
     def should_update_all_ogrid_cells(self):
         return int(self.step) < 256
 
+    @property
+    def should_update_batch_config(self):
+        return (
+            int(self.step) > 0
+            and int(self.step) % 16 == 0
+        )
+
 
 @dataclass
 class PinholeCamera:

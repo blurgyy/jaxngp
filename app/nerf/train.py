@@ -195,6 +195,8 @@ def train_epoch(
                 raymarch=raymarch_options,
                 state=state,
             )
+
+        if state.should_update_batch_config:
             new_mean_samples_per_ray = int(running_mean_samp_per_ray) + 1
             new_n_rays = target_batch_size // new_mean_samples_per_ray
             state = state.replace(
