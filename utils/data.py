@@ -14,7 +14,7 @@ import tensorflow as tf
 from tqdm import tqdm
 
 from utils.common import mkValueError, tqdm_format
-from utils.types import PinholeCamera, RGBColor, RigidTransformation
+from utils.types import PinholeCamera, RGBColor, RenderingOptions, RigidTransformation
 Dataset = tf.data.Dataset
 
 
@@ -133,6 +133,28 @@ def set_pixels(imgarr: jax.Array, xys: jax.Array, selected: jax.Array, preds: ja
         return interm.reshape(H, W)
 
 
+# this does not give better results than a plain `jnp.unifrom(0, 1)` for supervising alpha via color
+# blending.
+# TODO: for the "mic" scene, using white as background color actually performs better than using
+# random background on depth supervision, why?
+def alternate_color(KEY: jran.KeyArray, bg: RGBColor, n_pixels: int, dtype) -> jax.Array:
+    KEY, key_randcolor, key_choice = jran.split(KEY, 3)
+    alternate_options = (
+        (0., 0., 0.),  # black
+        (1., 0., 0.),  # red
+        (0., 1., 0.),  # green
+        (0., 0., 1.),  # blue
+        (1., 1., 0.),  # yellow
+        (1., 0., 1.),  # magenta
+        (0., 1., 1.),  # cyan
+        (1., 1., 1.),  # white
+        jran.uniform(key_randcolor, (3,), dtype, minval=0., maxval=1.),
+        bg,
+    )
+    alternate_options = jnp.asarray(alternate_options, dtype=dtype)
+    return jran.choice(key_choice, alternate_options, shape=(n_pixels,))
+
+
 def blend_alpha_channel(imgarr, bg: RGBColor):
     chex.assert_shape(imgarr, [..., 4])
     rgbs, alpha = imgarr[..., :-1], imgarr[..., -1:]
@@ -159,11 +181,11 @@ def get_xyrgbas(imgarr: jax.Array) -> Tuple[jax.Array, jax.Array]:
     if C == 3:
         # images without an alpha channel is equivalent to themselves with an all-opaque alpha
         # channel
-        rgbs = jnp.concatenate([flattened, jnp.ones_like(flattened[:, :1])])
-        return xys, rgbs
+        rgbas = jnp.concatenate([flattened, jnp.ones_like(flattened[:, :1])])
+        return xys, rgbas
     elif C == 4:
-        rgbs = flattened
-        return xys, rgbs
+        rgbas = flattened
+        return xys, rgbas
     else:
         raise mkValueError(
             desc="number of image channels",
