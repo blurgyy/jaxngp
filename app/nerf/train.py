@@ -197,7 +197,7 @@ def train_epoch(
             )
 
         if state.should_update_batch_config:
-            new_mean_samples_per_ray = int(running_mean_samp_per_ray) + 1
+            new_mean_samples_per_ray = int(running_mean_samp_per_ray + 1.5)
             new_n_rays = target_batch_size // new_mean_samples_per_ray
             state = state.replace(
                 batch_config=NeRFBatchConfig(
