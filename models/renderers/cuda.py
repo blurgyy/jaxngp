@@ -10,7 +10,7 @@ from tqdm import tqdm
 from volrendjax import integrate_rays, march_rays, morton3d_invert, packbits
 
 from utils.common import jit_jaxfn_with, tqdm_format
-from utils.data import blend_alpha_channel, cascades_from_bound, set_pixels
+from utils.data import cascades_from_bound, set_pixels
 from utils.types import (
     DensityAndRGB,
     NeRFBatchConfig,
@@ -158,6 +158,7 @@ def render_rays(
     KEY: jran.KeyArray,
     o_world: jax.Array,
     d_world: jax.Array,
+    bg: jax.Array,
     bound: float,
     target_batch_size: int,
     ogrid: OccupancyDensityGrid,
@@ -213,6 +214,7 @@ def render_rays(
         1e-4,
         rays_sample_startidx,
         rays_n_samples,
+        bg,
         dss,
         z_vals,
         densities,
@@ -249,11 +251,17 @@ def render_image(
     image_array = jnp.empty((camera.H, camera.W, 3), dtype=jnp.uint8)
     depth_array = jnp.empty((camera.H, camera.W), dtype=jnp.uint8)
     for idcs in tqdm(indices, desc="| rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
+        if options.random_bg:
+            KEY, key = jran.split(KEY, 2)
+            bg = jran.uniform(key, rgbs.shape, rgbs.dtype, minval=0, maxval=1)
+        else:
+            bg = jnp.asarray(options.bg)
         KEY, key = jran.split(KEY, 2)
-        _, opacities, rgbs, depths = render_rays(
+        _, _, rgbs, depths = render_rays(
             KEY=key,
             o_world=o_world[idcs],
             d_world=d_world[idcs],
+            bg=bg,
             bound=bound,
             target_batch_size=int(batch_config.estimated_batch_size * 1.25),  # FIXME: implement a reliable way to render all rays
             ogrid=ogrid,
@@ -262,12 +270,6 @@ def render_image(
             param_dict=param_dict,
             nerf_fn=nerf_fn,
         )
-        if options.random_bg:
-            KEY, key = jran.split(KEY, 2)
-            bg = jran.uniform(key, rgbs.shape, rgbs.dtype, minval=0, maxval=1)
-        else:
-            bg = options.bg
-        rgbs = blend_alpha_channel(jnp.concatenate([rgbs, opacities[:, None]], axis=-1), bg=bg)
         depths = depths / (bound * 2 + jnp.linalg.norm(transform_cw.translation))
         image_array = set_pixels(image_array, xys, idcs, rgbs)
         depth_array = set_pixels(depth_array, xys, idcs, depths)

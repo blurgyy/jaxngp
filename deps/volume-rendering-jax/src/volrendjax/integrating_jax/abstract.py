@@ -10,6 +10,7 @@ def integrate_rays_abstract(
     rays_sample_startidx: jax.Array,
     rays_n_samples: jax.Array,
 
+    bgs: jax.Array,
     dss: jax.Array,
     z_vals: jax.Array,
     densities: jax.Array,
@@ -18,6 +19,7 @@ def integrate_rays_abstract(
     (n_rays,), (total_samples,) = transmittance_threshold.shape, dss.shape
 
     chex.assert_shape([rays_sample_startidx, rays_n_samples], (n_rays,))
+    chex.assert_shape(bgs, (n_rays, 3))
     chex.assert_shape(z_vals, (total_samples,))
     chex.assert_shape(densities, (total_samples, 1))
     chex.assert_shape(rgbs, (total_samples, 3))
@@ -33,6 +35,7 @@ def integrate_rays_abstract(
     shapes = {
         "helper.counter": (1,),
 
+        "out.reached_bg": (n_rays,),
         "out.opacities": (n_rays,),
         "out.final_rgbs": (n_rays, 3),
         "out.depths": (n_rays,),
@@ -41,9 +44,10 @@ def integrate_rays_abstract(
     return (
         jax.ShapedArray(shape=shapes["helper.counter"], dtype=jnp.uint32),
 
-        jax.ShapedArray(shape=shapes["out.opacities"], dtype=jnp.float32),  # opacities
-        jax.ShapedArray(shape=shapes["out.final_rgbs"], dtype=jnp.float32),  # final_rgbs
-        jax.ShapedArray(shape=shapes["out.depths"], dtype=jnp.float32),  # depths
+        jax.ShapedArray(shape=shapes["out.reached_bg"], dtype=jnp.bool_),
+        jax.ShapedArray(shape=shapes["out.opacities"], dtype=jnp.float32),
+        jax.ShapedArray(shape=shapes["out.final_rgbs"], dtype=jnp.float32),
+        jax.ShapedArray(shape=shapes["out.depths"], dtype=jnp.float32),
     )
 
 def integrate_rays_backward_abstract(
@@ -53,12 +57,14 @@ def integrate_rays_backward_abstract(
     rays_n_samples: jax.Array,
 
     # original inputs
+    bgs: jax.Array,
     dss: jax.Array,
     z_vals: jax.Array,
     densities: jax.Array,
     rgbs: jax.Array,
 
     # original outputs
+    reached_bg: jax.Array,
     opacities: jax.Array,
     final_rgbs: jax.Array,
     depths: jax.Array,
@@ -71,9 +77,11 @@ def integrate_rays_backward_abstract(
     (n_rays,), (total_samples,) = transmittance_threshold.shape, dss.shape
 
     chex.assert_shape([rays_sample_startidx, rays_n_samples], (n_rays,))
+    chex.assert_shape(bgs, (n_rays, 3))
     chex.assert_shape(z_vals, (total_samples,))
     chex.assert_shape(densities, (total_samples, 1))
     chex.assert_shape(rgbs, (total_samples, 3))
+    chex.assert_shape(reached_bg, (n_rays,))
     chex.assert_shape([opacities, dL_dopacities], (n_rays,))
     chex.assert_shape([final_rgbs, dL_dfinal_rgbs], (n_rays, 3))
     chex.assert_shape([depths, dL_ddepths], (n_rays,))
@@ -87,13 +95,15 @@ def integrate_rays_backward_abstract(
         )
 
     out_shapes = {
+        "dL_dbgs": (n_rays, 3),
         "dL_dz_vals": (total_samples,),
         "dL_ddensities": (total_samples, 1),
         "dL_drgbs": (total_samples, 3),
     }
 
     return (
-        jax.ShapedArray(shape=out_shapes["dL_dz_vals"], dtype=jnp.float32),  # dL_dz_vals
-        jax.ShapedArray(shape=out_shapes["dL_ddensities"], dtype=jnp.float32),  # dL_ddensities
-        jax.ShapedArray(shape=out_shapes["dL_drgbs"], dtype=jnp.float32),  # dL_drgbs
+        jax.ShapedArray(shape=out_shapes["dL_dbgs"], dtype=jnp.float32),
+        jax.ShapedArray(shape=out_shapes["dL_dz_vals"], dtype=jnp.float32),
+        jax.ShapedArray(shape=out_shapes["dL_ddensities"], dtype=jnp.float32),
+        jax.ShapedArray(shape=out_shapes["dL_drgbs"], dtype=jnp.float32),
     )

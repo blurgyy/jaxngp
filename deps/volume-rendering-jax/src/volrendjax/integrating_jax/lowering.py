@@ -26,6 +26,7 @@ def integrate_rays_lowering_rule(
     rays_sample_startidx: ir.Value,
     rays_n_samples: ir.Value,
 
+    bgs: ir.Value,
     dss: ir.Value,
     z_vals: ir.Value,
     densities: ir.Value,
@@ -40,6 +41,8 @@ def integrate_rays_lowering_rule(
         "in.transmittance_threshold": (n_rays,),
         "in.rays_sample_startidx": (n_rays,),
         "in.rays_n_samples": (n_rays,),
+
+        "in.bgs": (n_rays, 3),
         "in.dss": (total_samples,),
         "in.z_vals": (total_samples,),
         "in.densities": (total_samples, 1),
@@ -47,6 +50,7 @@ def integrate_rays_lowering_rule(
 
         "helper.counter": (1,),
 
+        "out.reached_bg": (n_rays,),
         "out.opacities": (n_rays,),
         "out.final_rgbs": (n_rays, 3),
         "out.depths": (n_rays,),
@@ -56,6 +60,7 @@ def integrate_rays_lowering_rule(
         call_target_name="integrate_rays",
         out_types=[
             ir.RankedTensorType.get(shapes["helper.counter"], ir.IntegerType.get_unsigned(32)),
+            ir.RankedTensorType.get(shapes["out.reached_bg"], ir.IntegerType.get_signless(1)),  # jnp.bool_ is i1
             ir.RankedTensorType.get(shapes["out.opacities"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.final_rgbs"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.depths"], ir.F32Type.get()),
@@ -64,6 +69,7 @@ def integrate_rays_lowering_rule(
             transmittance_threshold,
             rays_sample_startidx,
             rays_n_samples,
+            bgs,
             dss,
             z_vals,
             densities,
@@ -74,6 +80,7 @@ def integrate_rays_lowering_rule(
             shapes["in.transmittance_threshold"],
             shapes["in.rays_sample_startidx"],
             shapes["in.rays_n_samples"],
+            shapes["in.bgs"],
             shapes["in.dss"],
             shapes["in.z_vals"],
             shapes["in.densities"],
@@ -81,6 +88,7 @@ def integrate_rays_lowering_rule(
         ),
         result_layouts=default_layouts(
             shapes["helper.counter"],
+            shapes["out.reached_bg"],
             shapes["out.opacities"],
             shapes["out.final_rgbs"],
             shapes["out.depths"],
@@ -97,12 +105,14 @@ def integrate_rays_backward_lowring_rule(
     rays_n_samples: ir.Value,
 
     # original inputs
+    bgs: ir.Value,
     dss: ir.Value,
     z_vals: ir.Value,
     densities: ir.Value,
     rgbs: ir.Value,
 
     # original outputs
+    reached_bg: ir.Value,
     opacities: ir.Value,
     final_rgbs: ir.Value,
     depths: ir.Value,
@@ -121,11 +131,14 @@ def integrate_rays_backward_lowring_rule(
         "in.transmittance_threshold": (n_rays,),
         "in.rays_sample_startidx": (n_rays,),
         "in.rays_n_samples": (n_rays,),
+
+        "in.bgs": (n_rays, 3),
         "in.dss": (total_samples,),
         "in.z_vals": (total_samples,),
         "in.densities": (total_samples, 1),
         "in.rgbs": (total_samples, 3),
 
+        "in.reached_bg": (n_rays,),
         "in.opacities": (n_rays,),
         "in.final_rgbs": (n_rays, 3),
         "in.depths": (n_rays,),
@@ -134,6 +147,7 @@ def integrate_rays_backward_lowring_rule(
         "in.dL_dfinal_rgbs": (n_rays, 3),
         "in.dL_ddepths": (n_rays,),
 
+        "out.dL_dbgs": (n_rays, 3),
         "out.dL_dz_vals": (total_samples,),
         "out.dL_ddensities": (total_samples, 1),
         "out.dL_drgbs": (total_samples, 3),
@@ -142,6 +156,7 @@ def integrate_rays_backward_lowring_rule(
     return custom_call(
         call_target_name="integrate_rays_backward",
         out_types=[
+            ir.RankedTensorType.get(shapes["out.dL_dbgs"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.dL_dz_vals"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.dL_ddensities"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.dL_drgbs"], ir.F32Type.get()),
@@ -151,11 +166,13 @@ def integrate_rays_backward_lowring_rule(
             rays_sample_startidx,
             rays_n_samples,
 
+            bgs,
             dss,
             z_vals,
             densities,
             rgbs,
 
+            reached_bg,
             opacities,
             final_rgbs,
             depths,
@@ -169,11 +186,13 @@ def integrate_rays_backward_lowring_rule(
             shapes["in.transmittance_threshold"],
             shapes["in.rays_sample_startidx"],
             shapes["in.rays_n_samples"],
+            shapes["in.bgs"],
             shapes["in.dss"],
             shapes["in.z_vals"],
             shapes["in.densities"],
             shapes["in.rgbs"],
 
+            shapes["in.reached_bg"],
             shapes["in.opacities"],
             shapes["in.final_rgbs"],
             shapes["in.depths"],
@@ -183,6 +202,7 @@ def integrate_rays_backward_lowring_rule(
             shapes["in.dL_ddepths"],
         ),
         result_layouts=default_layouts(
+            shapes["out.dL_dbgs"],
             shapes["out.dL_dz_vals"],
             shapes["out.dL_ddensities"],
             shapes["out.dL_drgbs"],

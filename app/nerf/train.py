@@ -80,11 +80,17 @@ def train_step(
 
     def loss_fn(params, gt, KEY):
         o_world, d_world = make_rays_worldspace()
+        if render_options.random_bg:
+            KEY, key = jran.split(KEY, 2)
+            bg = jran.uniform(key, shape=(o_world.shape[0], 3), dtype=jnp.float32, minval=0, maxval=1)
+        else:
+            bg = jnp.asarray(render_options.bg)
         KEY, key = jran.split(KEY, 2)
-        batch_metrics, opacities, preds, _ = render_rays(
+        batch_metrics, _, pred_rgbs, _ = render_rays(
             KEY=key,
             o_world=o_world,
             d_world=d_world,
+            bg=bg,
             bound=bound,
             target_batch_size=target_batch_size,
             ogrid=state.ogrid,
@@ -93,16 +99,7 @@ def train_step(
             param_dict={"params": params},
             nerf_fn=state.apply_fn,
         )
-        if render_options.random_bg:
-            KEY, key = jran.split(KEY, 2)
-            bg = jran.uniform(key, preds.shape, dtype=preds.dtype, minval=0, maxval=1)
-        else:
-            bg = render_options.bg
-        pred_rgbs = data.blend_alpha_channel(
-            imgarr=jnp.concatenate([preds, opacities[:, None]], axis=-1),
-            bg=bg,
-        )
-        gt_rgbs = data.blend_alpha_channel(imgarr=gt, bg=bg)
+        gt_rgbs = data.blend_rgba_image_array(imgarr=gt, bg=bg)
         # from NVlabs/instant-ngp/commit/d6c7241de9be5be1b6d85fe43e446d2eb042511b
         # Note: we divide the huber loss by a factor of 5 such that its L2 region near zero
         # matches with the L2 loss and error numbers become more comparable. This allows reading
@@ -369,7 +366,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
             )
             gt_image = Image.open(val_views[val_i].file)
             gt_image = np.asarray(gt_image)
-            gt_image = data.blend_alpha_channel(gt_image, bg=args.render_eval.bg)
+            gt_image = data.blend_rgba_image_array(gt_image, bg=args.render_eval.bg)
             logger.info("{}: psnr={}dB".format(val_views[val_i].file, data.psnr(gt_image, rgb)))
             dest = args.exp_dir\
                 .joinpath("validataion")\

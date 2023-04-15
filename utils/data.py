@@ -155,7 +155,15 @@ def alternate_color(KEY: jran.KeyArray, bg: RGBColor, n_pixels: int, dtype) -> j
     return jran.choice(key_choice, alternate_options, shape=(n_pixels,))
 
 
-def blend_alpha_channel(imgarr, bg: RGBColor):
+def blend_rgba_image_array(imgarr, bg: RGBColor):
+    """
+    Blend the given background color according to the given alpha channel from `imgarr`.
+    WARN: this function SHOULD NOT be used for blending background colors into volume-rendered
+          pixels because the colors of volume-rendered pixels already have the alpha channel
+          factored-in.  To blend background for volume-rendered pixels, directly add the scaled
+          background color.
+          E.g.: `final_color = ray_accumulated_color + (1 - ray_opacity) * bg_color`
+    """
     chex.assert_shape(imgarr, [..., 4])
     rgbs, alpha = imgarr[..., :-1], imgarr[..., -1:]
     bg_color = jnp.asarray(bg)

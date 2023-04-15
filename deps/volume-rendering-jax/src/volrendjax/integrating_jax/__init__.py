@@ -12,6 +12,7 @@ def integrate_rays(
     transmittance_threshold: jax.Array,
     rays_sample_startidx: jax.Array,
     rays_n_samples: jax.Array,
+    bgs: jax.Array,
     dss: jax.Array,
     z_vals: jax.Array,
     densities: jax.Array,
@@ -19,12 +20,13 @@ def integrate_rays(
 ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     """
     Inputs:
-        transmittance_threshold [n_rays]: the i-th ray will stop compositing color once its
-                                          accumulated transmittance is below this threshold
-        rays_sample_startidx [n_rays]: i-th element is the index of the first sample in z_vals,
-                                       densities, and rgbs of the i-th ray
-        rays_n_samples [n_rays]: i-th element is the number of samples for the i-th ray
+        transmittance_threshold `[n_rays]`: the i-th ray will stop compositing color once its
+                                            accumulated transmittance is below this threshold
+        rays_sample_startidx `[n_rays]`: i-th element is the index of the first sample in z_vals,
+                                         densities, and rgbs of the i-th ray
+        rays_n_samples `[n_rays]`: i-th element is the number of samples for the i-th ray
 
+        bgs `[n_rays, 3]`: background colors of each ray
         dss [total_samples]: it means `ds`s, the notation `ds` comes from the article "Local and
                              global illumination in the volume rendering integral" written by Nelson
                              Max and Min Chen, 2005.  The product of `ds[i]` and `densities[i]`
@@ -45,10 +47,11 @@ def integrate_rays(
         final_rgbs `[n_rays, 3]~: integrated ray colors according to input densities and rgbs.
         depths `[n_rays]`: estimated termination depth of each ray
     """
-    counter, opacities, final_rgbs, depths = impl.__integrate_rays(
+    counter, reached_bg, opacities, final_rgbs, depths = impl.__integrate_rays(
         transmittance_threshold,
         rays_sample_startidx,
         rays_n_samples,
+        bgs,
         dss,
         z_vals,
         densities,
