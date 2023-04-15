@@ -104,7 +104,7 @@ class NeRFTrainingArgs(_NeRFArgs):
         lr=1e-2,
         momentum=None,
         bs=1024 * (1<<10),
-        n_epochs=32,
+        n_epochs=50,
         n_batches=2**10,
         data_loop=1,
     )
