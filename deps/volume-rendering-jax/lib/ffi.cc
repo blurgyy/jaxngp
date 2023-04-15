@@ -51,7 +51,7 @@ pybind11::dict get_integrating_registrations() {
 PYBIND11_MODULE(volrendutils_cuda, m) {
     m.def("get_packbits_registrations", &get_packbits_registrations);
     m.def("make_packbits_descriptor",
-          [](std::uint32_t n_bytes) {
+          [](std::uint32_t const n_bytes) {
             if (n_bytes == 0) {
                 throw std::runtime_error("expected n_bytes to be a positive integer, got 0");
             }
@@ -66,7 +66,14 @@ PYBIND11_MODULE(volrendutils_cuda, m) {
 
     m.def("get_marching_registrations", &get_marching_registrations);
     m.def("make_marching_descriptor",
-          [](std::uint32_t n_rays, std::uint32_t max_n_samples_per_ray, std::uint32_t total_samples, std::uint32_t max_steps, std::uint32_t K, std::uint32_t G, float bound, float stepsize_portion) {
+          [](std::uint32_t const n_rays
+             , std::uint32_t const max_n_samples_per_ray
+             , std::uint32_t const total_samples
+             , std::uint32_t const max_steps
+             , std::uint32_t const K
+             , std::uint32_t const G
+             , float const bound
+             , float const stepsize_portion) {
             if (K == 0) {
                 throw std::runtime_error("expected K to be a positive integer, got 0");
             }
@@ -99,7 +106,7 @@ PYBIND11_MODULE(volrendutils_cuda, m) {
     m.def("get_morton3d_registrations", &get_morton3d_registrations);
     m.def(
         "make_morton3d_descriptor",
-        [](std::uint32_t length) {
+        [](std::uint32_t const length) {
             return to_pybind11_bytes(Morton3DDescriptor { .length = length });
         },
         "Static arguments passed to the `morton3d` or `morton3d_invert` functions.\n\n"
@@ -113,7 +120,7 @@ PYBIND11_MODULE(volrendutils_cuda, m) {
 
     m.def("get_integrating_registrations", &get_integrating_registrations);
     m.def("make_integrating_descriptor",
-          [](std::uint32_t n_rays, std::uint32_t total_samples) {
+          [](std::uint32_t const n_rays, std::uint32_t const total_samples) {
             return to_pybind11_bytes(IntegratingDescriptor{
                 .n_rays = n_rays,
                 .total_samples = total_samples,

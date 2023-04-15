@@ -8,7 +8,7 @@ namespace {
 __global__ void pack_bits_kernel(
     // inputs
     /// static
-    std::uint32_t n_bytes
+    std::uint32_t const n_bytes
 
     /// array
     , float const * const __restrict__ density_threshold
@@ -18,14 +18,14 @@ __global__ void pack_bits_kernel(
     , bool * const __restrict__ occupied_mask
     , std::uint8_t * const __restrict__ occupancy_bitfield
 ) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    std::uint32_t const i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_bytes) { return; }
 
     std::uint8_t byte = (std::uint8_t)0x00;
 
     #pragma unroll
     for (std::uint8_t idx = 0; idx < 8; ++idx) {
-        bool predicate = (density_grid[i*8+idx] > density_threshold[i*8+idx]);
+        bool const predicate = (density_grid[i*8+idx] > density_threshold[i*8+idx]);
         occupied_mask[i*8+idx] = predicate;
         byte |= predicate ? ((std::uint8_t)0x01 << idx) : (std::uint8_t)0x00;
     }
@@ -35,7 +35,7 @@ __global__ void pack_bits_kernel(
 void pack_bits_launcher(cudaStream_t stream, void **buffers, const char *opaque, std::size_t opaque_len) {
     // buffer indexing helper
     std::uint32_t __buffer_idx = 0;
-    auto next_buffer = [&]() { return buffers[__buffer_idx++]; };
+    auto const next_buffer = [&]() { return buffers[__buffer_idx++]; };
 
     // inputs
     /// static
@@ -50,8 +50,8 @@ void pack_bits_launcher(cudaStream_t stream, void **buffers, const char *opaque,
     std::uint8_t * const __restrict__ occupancy_bitfield = static_cast<std::uint8_t *>(next_buffer());
 
     // kernel launch
-    int blockSize = 256;
-    int numBlocks = (desc.n_bytes + blockSize - 1) / blockSize;
+    std::uint32_t const blockSize = 256;
+    std::uint32_t const numBlocks = (desc.n_bytes + blockSize - 1) / blockSize;
     pack_bits_kernel<<<numBlocks, blockSize, 0, stream>>>(
         // inputs
         /// static

@@ -20,7 +20,7 @@ __global__ void copy_left_to_right(std::uint32_t length, float const *lhs, float
 // kernel
 __global__ void integrate_rays_kernel(
     // static arguments
-    std::uint32_t n_rays
+    std::uint32_t const n_rays
 
     // input arrays (7)
     , float const * const __restrict__ transmittance_threshold  // [n_rays]
@@ -42,12 +42,12 @@ __global__ void integrate_rays_kernel(
     , float * const __restrict__ final_rgbs  // [n_rays]
     , float * const __restrict__ depths  // [n_rays]
 ) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    std::uint32_t const i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_rays) { return; }
 
     // input
-    int start_idx = rays_sample_startidx[i];
-    std::uint32_t n_samples = rays_n_samples[i];
+    std::uint32_t const start_idx = rays_sample_startidx[i];
+    std::uint32_t const n_samples = rays_n_samples[i];
 
     float const * const __restrict__ ray_bgs = bgs + i * 3;  // [3]
     float const * const __restrict__ ray_dss = dss + start_idx;  // [n_samples]
@@ -62,11 +62,11 @@ __global__ void integrate_rays_kernel(
     float ray_transmittance = 1.f;
     float r = 0.f, g = 0.f, b = 0.f;
     for (; ray_transmittance > transmittance_threshold[i] && sample_idx < n_samples; ++sample_idx) {
-        float z_val = ray_z_vals[sample_idx];
-        float delta_t = ray_dss[sample_idx];
-        float alpha = 1.f - __expf(-ray_densities[sample_idx] * delta_t);
+        float const z_val = ray_z_vals[sample_idx];
+        float const delta_t = ray_dss[sample_idx];
+        float const alpha = 1.f - __expf(-ray_densities[sample_idx] * delta_t);
 
-        float weight = ray_transmittance * alpha;
+        float const weight = ray_transmittance * alpha;
 
         // set outputs
         /// accumulate opacity
@@ -99,7 +99,7 @@ __global__ void integrate_rays_kernel(
 
 __global__ void integrate_rays_backward_kernel(
     // static arguments
-    std::uint32_t n_rays
+    std::uint32_t const n_rays
 
     // input arrays
     , float const * const __restrict__ transmittance_threshold
@@ -130,12 +130,12 @@ __global__ void integrate_rays_backward_kernel(
     , float * const __restrict__ dL_ddensities  // [total_samples]
     , float * const __restrict__ dL_drgbs  // [total_samples, 3]
 ) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    std::uint32_t const i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_rays) { return; }
 
     // input
-    std::uint32_t start_idx = rays_sample_startidx[i];
-    std::uint32_t n_samples = rays_n_samples[i];
+    std::uint32_t const start_idx = rays_sample_startidx[i];
+    std::uint32_t const n_samples = rays_n_samples[i];
 
     /// original inputs
     float const * const __restrict__ ray_bgs = bgs + i * 3;
@@ -174,11 +174,11 @@ __global__ void integrate_rays_backward_kernel(
     float cur_rgb[3] = {0.f, 0.f, 0.f};
     float cur_depth = 0.f;
     for (std::uint32_t sample_idx = 0; transmittance > transmittance_threshold[i] && sample_idx < n_samples; ++sample_idx) {
-        float z_val = ray_z_vals[sample_idx];
-        float delta_t = ray_dss[sample_idx];
-        float alpha = 1.f - __expf(-ray_densities[sample_idx] * delta_t);
+        float const z_val = ray_z_vals[sample_idx];
+        float const delta_t = ray_dss[sample_idx];
+        float const alpha = 1.f - __expf(-ray_densities[sample_idx] * delta_t);
 
-        float weight = transmittance * alpha;
+        float const weight = transmittance * alpha;
 
         cur_rgb[0] += weight * ray_rgbs[sample_idx * 3 + 0];
         cur_rgb[1] += weight * ray_rgbs[sample_idx * 3 + 1];
@@ -223,13 +223,13 @@ __global__ void integrate_rays_backward_kernel(
 void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque, std::size_t opaque_len) {
     // buffer indexing helper
     std::uint32_t __buffer_idx = 0;
-    auto next_buffer = [&]() { return buffers[__buffer_idx++]; };
+    auto const next_buffer = [&]() { return buffers[__buffer_idx++]; };
 
     // inputs
     /// static
     IntegratingDescriptor const &desc = *deserialize<IntegratingDescriptor>(opaque, opaque_len);
-    std::uint32_t n_rays = desc.n_rays;
-    std::uint32_t total_samples = desc.total_samples;
+    std::uint32_t const n_rays = desc.n_rays;
+    std::uint32_t const total_samples = desc.total_samples;
     /// arrays
     float const * const __restrict__ transmittance_threshold = static_cast<float *>(next_buffer());
     std::uint32_t const * const __restrict__ rays_sample_startidx = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
@@ -257,8 +257,8 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
     CUDA_CHECK_THROW(cudaMemsetAsync(depths, 0x00, n_rays * sizeof(float), stream));
 
     // kernel launch
-    int blockSize = 256;
-    int numBlocks = (n_rays + blockSize - 1) / blockSize;
+    std::uint32_t const blockSize = 256;
+    std::uint32_t const numBlocks = (n_rays + blockSize - 1) / blockSize;
     integrate_rays_kernel<<<numBlocks, blockSize, 0, stream>>>(
         // static arguments
         n_rays
@@ -287,14 +287,14 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
 void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char const *opaque, std::size_t opaque_len) {
     // buffer indexing helper
     std::uint32_t __buffer_idx = 0;
-    auto next_buffer = [&]() { return buffers[__buffer_idx++]; };
+    auto const next_buffer = [&]() { return buffers[__buffer_idx++]; };
 
     // inputs
     /// static
     IntegratingDescriptor const &desc =
         *deserialize<IntegratingDescriptor>(opaque, opaque_len);
-    std::uint32_t n_rays = desc.n_rays;
-    std::uint32_t total_samples = desc.total_samples;
+    std::uint32_t const n_rays = desc.n_rays;
+    std::uint32_t const total_samples = desc.total_samples;
 
     /// arrays
     float const * const __restrict__ transmittance_threshold = static_cast<float *>(next_buffer());
@@ -329,8 +329,8 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
     CUDA_CHECK_THROW(cudaMemsetAsync(dL_drgbs, 0x00, total_samples * 3 * sizeof(float), stream));
 
     // kernel launch
-    int blockSize = 256;
-    int numBlocks = (n_rays + blockSize - 1) / blockSize;
+    std::uint32_t const blockSize = 256;
+    std::uint32_t const numBlocks = (n_rays + blockSize - 1) / blockSize;
     integrate_rays_backward_kernel<<<numBlocks, blockSize, 0, stream>>>(
         // static arguments
         n_rays

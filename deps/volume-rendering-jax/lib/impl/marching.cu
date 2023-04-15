@@ -18,7 +18,7 @@ inline __device__ float calc_ds(float ray_t, float stepsize_portion, float bound
 
 inline __device__ std::uint32_t mip_from_xyz(float x, float y, float z, std:: uint32_t K) {
     if (K == 1) { return 0; }
-    float max_coord = fmaxf(fabsf(x), fmaxf(fabsf(y), fabsf(z)));
+    float const max_coord = fmaxf(fabsf(x), fmaxf(fabsf(y), fabsf(z)));
     int exponent;
     frexpf(max_coord, &exponent);
     return static_cast<std::uint32_t>(clampi(exponent, 0, K-1));
@@ -41,9 +41,9 @@ inline __device__ std::uint32_t expand_bits(std::uint32_t v) {
 }
 
 inline __device__ std::uint32_t __morton3D(std::uint32_t x, std::uint32_t y, std::uint32_t z) {
-    uint32_t xx = expand_bits(x);
-    uint32_t yy = expand_bits(y);
-    uint32_t zz = expand_bits(z);
+    std::uint32_t const xx = expand_bits(x);
+    std::uint32_t const yy = expand_bits(y);
+    std::uint32_t const zz = expand_bits(z);
     return xx | (yy << 1) | (zz << 2);
 }
 
@@ -59,14 +59,14 @@ inline __device__ std::uint32_t __morton3D_invert(std::uint32_t x) {
 // kernel, REF: <https://github.com/ashawkey/torch-ngp/blob/b6e080468925f0bb44827b4f8f0ed08291dcf8a9/raymarching/src/raymarching.cu#L312>
 __global__ void march_rays_kernel(
     // static
-    std::uint32_t n_rays
-    , std::uint32_t max_n_samples_per_ray
-    , std::uint32_t total_samples
-    , std::uint32_t max_steps
-    , std::uint32_t K
-    , std::uint32_t G
-    , float bound
-    , float stepsize_portion
+    std::uint32_t const n_rays
+    , std::uint32_t const max_n_samples_per_ray
+    , std::uint32_t const total_samples
+    , std::uint32_t const max_steps
+    , std::uint32_t const K
+    , std::uint32_t const G
+    , float const bound
+    , float const stepsize_portion
 
     // inputs
     , float const * const __restrict__ rays_o  // [n_rays, 3]
@@ -87,7 +87,7 @@ __global__ void march_rays_kernel(
     , float * const __restrict__ dss  // [total_samples]
     , float * const __restrict__ z_vals  // [total_samples]
 ) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    std::uint32_t const i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_rays) { return; }
 
     // input arrays
@@ -102,7 +102,7 @@ __global__ void march_rays_kernel(
     if (ray_t_start >= ray_t_end) { return; }
 
     // precompute
-    std::uint32_t G3 = G*G*G;
+    std::uint32_t const G3 = G*G*G;
 
     // actually march rays
     /// but not writing the samples to output!  Writing is done in another marching pass below
@@ -118,7 +118,7 @@ __global__ void march_rays_kernel(
 
         // among the grids covering xyz, the finest one with cell side-length larger than Δ𝑡 is
         // queried.
-        std::uint32_t cascade = max(
+        std::uint32_t const cascade = max(
             mip_from_xyz(x, y, z, K),
             mip_from_ds(ds, G, K)
         );
@@ -159,7 +159,7 @@ __global__ void march_rays_kernel(
     rays_n_samples[i] = ray_n_samples;
 
     // record the index of the first generated sample on this ray
-    std::uint32_t ray_sample_startidx = atomicAdd(counter, ray_n_samples);
+    std::uint32_t const ray_sample_startidx = atomicAdd(counter, ray_n_samples);
     if (ray_sample_startidx + ray_n_samples > total_samples) { return; }
     rays_sample_startidx[i] = ray_sample_startidx;
 
@@ -185,7 +185,7 @@ __global__ void march_rays_kernel(
 
         // among the grids covering xyz, the finest one with cell side-length larger than Δ𝑡 is
         // queried.
-        std::uint32_t cascade = max(
+        std::uint32_t const cascade = max(
             mip_from_xyz(x, y, z, K),
             mip_from_ds(ds, G, K)
         );
@@ -231,7 +231,7 @@ __global__ void march_rays_kernel(
 __global__ void morton3d_kernel(
     // inputs
     /// static
-    std::uint32_t length
+    std::uint32_t const length
 
     /// array
     , std::uint32_t const * const __restrict__ xyzs  // [length, 3]
@@ -239,7 +239,7 @@ __global__ void morton3d_kernel(
     // outputs
     , std::uint32_t * const __restrict__ idcs  // [length]
 ) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    std::uint32_t const i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= length) { return; }
 
     idcs[i] = __morton3D(xyzs[i*3+0], xyzs[i*3+1], xyzs[i*3+2]);
@@ -248,7 +248,7 @@ __global__ void morton3d_kernel(
 __global__ void morton3d_invert_kernel(
     // inputs
     /// static
-    std::uint32_t length
+    std::uint32_t const length
 
     /// array
     , std::uint32_t const * const __restrict__ idcs  // [length]
@@ -256,7 +256,7 @@ __global__ void morton3d_invert_kernel(
     // outputs
     , std::uint32_t * const __restrict__ xyzs  // [length, 3]
 ) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    std::uint32_t const i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= length) { return; }
 
     xyzs[i*3+0] = __morton3D_invert(idcs[i] >> 0);
@@ -267,19 +267,19 @@ __global__ void morton3d_invert_kernel(
 void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque, std::size_t opaque_len) {
     // buffer indexing helper
     std::uint32_t __buffer_idx = 0;
-    auto next_buffer = [&]() { return buffers[__buffer_idx++]; };
+    auto const next_buffer = [&]() { return buffers[__buffer_idx++]; };
 
     // inputs
     /// static
     MarchingDescriptor const &desc = *deserialize<MarchingDescriptor>(opaque, opaque_len);
-    std::uint32_t n_rays = desc.n_rays;
-    std::uint32_t max_n_samples_per_ray = desc.max_n_samples_per_ray;
-    std::uint32_t total_samples = desc.total_samples;
-    std::uint32_t max_steps = desc.max_steps;
-    std::uint32_t K = desc.K;
-    std::uint32_t G = desc.G;
-    float bound = desc.bound;
-    float stepsize_portion = desc.stepsize_portion;
+    std::uint32_t const n_rays = desc.n_rays;
+    std::uint32_t const max_n_samples_per_ray = desc.max_n_samples_per_ray;
+    std::uint32_t const total_samples = desc.total_samples;
+    std::uint32_t const max_steps = desc.max_steps;
+    std::uint32_t const K = desc.K;
+    std::uint32_t const G = desc.G;
+    float const bound = desc.bound;
+    float const stepsize_portion = desc.stepsize_portion;
 
     /// arrays
     float const * const __restrict__ rays_o = static_cast<float *>(next_buffer());  // [n_rays, 3]
@@ -310,8 +310,8 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     CUDA_CHECK_THROW(cudaMemsetAsync(z_vals, 0x00, total_samples * sizeof(float), stream));
 
     // kernel launch
-    int blockSize = 256;
-    int numBlocks = (n_rays + blockSize - 1) / blockSize;
+    std::uint32_t const blockSize = 256;
+    std::uint32_t const numBlocks = (n_rays + blockSize - 1) / blockSize;
     march_rays_kernel<<<numBlocks, blockSize, 0, stream>>>(
         // static
         n_rays
@@ -349,7 +349,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
 void morton3d_launcher(cudaStream_t stream, void **buffers, char const *opaque, std::size_t opaque_len) {
     // buffer indexing helper
     std::uint32_t __buffer_idx = 0;
-    auto next_buffer = [&]() { return buffers[__buffer_idx++]; };
+    auto const next_buffer = [&]() { return buffers[__buffer_idx++]; };
 
     // inputs
     /// static
@@ -381,7 +381,7 @@ void morton3d_launcher(cudaStream_t stream, void **buffers, char const *opaque, 
 void morton3d_invert_launcher(cudaStream_t stream, void **buffers, char const *opaque, std::size_t opaque_len) {
     // buffer indexing helper
     std::uint32_t __buffer_idx = 0;
-    auto next_buffer = [&]() { return buffers[__buffer_idx++]; };
+    auto const next_buffer = [&]() { return buffers[__buffer_idx++]; };
 
     // inputs
     /// static
@@ -394,8 +394,8 @@ void morton3d_invert_launcher(cudaStream_t stream, void **buffers, char const *o
     std::uint32_t * const __restrict__ xyzs = static_cast<std::uint32_t *>(next_buffer());
 
     // kernel launch
-    int blockSize = 256;
-    int numBlocks = (desc.length + blockSize - 1) / blockSize;
+    std::uint32_t const blockSize = 256;
+    std::uint32_t const numBlocks = (desc.length + blockSize - 1) / blockSize;
     morton3d_invert_kernel<<<numBlocks, blockSize, 0, stream>>>(
         // inputs
         /// static
