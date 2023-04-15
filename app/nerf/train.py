@@ -26,12 +26,12 @@ from utils.types import (
 )
 
 
-@common.jit_jaxfn_with(static_argnames=["bound", "target_batch_size", "max_samples_per_ray", "raymarch_options", "render_options"])
+@common.jit_jaxfn_with(static_argnames=["bound", "total_samples", "max_samples_per_ray", "raymarch_options", "render_options"])
 def train_step(
         KEY: jran.KeyArray,
         state: NeRFTrainState,
         bound: float,
-        target_batch_size: int,
+        total_samples: int,
         max_samples_per_ray: int,
         camera: PinholeCamera,
         raymarch_options: RayMarchingOptions,
@@ -92,7 +92,7 @@ def train_step(
             d_world=d_world,
             bg=bg,
             bound=bound,
-            target_batch_size=target_batch_size,
+            total_samples=total_samples,
             ogrid=state.ogrid,
             options=raymarch_options,
             max_n_samples=max_samples_per_ray,
@@ -130,7 +130,7 @@ def train_epoch(
         state: NeRFTrainState,
         permutation: jax.Array,
         n_batches: int,
-        target_batch_size: int,
+        total_samples: int,
         ep_log: int,
         total_epochs: int,
     ):
@@ -150,7 +150,7 @@ def train_epoch(
             KEY=key,
             state=state,
             bound=bound,
-            target_batch_size=target_batch_size,
+            total_samples=total_samples,
             max_samples_per_ray=raymarch_options.max_steps,  # use a fixed value of `max_samples_per_ray` to reduce jit compiliations
             camera=scene_metadata.camera,
             raymarch_options=raymarch_options,
@@ -195,7 +195,7 @@ def train_epoch(
 
         if state.should_update_batch_config:
             new_mean_samples_per_ray = int(running_mean_samp_per_ray + 1.5)
-            new_n_rays = target_batch_size // new_mean_samples_per_ray
+            new_n_rays = total_samples // new_mean_samples_per_ray
             state = state.replace(
                 batch_config=NeRFBatchConfig(
                     mean_samples_per_ray=new_mean_samples_per_ray,
@@ -314,7 +314,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
                 state=state,
                 permutation=permutation,
                 n_batches=args.train.n_batches,
-                target_batch_size=args.train.bs,
+                total_samples=args.train.bs,
                 ep_log=ep_log,
                 total_epochs=args.train.n_epochs,
             )
