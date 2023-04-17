@@ -38,6 +38,19 @@ class TrainingArgs:
     # dataloader overhead.
     data_loop: int
 
+    # number of latest checkpoints to keep
+    keep: int=1
+
+    # how many epochs should a new checkpoint to be kept (in addition to keeping the last `keep`
+    # checkpoints)
+    keep_every: Optional[int]=None
+
+    @property
+    def keep_every_n_steps(self) -> Optional[int]:
+        if self.keep_every is None:
+            return None
+        else:
+            return self.keep_every * self.n_batches
 
 @dataclass(frozen=True, kw_only=True)
 class ImageFitArgs:

@@ -334,7 +334,8 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
             state,
             step=ep_log * args.train.n_batches,
             overwrite=True,
-            keep=2**30,
+            keep=args.train.keep,
+            keep_every_n_steps=args.train.keep_every_n_steps,
         )
         logger.info("training state of epoch {} saved to: {}".format(ep_log, ckpt_name))
 
