@@ -167,12 +167,6 @@ def render_rays(
     param_dict: FrozenVariableDict,
     nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
 ):
-    if options.n_importance > 0:
-        raise NotImplementedError(
-            "CUDA-based raymarching is not designed for importance sampling.\n"
-            "Set n_importance to 0 to use CUDA-based raymarching"
-        )
-
     # make sure d_world is normalized
     d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
     # skip the empty space between camera and scene bbox

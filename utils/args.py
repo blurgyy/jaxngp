@@ -89,6 +89,7 @@ class _NeRFArgs:
 
 @dataclass(frozen=True, kw_only=True)
 class NeRFTrainingArgs(_NeRFArgs):
+    # scale the scene by this factor
     scale: float=0.8
 
     # number of images to validate
@@ -97,6 +98,7 @@ class NeRFTrainingArgs(_NeRFArgs):
     # if specified, continue training from this checkpoint
     train_ckpt: Optional[Path]=None
 
+    # training hyper parameters
     train: TrainingArgs=TrainingArgs(
         # This is a relatively large learning rate, should be used jointly with
         # `threasholded_exponential` as density activation, and random color as supervision for
@@ -112,10 +114,7 @@ class NeRFTrainingArgs(_NeRFArgs):
     # raymarching/rendering options during training
     raymarch: RayMarchingOptions=RayMarchingOptions(
         max_steps=1<<10,
-        stratified=True,
         perturb=True,
-        n_importance=0,
-
         stepsize_portion=0,
         density_grid_res=128,
     )
@@ -127,9 +126,7 @@ class NeRFTrainingArgs(_NeRFArgs):
     # raymarching/rendering options for validating during training
     raymarch_eval: RayMarchingOptions=RayMarchingOptions(
         max_steps=1<<10,
-        stratified=True,
         perturb=False,
-        n_importance=0,
         stepsize_portion=0,
         density_grid_res=128,
     )
@@ -155,9 +152,7 @@ class NeRFTestingArgs(_NeRFArgs):
     # raymarching/rendering options during testing
     raymarch: RayMarchingOptions=RayMarchingOptions(
         max_steps=1<<10,
-        stratified=True,
         perturb=False,
-        n_importance=0,
         stepsize_portion=0,
         density_grid_res=128,
     )

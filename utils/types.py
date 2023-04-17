@@ -110,14 +110,16 @@ class PinholeCamera:
 
 @dataclass
 class RayMarchingOptions:
-    # the NGP paper uses 1024 (appendix E.1)
+    # maximum number of samples to generate along a ray, the NGP paper uses 1024 (appendix E.1)
     max_steps: int
-    stratified: bool
+
+    # whether to fluctuate the first sample along the ray with a tiny perturbation
     perturb: bool
-    n_importance: int
 
     # this is the same thing as `dt_gamma` in ashawkey/torch-ngp
     stepsize_portion: float
+
+    # resolution for the auxiliary density/occupancy grid, the NGP paper uses 128 (appendix E.2)
     density_grid_res: int
 
 
@@ -125,6 +127,7 @@ class RayMarchingOptions:
 class RenderingOptions:
     # background color for transparent parts of the image, has no effect if `random_bg` is True
     bg: RGBColor
+
     # ignore `bg` specification and use random color for transparent parts of the image
     random_bg: bool
 
@@ -133,5 +136,6 @@ class RenderingOptions:
 class RigidTransformation:
     # [3, 3] rotation matrix
     rotation: jax.Array
+
     # [3] translation vector
     translation: jax.Array
