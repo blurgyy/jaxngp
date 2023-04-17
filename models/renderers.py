@@ -392,7 +392,7 @@ def render_image(
             bg = jran.uniform(key, preds.shape, preds.dtype, minval=0, maxval=1)
         else:
             bg = options.bg
-        rgbs = blend_alpha_channel(jnp.concatenate([preds, weights.sum(axis=-1, keepdims=True)], axis=-1), bg=bg)
+        rgbs = preds + (1 - weights) * bg
         depths = depths / (bound_max * 2 + jnp.linalg.norm(transform_cw.translation))
         image_array = set_pixels(image_array, xys, idcs, rgbs)
         depth_array = set_pixels(depth_array, xys, idcs, depths)

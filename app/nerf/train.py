@@ -92,10 +92,7 @@ def train_step(
             bg = jran.uniform(key, preds.shape, dtype=preds.dtype, minval=0, maxval=1)
         else:
             bg = render_options.bg
-        pred_rgbs = data.blend_alpha_channel(
-            imgarr=jnp.concatenate([preds, weights.sum(axis=-1, keepdims=True)], axis=-1),
-            bg=bg,
-        )
+        pred_rgbs = preds + (1 - weights) * bg
         gt_rgbs = data.blend_alpha_channel(imgarr=gt, bg=bg)
         # from NVlabs/instant-ngp/commit/d6c7241de9be5be1b6d85fe43e446d2eb042511b
         # Note: we divide the huber loss by a factor of 5 such that its L2 region near zero
