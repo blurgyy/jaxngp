@@ -1,3 +1,4 @@
+import chex
 import jax
 import jax.numpy as jnp
 
@@ -21,6 +22,12 @@ def march_rays_abstract(
     stepsize_portion: float,
 ):
     n_rays, _ = rays_o.shape
+
+    chex.assert_shape([rays_o, rays_d], (n_rays, 3))
+    chex.assert_shape([t_starts, t_ends, noises], (n_rays,))
+
+    chex.assert_shape(occupancy_bitfield, (K*G*G*G//8,))
+    chex.assert_type(occupancy_bitfield, jnp.uint8)
 
     dtype = jax.dtypes.canonicalize_dtype(rays_o.dtype)
     if dtype != jnp.float32:

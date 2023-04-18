@@ -66,11 +66,7 @@ def march_rays(
                                   locations are masked out with zeros.
     """
     n_rays, _ = rays_o.shape
-
     noises = jnp.broadcast_to(noises, (n_rays,))
-
-    chex.assert_shape([rays_o, rays_d], (n_rays, 3))
-    chex.assert_shape([t_starts, t_ends, noises], (n_rays,))
 
     chex.assert_scalar_positive(total_samples)
     chex.assert_scalar_positive(diagonal_n_steps)
@@ -78,9 +74,6 @@ def march_rays(
     chex.assert_scalar_positive(G)
     chex.assert_scalar_positive(bound)
     chex.assert_scalar_non_negative(stepsize_portion)
-
-    chex.assert_shape(occupancy_bitfield, (K*G*G*G//8,))
-    chex.assert_type(occupancy_bitfield, jnp.uint8)
 
     measured_batch_size_before_compaction, rays_n_samples, rays_sample_startidx, xyzs, dirs, dss, z_vals = impl.march_rays_p.bind(
         # arrays
