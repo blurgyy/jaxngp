@@ -274,7 +274,7 @@ def make_nerf_ngp(bound: float) -> NeRF:
         density_Ds=[64],
         density_out_dim=16,
         density_skip_in_layers=[],
-        density_act="truncated_thresholded_exponential",
+        density_act="truncated_exponential",
 
         rgb_Ds=[64, 64],
         rgb_out_dim=3,
