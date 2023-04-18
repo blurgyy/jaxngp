@@ -50,7 +50,6 @@ def integrate_rays_lowering_rule(
 
         "helper.counter": (1,),
 
-        "out.reached_bg": (n_rays,),
         "out.opacities": (n_rays,),
         "out.final_rgbs": (n_rays, 3),
         "out.depths": (n_rays,),
@@ -60,7 +59,6 @@ def integrate_rays_lowering_rule(
         call_target_name="integrate_rays",
         out_types=[
             ir.RankedTensorType.get(shapes["helper.counter"], ir.IntegerType.get_unsigned(32)),
-            ir.RankedTensorType.get(shapes["out.reached_bg"], ir.IntegerType.get_signless(1)),  # jnp.bool_ is i1
             ir.RankedTensorType.get(shapes["out.opacities"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.final_rgbs"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.depths"], ir.F32Type.get()),
@@ -88,7 +86,6 @@ def integrate_rays_lowering_rule(
         ),
         result_layouts=default_layouts(
             shapes["helper.counter"],
-            shapes["out.reached_bg"],
             shapes["out.opacities"],
             shapes["out.final_rgbs"],
             shapes["out.depths"],
@@ -112,7 +109,6 @@ def integrate_rays_backward_lowring_rule(
     rgbs: ir.Value,
 
     # original outputs
-    reached_bg: ir.Value,
     opacities: ir.Value,
     final_rgbs: ir.Value,
     depths: ir.Value,
@@ -138,7 +134,6 @@ def integrate_rays_backward_lowring_rule(
         "in.densities": (total_samples, 1),
         "in.rgbs": (total_samples, 3),
 
-        "in.reached_bg": (n_rays,),
         "in.opacities": (n_rays,),
         "in.final_rgbs": (n_rays, 3),
         "in.depths": (n_rays,),
@@ -172,7 +167,6 @@ def integrate_rays_backward_lowring_rule(
             densities,
             rgbs,
 
-            reached_bg,
             opacities,
             final_rgbs,
             depths,
@@ -192,7 +186,6 @@ def integrate_rays_backward_lowring_rule(
             shapes["in.densities"],
             shapes["in.rgbs"],
 
-            shapes["in.reached_bg"],
             shapes["in.opacities"],
             shapes["in.final_rgbs"],
             shapes["in.depths"],

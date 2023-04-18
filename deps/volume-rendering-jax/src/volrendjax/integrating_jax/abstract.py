@@ -35,7 +35,6 @@ def integrate_rays_abstract(
     shapes = {
         "helper.counter": (1,),
 
-        "out.reached_bg": (n_rays,),
         "out.opacities": (n_rays,),
         "out.final_rgbs": (n_rays, 3),
         "out.depths": (n_rays,),
@@ -44,7 +43,6 @@ def integrate_rays_abstract(
     return (
         jax.ShapedArray(shape=shapes["helper.counter"], dtype=jnp.uint32),
 
-        jax.ShapedArray(shape=shapes["out.reached_bg"], dtype=jnp.bool_),
         jax.ShapedArray(shape=shapes["out.opacities"], dtype=jnp.float32),
         jax.ShapedArray(shape=shapes["out.final_rgbs"], dtype=jnp.float32),
         jax.ShapedArray(shape=shapes["out.depths"], dtype=jnp.float32),
@@ -64,7 +62,6 @@ def integrate_rays_backward_abstract(
     rgbs: jax.Array,
 
     # original outputs
-    reached_bg: jax.Array,
     opacities: jax.Array,
     final_rgbs: jax.Array,
     depths: jax.Array,
@@ -81,7 +78,6 @@ def integrate_rays_backward_abstract(
     chex.assert_shape(z_vals, (total_samples,))
     chex.assert_shape(densities, (total_samples, 1))
     chex.assert_shape(rgbs, (total_samples, 3))
-    chex.assert_shape(reached_bg, (n_rays,))
     chex.assert_shape([opacities, dL_dopacities], (n_rays,))
     chex.assert_shape([final_rgbs, dL_dfinal_rgbs], (n_rays, 3))
     chex.assert_shape([depths, dL_ddepths], (n_rays,))

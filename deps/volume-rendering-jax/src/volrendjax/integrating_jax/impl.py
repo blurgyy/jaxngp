@@ -54,7 +54,7 @@ def __integrate_rays(
     transmittance_threshold = jax.numpy.broadcast_to(transmittance_threshold, rays_sample_startidx.shape)
     bgs = jax.numpy.broadcast_to(bgs, (rays_sample_startidx.shape[0], 3))
 
-    counter, reached_bg, opacities, final_rgbs, depths = integrate_rays_p.bind(
+    counter, opacities, final_rgbs, depths = integrate_rays_p.bind(
         transmittance_threshold,
         rays_sample_startidx,
         rays_n_samples,
@@ -65,7 +65,7 @@ def __integrate_rays(
         rgbs,
     )
 
-    return counter, reached_bg, opacities, final_rgbs, depths
+    return counter, opacities, final_rgbs, depths
 
 def __fwd_integrate_rays(
     transmittance_threshold: jax.Array,
@@ -90,7 +90,7 @@ def __fwd_integrate_rays(
         densities,
         rgbs,
     )
-    counter, reached_bg, opacities, final_rgbs, depths = primal_outputs
+    counter, opacities, final_rgbs, depths = primal_outputs
     aux = {
         "in.transmittance_threshold": transmittance_threshold,
         "in.rays_sample_startidx": rays_sample_startidx,
@@ -102,7 +102,6 @@ def __fwd_integrate_rays(
         "in.rgbs": rgbs,
 
         "out.counter": counter,
-        "out.reached_bg": reached_bg,
         "out.opacities": opacities,
         "out.final_rgbs": final_rgbs,
         "out.depths": depths,
@@ -110,7 +109,7 @@ def __fwd_integrate_rays(
     return primal_outputs, aux
 
 def __bwd_integrate_rays(aux, grads):
-    _, _, dL_dopacities, dL_dfinal_rgbs, dL_ddepths = grads
+    _, dL_dopacities, dL_dfinal_rgbs, dL_ddepths = grads
     dL_dbgs, dL_dz_vals, dL_ddensities, dL_drgbs = integrate_rays_bwd_p.bind(
         aux["in.transmittance_threshold"],
         aux["in.rays_sample_startidx"],
@@ -121,7 +120,6 @@ def __bwd_integrate_rays(aux, grads):
         aux["in.densities"],
         aux["in.rgbs"],
 
-        aux["out.reached_bg"],
         aux["out.opacities"],
         aux["out.final_rgbs"],
         aux["out.depths"],

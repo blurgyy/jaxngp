@@ -47,7 +47,7 @@ def integrate_rays(
         final_rgbs `[n_rays, 3]~: integrated ray colors according to input densities and rgbs.
         depths `[n_rays]`: estimated termination depth of each ray
     """
-    counter, reached_bg, opacities, final_rgbs, depths = impl.__integrate_rays(
+    counter, opacities, final_rgbs, depths = impl.__integrate_rays(
         transmittance_threshold,
         rays_sample_startidx,
         rays_n_samples,

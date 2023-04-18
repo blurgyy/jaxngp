@@ -37,7 +37,6 @@ __global__ void integrate_rays_kernel(
     , std::uint32_t * const __restrict__ counter  // [1]
 
     // output arrays (4)
-    , bool * const __restrict__ reached_bg  // [n_rays]
     , float * const __restrict__ opacities  // [n_rays]
     , float * const __restrict__ final_rgbs  // [n_rays]
     , float * const __restrict__ depths  // [n_rays]
@@ -84,17 +83,19 @@ __global__ void integrate_rays_kernel(
         ray_transmittance *= 1.f - alpha;
     }
 
-    bool const ray_reached_bg = sample_idx == n_samples;
+    // stop ray marching and **set the remaining contribution to zero** as soon as the transmittance
+    // of the ray drops below a threshold
+    bool const ray_reached_bg = ray_transmittance > transmittance_threshold[i];
+    ray_transmittance = ray_reached_bg ? ray_transmittance : 0.f;
 
     // write to global memory at last
     atomicAdd(counter, sample_idx);  // `counter` stores effective batch size (`measured_batch_size` in NGP)
-    opacities[i] = ray_opacity;
+    opacities[i] = ray_reached_bg ? 1.f : ray_opacity;
     depths[i] = ray_depth;
-    reached_bg[i] = ray_reached_bg;
     // NOTE: `ray_transmittance` equals to `1 - ray_opacity`
-    final_rgbs[i*3+0] = r + (ray_reached_bg ? ray_transmittance * ray_bgs[0] : 0.f);
-    final_rgbs[i*3+1] = g + (ray_reached_bg ? ray_transmittance * ray_bgs[1] : 0.f);
-    final_rgbs[i*3+2] = b + (ray_reached_bg ? ray_transmittance * ray_bgs[2] : 0.f);
+    final_rgbs[i*3+0] = r + ray_transmittance * ray_bgs[0];
+    final_rgbs[i*3+1] = g + ray_transmittance * ray_bgs[1];
+    final_rgbs[i*3+2] = b + ray_transmittance * ray_bgs[2];
 }
 
 __global__ void integrate_rays_backward_kernel(
@@ -114,7 +115,6 @@ __global__ void integrate_rays_backward_kernel(
     , float const * const __restrict__ rgbs  // [total_samples, 3]
 
     /// original outputs
-    , bool const * const __restrict__ reached_bg  // [n_rays]
     , float const * const __restrict__ opacities  // [n_rays]
     , float const * const __restrict__ final_rgbs  // [n_rays, 3]
     , float const * const __restrict__ depths  // [n_rays]
@@ -145,7 +145,6 @@ __global__ void integrate_rays_backward_kernel(
     float const * const __restrict__ ray_rgbs = rgbs + start_idx * 3;  // [n_samples, 3]
 
     /// original outputs
-    bool const ray_reached_bg = reached_bg[i];  // [] (a scalar has no shape)
     float const ray_opacity = opacities[i];  // [] (a scalar has no shape)
     float const * const __restrict__ ray_final_rgb = final_rgbs + i * 3;  // [3]
     float const ray_depth = depths[i];  // [] (a scalar has no shape)
@@ -163,11 +162,9 @@ __global__ void integrate_rays_backward_kernel(
 
     // gradients for background colors
     // NOTE: `ray_transmittance` equals to `1 - ray_opacity`
-    if (ray_reached_bg) {
-        ray_dL_dbgs[0] = (1.f - ray_opacity) * ray_dL_dfinal_rgb[0];
-        ray_dL_dbgs[1] = (1.f - ray_opacity) * ray_dL_dfinal_rgb[1];
-        ray_dL_dbgs[2] = (1.f - ray_opacity) * ray_dL_dfinal_rgb[2];
-    }
+    ray_dL_dbgs[0] = (1.f - ray_opacity) * ray_dL_dfinal_rgb[0];
+    ray_dL_dbgs[1] = (1.f - ray_opacity) * ray_dL_dfinal_rgb[1];
+    ray_dL_dbgs[2] = (1.f - ray_opacity) * ray_dL_dfinal_rgb[2];
 
     // front-to-back composition, with early stop
     float transmittance = 1.f;
@@ -244,14 +241,12 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
     std::uint32_t * const __restrict__ counter = static_cast<std::uint32_t *>(next_buffer());  // [1]
 
     // outputs
-    bool * const __restrict__ reached_bg = static_cast<bool *>(next_buffer());;  // [n_rays]
     float * const __restrict__ opacities = static_cast<float *>(next_buffer());  // [n_rays]
     float * const __restrict__ final_rgbs = static_cast<float *>(next_buffer());  // [n_rays, 3]
     float * const __restrict__ depths = static_cast<float *>(next_buffer());  // [n_rays]
 
     // reset all outputs to zero
     CUDA_CHECK_THROW(cudaMemsetAsync(counter, 0x00, sizeof(std::uint32_t), stream));
-    CUDA_CHECK_THROW(cudaMemsetAsync(reached_bg, true, sizeof(bool), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(opacities, 0x00, n_rays * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(final_rgbs, 0x00, n_rays * 3 * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(depths, 0x00, n_rays * sizeof(float), stream));
@@ -274,7 +269,6 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
         // helper counter
         , counter
         // output arrays (3)
-        , reached_bg
         , opacities
         , final_rgbs
         , depths
@@ -307,7 +301,6 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
     float const * const __restrict__ densities = static_cast<float *>(next_buffer());  // [total_samples]
     float const * const __restrict__ rgbs = static_cast<float *>(next_buffer());  // [total_samples, 3]
     //// original outputs
-    bool const * const __restrict__ reached_bg = static_cast<bool *>(next_buffer());  // [n_rays]
     float const * const __restrict__ opacities = static_cast<float *>(next_buffer());  // [n_rays]
     float const * const __restrict__ final_rgbs = static_cast<float *>(next_buffer());  // [n_rays, 3]
     float const * const __restrict__ depths = static_cast<float *>(next_buffer());  // [n_rays]
@@ -346,7 +339,6 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
         , densities
         , rgbs
         /// original outputs
-        , reached_bg
         , opacities
         , final_rgbs
         , depths
