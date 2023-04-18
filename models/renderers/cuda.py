@@ -153,7 +153,7 @@ def make_near_far_from_bound(
     return t_start, t_end
 
 
-@jit_jaxfn_with(static_argnames=["bound", "total_samples", "options", "max_n_samples", "nerf_fn"])
+@jit_jaxfn_with(static_argnames=["bound", "total_samples", "options", "nerf_fn"])
 def render_rays(
     KEY: jran.KeyArray,
     o_world: jax.Array,
@@ -163,7 +163,6 @@ def render_rays(
     total_samples: int,
     ogrid: OccupancyDensityGrid,
     options: RayMarchingOptions,
-    max_n_samples: int,
     param_dict: FrozenVariableDict,
     nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
 ):
@@ -183,7 +182,6 @@ def render_rays(
     else:
         noises = 0.
     measured_batch_size_before_compaction, rays_n_samples, rays_sample_startidx, ray_pts, ray_dirs, dss, z_vals = march_rays(
-        max_n_samples_per_ray=max_n_samples,
         total_samples=total_samples,
         max_steps=options.max_steps,
         K=cascades_from_bound(bound),
@@ -260,7 +258,6 @@ def render_image(
             total_samples=int(batch_config.estimated_batch_size * 1.25),  # FIXME: implement a reliable way to render all rays
             ogrid=ogrid,
             options=raymarch_options,
-            max_n_samples=raymarch_options.max_steps,
             param_dict=param_dict,
             nerf_fn=nerf_fn,
         )

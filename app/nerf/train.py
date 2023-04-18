@@ -95,7 +95,6 @@ def train_step(
             total_samples=total_samples,
             ogrid=state.ogrid,
             options=raymarch_options,
-            max_n_samples=max_samples_per_ray,
             param_dict={"params": params},
             nerf_fn=state.apply_fn,
         )

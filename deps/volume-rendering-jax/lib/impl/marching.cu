@@ -60,7 +60,6 @@ inline __device__ std::uint32_t __morton3D_invert(std::uint32_t x) {
 __global__ void march_rays_kernel(
     // static
     std::uint32_t const n_rays
-    , std::uint32_t const max_n_samples_per_ray
     , std::uint32_t const total_samples
     , std::uint32_t const max_steps
     , std::uint32_t const K
@@ -109,7 +108,7 @@ __global__ void march_rays_kernel(
     std::uint32_t ray_n_samples = 0;
     float ray_t = ray_t_start;
     ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_steps) * ray_noise;
-    while (ray_n_samples < max_n_samples_per_ray && ray_t < ray_t_end) {
+    while (ray_n_samples < max_steps && ray_t < ray_t_end) {
         float const x = ray_o[0] + ray_t * ray_d[0];
         float const y = ray_o[1] + ray_t * ray_d[1];
         float const z = ray_o[2] + ray_t * ray_d[2];
@@ -172,7 +171,7 @@ __global__ void march_rays_kernel(
     // march rays again, this time write sampled points to output
     std::uint32_t steps = 0;
     ray_t = ray_t_start;
-    ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_n_samples_per_ray) * ray_noise;
+    ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_steps) * ray_noise;
     // NOTE:
     //  we still need the condition (ray_t < ray_t_end) because if a ray never hits an occupied grid
     //  cell, its `steps` won't increment, adding this condition avoids infinite loops.
@@ -181,7 +180,7 @@ __global__ void march_rays_kernel(
         float const y = ray_o[1] + ray_t * ray_d[1];
         float const z = ray_o[2] + ray_t * ray_d[2];
 
-        float const ds = calc_ds(ray_t, stepsize_portion, bound, G, max_n_samples_per_ray);
+        float const ds = calc_ds(ray_t, stepsize_portion, bound, G, max_steps);
 
         // among the grids covering xyz, the finest one with cell side-length larger than Δ𝑡 is
         // queried.
@@ -222,7 +221,7 @@ __global__ void march_rays_kernel(
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
             // step until next voxel
             do { 
-                ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_n_samples_per_ray);
+                ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_steps);
             } while (ray_t < tt);
         }
     }
@@ -273,7 +272,6 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     /// static
     MarchingDescriptor const &desc = *deserialize<MarchingDescriptor>(opaque, opaque_len);
     std::uint32_t const n_rays = desc.n_rays;
-    std::uint32_t const max_n_samples_per_ray = desc.max_n_samples_per_ray;
     std::uint32_t const total_samples = desc.total_samples;
     std::uint32_t const max_steps = desc.max_steps;
     std::uint32_t const K = desc.K;
@@ -315,7 +313,6 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     march_rays_kernel<<<numBlocks, blockSize, 0, stream>>>(
         // static
         n_rays
-        , max_n_samples_per_ray
         , total_samples
         , max_steps
         , K

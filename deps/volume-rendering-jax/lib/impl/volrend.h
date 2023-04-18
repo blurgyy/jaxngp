@@ -33,9 +33,6 @@ struct MarchingDescriptor {
     // number of input rays
     std::uint32_t n_rays;
 
-    // maximum number of samples to generate per ray
-    std::uint32_t max_n_samples_per_ray;
-
     // number of available slots to write generated samples to, i.e. the length of output samples
     // array
     std::uint32_t total_samples;

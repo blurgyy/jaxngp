@@ -28,7 +28,6 @@ def march_rays_lowering_rule(
     occupancy_bitfield: ir.Value,
 
     # static args
-    max_n_samples_per_ray: int,  # int
     total_samples: int,  # int
     max_steps: int,  # int
     K: int,  # int
@@ -40,7 +39,6 @@ def march_rays_lowering_rule(
 
     opaque = volrendutils_cuda.make_marching_descriptor(
         n_rays,
-        max_n_samples_per_ray,
         total_samples,
         max_steps,
         K,

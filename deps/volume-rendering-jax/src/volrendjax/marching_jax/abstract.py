@@ -13,7 +13,6 @@ def march_rays_abstract(
     occupancy_bitfield: jax.ShapedArray,
 
     # static args
-    max_n_samples_per_ray: int,
     total_samples: int,
     max_steps: int,
     K: int,

@@ -8,7 +8,6 @@ from . import impl
 
 def march_rays(
     # static
-    max_n_samples_per_ray: int,
     total_samples: int,
     max_steps: int,
     K: int,
@@ -30,7 +29,6 @@ def march_rays(
     each ray.
 
     Inputs:
-        max_n_samples_per_ray `int`: maximum samples to generate on each ray
         total_samples `int`: ,
         max_steps `int`: the length of a minimal ray marching step is calculated internally as:
                             Δ𝑡 := √3 / max_steps;
@@ -72,7 +70,6 @@ def march_rays(
     chex.assert_shape([rays_o, rays_d], (n_rays, 3))
     chex.assert_shape([t_starts, t_ends, noises], (n_rays,))
 
-    chex.assert_scalar_positive(max_n_samples_per_ray)
     chex.assert_scalar_positive(total_samples)
     chex.assert_scalar_positive(max_steps)
     chex.assert_scalar_positive(K)
@@ -93,7 +90,6 @@ def march_rays(
         occupancy_bitfield,
 
         # static args
-        max_n_samples_per_ray=max_n_samples_per_ray,
         total_samples=total_samples,
         max_steps=max_steps,
         K=K,
