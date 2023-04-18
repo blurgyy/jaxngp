@@ -108,7 +108,7 @@ __global__ void march_rays_kernel(
     std::uint32_t ray_n_samples = 0;
     float ray_t = ray_t_start;
     ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_steps) * ray_noise;
-    while (ray_n_samples < max_steps && ray_t < ray_t_end) {
+    while (ray_n_samples < max_steps * bound && ray_t < ray_t_end) {
         float const x = ray_o[0] + ray_t * ray_d[0];
         float const y = ray_o[1] + ray_t * ray_d[1];
         float const z = ray_o[2] + ray_t * ray_d[2];
