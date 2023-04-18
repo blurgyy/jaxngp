@@ -37,9 +37,9 @@ struct MarchingDescriptor {
     // array
     std::uint32_t total_samples;
 
-    // the length of a minimal ray marching step is calculated as Δ𝑡 := √3 / 1024 (Appendix E.1 of
-    // the NGP paper.
-    std::uint32_t max_steps;
+    // the length of a minimal ray marching step is calculated as Δ𝑡 := 2*√3/`diagonal_n_steps`
+    // (Appendix E.1 of the NGP paper)
+    std::uint32_t diagonal_n_steps;
 
     // paper: we maintain a cascade of 𝐾 multiscale occupancy grids, where 𝐾 = 1 for all synthetic
     // NeRF scenes (single grid) and 𝐾 ∈ [1, 5] for larger real-world scenes (up to 5 grids,

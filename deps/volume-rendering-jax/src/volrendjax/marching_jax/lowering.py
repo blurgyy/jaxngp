@@ -29,7 +29,7 @@ def march_rays_lowering_rule(
 
     # static args
     total_samples: int,  # int
-    max_steps: int,  # int
+    diagonal_n_steps: int,  # int
     K: int,  # int
     G: int,  # int
     bound: float,  # float
@@ -40,7 +40,7 @@ def march_rays_lowering_rule(
     opaque = volrendutils_cuda.make_marching_descriptor(
         n_rays,
         total_samples,
-        max_steps,
+        diagonal_n_steps,
         K,
         G,
         bound,

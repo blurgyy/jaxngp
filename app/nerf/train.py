@@ -26,13 +26,12 @@ from utils.types import (
 )
 
 
-@common.jit_jaxfn_with(static_argnames=["bound", "total_samples", "max_samples_per_ray", "raymarch_options", "render_options"])
+@common.jit_jaxfn_with(static_argnames=["bound", "total_samples", "raymarch_options", "render_options"])
 def train_step(
         KEY: jran.KeyArray,
         state: NeRFTrainState,
         bound: float,
         total_samples: int,
-        max_samples_per_ray: int,
         camera: PinholeCamera,
         raymarch_options: RayMarchingOptions,
         render_options: RenderingOptions,
@@ -150,7 +149,6 @@ def train_epoch(
             state=state,
             bound=bound,
             total_samples=total_samples,
-            max_samples_per_ray=raymarch_options.max_steps,  # use a fixed value of `max_samples_per_ray` to reduce jit compiliations
             camera=scene_metadata.camera,
             raymarch_options=raymarch_options,
             render_options=render_options,
@@ -272,8 +270,8 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
             grid_resolution=args.raymarch.density_grid_res,
         ),
         batch_config=NeRFBatchConfig(
-            mean_samples_per_ray=args.raymarch.max_steps,
-            n_rays=args.train.bs // args.raymarch.max_steps,
+            mean_samples_per_ray=args.raymarch.diagonal_n_steps,
+            n_rays=args.train.bs // args.raymarch.diagonal_n_steps,
         ),
     )
 

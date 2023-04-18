@@ -126,7 +126,7 @@ class NeRFTrainingArgs(_NeRFArgs):
 
     # raymarching/rendering options during training
     raymarch: RayMarchingOptions=RayMarchingOptions(
-        max_steps=1<<10,
+        diagonal_n_steps=1<<10,
         perturb=True,
         stepsize_portion=0,
         density_grid_res=128,
@@ -138,7 +138,7 @@ class NeRFTrainingArgs(_NeRFArgs):
 
     # raymarching/rendering options for validating during training
     raymarch_eval: RayMarchingOptions=RayMarchingOptions(
-        max_steps=1<<10,
+        diagonal_n_steps=1<<10,
         perturb=False,
         stepsize_portion=0,
         density_grid_res=128,
@@ -164,7 +164,7 @@ class NeRFTestingArgs(_NeRFArgs):
 
     # raymarching/rendering options during testing
     raymarch: RayMarchingOptions=RayMarchingOptions(
-        max_steps=1<<10,
+        diagonal_n_steps=1<<10,
         perturb=False,
         stepsize_portion=0,
         density_grid_res=128,

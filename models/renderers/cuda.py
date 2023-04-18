@@ -93,7 +93,7 @@ def update_ogrid(
     # (3) update the occupancy bits by thresholding each cell’s density with 𝑡 = 0.01 · 1024/√3,
     # which corresponds to thresholding the opacity of a minimal ray marching step by 1 − exp(−0.01)
     # ≈ 0.01.
-    density_threshold = .01 * raymarch.max_steps / (2 * min(bound, 1) * 3**.5)
+    density_threshold = .01 * raymarch.diagonal_n_steps / (2 * min(bound, 1) * 3**.5)
     mean_density = jnp.sum(jnp.where(density_grid > 0, density_grid, 0)) / jnp.sum(jnp.where(density_grid > 0, 1, 0))
     density_threshold = jnp.minimum(density_threshold, mean_density)
     # density_threshold = 1e-2
@@ -183,7 +183,7 @@ def render_rays(
         noises = 0.
     measured_batch_size_before_compaction, rays_n_samples, rays_sample_startidx, ray_pts, ray_dirs, dss, z_vals = march_rays(
         total_samples=total_samples,
-        max_steps=options.max_steps,
+        diagonal_n_steps=options.diagonal_n_steps,
         K=cascades_from_bound(bound),
         G=options.density_grid_res,
         bound=bound,

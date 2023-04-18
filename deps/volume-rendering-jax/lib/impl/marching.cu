@@ -6,12 +6,12 @@ namespace volrendjax {
 namespace {
 
 // this is the same function as `calc_dt` in ngp_pl's implementation
-inline __device__ float calc_ds(float ray_t, float stepsize_portion, float bound, std::uint32_t grid_res, std::uint32_t max_steps) {
+inline __device__ float calc_ds(float ray_t, float stepsize_portion, float bound, std::uint32_t grid_res, std::uint32_t diagonal_n_steps) {
     // from appendix E.1 of the NGP paper (the paper sets stepsize_portion=0 for synthetic scenes
     // and 1/256 for others)
     return clampf(
         ray_t * stepsize_portion,
-        2 * (float)SQRT3 * fminf(bound, 1.f) / max_steps,
+        2 * (float)SQRT3 * fminf(bound, 1.f) / diagonal_n_steps,
         2 * (float)SQRT3 * bound / grid_res
     );
 }
@@ -61,7 +61,7 @@ __global__ void march_rays_kernel(
     // static
     std::uint32_t const n_rays
     , std::uint32_t const total_samples
-    , std::uint32_t const max_steps
+    , std::uint32_t const diagonal_n_steps
     , std::uint32_t const K
     , std::uint32_t const G
     , float const bound
@@ -107,13 +107,13 @@ __global__ void march_rays_kernel(
     /// but not writing the samples to output!  Writing is done in another marching pass below
     std::uint32_t ray_n_samples = 0;
     float ray_t = ray_t_start;
-    ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_steps) * ray_noise;
-    while (ray_n_samples < max_steps * bound && ray_t < ray_t_end) {
+    ray_t += calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps) * ray_noise;
+    while (ray_n_samples < diagonal_n_steps * bound && ray_t < ray_t_end) {
         float const x = ray_o[0] + ray_t * ray_d[0];
         float const y = ray_o[1] + ray_t * ray_d[1];
         float const z = ray_o[2] + ray_t * ray_d[2];
 
-        float const ds = calc_ds(ray_t, stepsize_portion, bound, G, max_steps);
+        float const ds = calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps);
 
         // among the grids covering xyz, the finest one with cell side-length larger than Δ𝑡 is
         // queried.
@@ -145,7 +145,7 @@ __global__ void march_rays_kernel(
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
             // step until next voxel
             do { 
-                ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_steps);
+                ray_t += calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps);
             } while (ray_t < tt);
         }
     }
@@ -171,7 +171,7 @@ __global__ void march_rays_kernel(
     // march rays again, this time write sampled points to output
     std::uint32_t steps = 0;
     ray_t = ray_t_start;
-    ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_steps) * ray_noise;
+    ray_t += calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps) * ray_noise;
     // NOTE:
     //  we still need the condition (ray_t < ray_t_end) because if a ray never hits an occupied grid
     //  cell, its `steps` won't increment, adding this condition avoids infinite loops.
@@ -180,7 +180,7 @@ __global__ void march_rays_kernel(
         float const y = ray_o[1] + ray_t * ray_d[1];
         float const z = ray_o[2] + ray_t * ray_d[2];
 
-        float const ds = calc_ds(ray_t, stepsize_portion, bound, G, max_steps);
+        float const ds = calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps);
 
         // among the grids covering xyz, the finest one with cell side-length larger than Δ𝑡 is
         // queried.
@@ -221,7 +221,7 @@ __global__ void march_rays_kernel(
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
             // step until next voxel
             do { 
-                ray_t += calc_ds(ray_t, stepsize_portion, bound, G, max_steps);
+                ray_t += calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps);
             } while (ray_t < tt);
         }
     }
@@ -273,7 +273,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     MarchingDescriptor const &desc = *deserialize<MarchingDescriptor>(opaque, opaque_len);
     std::uint32_t const n_rays = desc.n_rays;
     std::uint32_t const total_samples = desc.total_samples;
-    std::uint32_t const max_steps = desc.max_steps;
+    std::uint32_t const diagonal_n_steps = desc.diagonal_n_steps;
     std::uint32_t const K = desc.K;
     std::uint32_t const G = desc.G;
     float const bound = desc.bound;
@@ -314,7 +314,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
         // static
         n_rays
         , total_samples
-        , max_steps
+        , diagonal_n_steps
         , K
         , G
         , bound

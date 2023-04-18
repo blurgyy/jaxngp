@@ -110,8 +110,9 @@ class PinholeCamera:
 
 @dataclass
 class RayMarchingOptions:
-    # maximum number of samples to generate along a ray, the NGP paper uses 1024 (appendix E.1)
-    max_steps: int
+    # for calculating the length of a minimal ray marching step, the NGP paper uses 1024 (appendix
+    # E.1)
+    diagonal_n_steps: int
 
     # whether to fluctuate the first sample along the ray with a tiny perturbation
     perturb: bool
