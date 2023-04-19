@@ -1,6 +1,5 @@
 from collections.abc import Callable
 
-import chex
 from flax.core.scope import FrozenVariableDict
 from icecream import ic
 import jax
@@ -233,8 +232,6 @@ def render_image(
     param_dict: FrozenVariableDict,
     nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
 ):
-    chex.assert_shape([transform_cw.rotation, transform_cw.translation], [(3, 3), (3,)])
-
     o_world, d_world = make_rays_worldspace(camera=camera, transform_cw=transform_cw)
 
     KEY, key = jran.split(KEY, 2)

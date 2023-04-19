@@ -1,5 +1,6 @@
 from typing import Literal, Tuple
 
+import chex
 from flax.struct import dataclass
 from flax.training.train_state import TrainState
 import jax
@@ -140,3 +141,7 @@ class RigidTransformation:
 
     # [3] translation vector
     translation: jax.Array
+
+    def __post_init__(self):
+        chex.assert_shape([self.rotation, self.translation], [(3, 3), (3,)])
+
