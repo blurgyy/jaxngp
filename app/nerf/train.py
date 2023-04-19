@@ -60,7 +60,7 @@ def train_step(
         d_cam /= jnp.linalg.norm(d_cam, axis=-1, keepdims=True) + 1e-15
 
         # indices of views, used to retrieve transformation information for each ray
-        view_idcs = perm // (camera.H * camera.W)
+        view_idcs = perm // camera.n_pixels
         # [N, 3]
         o_world = all_transforms[view_idcs, -3:]  # WARN: using `perm` instead of `view_idcs` here
                                                   # will silently clip the out-of-bounds indices.

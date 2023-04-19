@@ -108,6 +108,10 @@ class PinholeCamera:
     # focal length
     focal: float
 
+    @property
+    def n_pixels(self) -> int:
+        return self.H * self.W
+
 
 @dataclass
 class RayMarchingOptions:
