@@ -201,3 +201,89 @@ def integrate_rays_backward_lowring_rule(
             shapes["out.dL_drgbs"],
         ),
     )
+
+
+def integrate_rays_inference_lowering_rule(
+    ctx: mlir.LoweringRuleContext,
+
+    rays_bg: ir.Value,
+    rays_rgb: ir.Value,
+    rays_T: ir.Value,
+    rays_depth: ir.Value,
+
+    n_samples: ir.Value,
+    indices: ir.Value,
+    dss: ir.Value,
+    z_vals: ir.Value,
+    densities: ir.Value,
+    rgbs: ir.Value,
+):
+    (n_total_rays, _) = ir.RankedTensorType(rays_rgb.type).shape
+    (n_rays, march_steps_cap) = ir.RankedTensorType(dss.type).shape
+
+    opaque = volrendutils_cuda.make_integrating_inference_descriptor(n_total_rays, n_rays, march_steps_cap)
+
+    shapes = {
+        "in.rays_bg": (n_total_rays, 3),
+        "in.rays_rgb": (n_total_rays, 3),
+        "in.rays_T": (n_total_rays,),
+        "in.rays_depth": (n_total_rays,),
+
+        "in.n_samples": (n_rays,),
+        "in.indices": (n_rays,),
+        "in.dss": (n_rays, march_steps_cap),
+        "in.z_vals": (n_rays, march_steps_cap),
+        "in.densities": (n_rays, march_steps_cap, 1),
+        "in.rgbs": (n_rays, march_steps_cap, 3),
+
+        "out.terminate_cnt": (1,),
+        "out.terminated": (n_rays,),
+        "out.rays_rgb": (n_total_rays, 3),
+        "out.rays_T": (n_total_rays,),
+        "out.rays_depth": (n_total_rays,),
+    }
+
+    return custom_call(
+        call_target_name="integrate_rays_inference",
+        out_types=[
+            ir.RankedTensorType.get(shapes["out.terminate_cnt"], ir.IntegerType.get_unsigned(32)),
+            ir.RankedTensorType.get(shapes["out.terminated"], ir.IntegerType.get_signless(1)),
+            ir.RankedTensorType.get(shapes["out.rays_rgb"], ir.F32Type.get()),
+            ir.RankedTensorType.get(shapes["out.rays_T"], ir.F32Type.get()),
+            ir.RankedTensorType.get(shapes["out.rays_depth"], ir.F32Type.get()),
+        ],
+        operands=[
+            rays_bg,
+            rays_rgb,
+            rays_T,
+            rays_depth,
+
+            n_samples,
+            indices,
+            dss,
+            z_vals,
+            densities,
+            rgbs,
+        ],
+        backend_config=opaque,
+        operand_layouts=default_layouts(
+            shapes["in.rays_bg"],
+            shapes["in.rays_rgb"],
+            shapes["in.rays_T"],
+            shapes["in.rays_depth"],
+
+            shapes["in.n_samples"],
+            shapes["in.indices"],
+            shapes["in.dss"],
+            shapes["in.z_vals"],
+            shapes["in.densities"],
+            shapes["in.rgbs"],
+        ),
+        result_layouts=default_layouts(
+            shapes["out.terminate_cnt"],
+            shapes["out.terminated"],
+            shapes["out.rays_rgb"],
+            shapes["out.rays_T"],
+            shapes["out.rays_depth"],
+        ),
+    )

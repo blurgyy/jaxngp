@@ -28,6 +28,18 @@ struct IntegratingDescriptor {
     std::uint32_t total_samples;
 };
 
+// Static parameters passed to `integrate_rays_inference`
+struct IntegratingInferenceDescriptor {
+    // total number of rays to march
+    std::uint32_t n_total_rays;
+
+    // number of input rays
+    std::uint32_t n_rays;
+
+    // see MarchingInferenceDescriptor
+    std::uint32_t march_steps_cap;
+};
+
 // Static parameters passed to `march_rays`
 struct MarchingDescriptor {
     // number of input rays
@@ -60,6 +72,28 @@ struct MarchingDescriptor {
     float stepsize_portion;
 };
 
+// Static parameters passed to `march_rays_inference`
+struct MarchingInferenceDescriptor {
+    // total number of rays to march
+    std::uint32_t n_total_rays;
+
+    // number of rays to march in this iteration
+    std::uint32_t n_rays;
+
+    // same things as `diagonal_n_steps`, `K`, and `G` in `MarchingDescriptor`
+    std::uint32_t diagonal_n_steps, K, G;
+
+    // max steps to march, this is only used for early stopping marching, the minimal ray marching
+    // step is still determined by `diagonal_n_steps`
+    std::uint32_t march_steps_cap;
+
+    // same thing as `bound` in `MarchingDescriptor`
+    float bound;
+
+    // same thing as `stepsize_portion` in `MarchingDescriptor`
+    float stepsize_portion;
+};
+
 struct Morton3DDescriptor {
     // number of entries to process
     std::uint32_t length;
@@ -79,6 +113,13 @@ void pack_density_into_bits(
 );
 
 void march_rays(
+    cudaStream_t stream,
+    void **buffers,
+    const char *opaque,
+    std::size_t opaque_len
+);
+
+void march_rays_inference(
     cudaStream_t stream,
     void **buffers,
     const char *opaque,
@@ -107,6 +148,13 @@ void integrate_rays(
 );
 
 void integrate_rays_backward(
+    cudaStream_t stream,
+    void **buffers,
+    const char *opaque,
+    std::size_t opaque_len
+);
+
+void integrate_rays_inference(
     cudaStream_t stream,
     void **buffers,
     const char *opaque,

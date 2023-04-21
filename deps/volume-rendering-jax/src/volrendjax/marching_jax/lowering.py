@@ -103,3 +103,100 @@ def march_rays_lowering_rule(
             shapes["out.z_vals"],
         ),
     )
+
+
+def march_rays_inference_lowering_rule(
+    ctx: mlir.LoweringRule,
+
+    # arrays
+    rays_o: ir.BlockArgument,
+    rays_d: ir.BlockArgument,
+    t_starts: ir.BlockArgument,
+    t_ends: ir.BlockArgument,
+    occupancy_bitfield: ir.BlockArgument,
+    counter: ir.BlockArgument,
+    terminated: ir.BlockArgument,
+    indices_in: ir.BlockArgument,
+
+    # static args
+    diagonal_n_steps: int,
+    K: int,
+    G: int,
+    march_steps_cap: int,
+    bound: float,
+    stepsize_portion: float,
+):
+    (n_total_rays, _), (n_rays,) = ir.RankedTensorType(rays_o.type).shape, ir.RankedTensorType(terminated.type).shape
+
+    opaque = volrendutils_cuda.make_marching_inference_descriptor(
+        n_total_rays,
+        n_rays,
+        diagonal_n_steps,
+        K,
+        G,
+        march_steps_cap,
+        bound,
+        stepsize_portion,
+    )
+
+    shapes = {
+        "in.rays_o": (n_total_rays, 3),
+        "in.rays_d": (n_total_rays, 3),
+        "in.t_starts": (n_total_rays,),
+        "in.t_ends": (n_total_rays,),
+        "in.occupancy_bitfield": (K*G*G*G//8,),
+        "in.counter": (1,),
+        "in.terminated": (n_rays,),
+        "in.indices_in": (n_rays,),
+
+        "out.counter": (1,),
+        "out.indices_out": (n_rays,),
+        "out.n_samples": (n_rays,),
+        "out.t_starts": (n_total_rays,),
+        "out.xyzdirs": (n_rays, march_steps_cap, 6),
+        "out.dss": (n_rays, march_steps_cap),
+        "out.z_vals": (n_rays, march_steps_cap),
+    }
+
+    return custom_call(
+        call_target_name="march_rays_inference",
+        out_types=[
+            ir.RankedTensorType.get(shapes["out.counter"], ir.IntegerType.get_unsigned(32)),
+            ir.RankedTensorType.get(shapes["out.indices_out"], ir.IntegerType.get_unsigned(32)),
+            ir.RankedTensorType.get(shapes["out.n_samples"], ir.IntegerType.get_unsigned(32)),
+            ir.RankedTensorType.get(shapes["out.t_starts"], ir.F32Type.get()),
+            ir.RankedTensorType.get(shapes["out.xyzdirs"], ir.F32Type.get()),
+            ir.RankedTensorType.get(shapes["out.dss"], ir.F32Type.get()),
+            ir.RankedTensorType.get(shapes["out.z_vals"], ir.F32Type.get()),
+        ],
+        operands=[
+            rays_o,
+            rays_d,
+            t_starts,
+            t_ends,
+            occupancy_bitfield,
+            counter,
+            terminated,
+            indices_in,
+        ],
+        backend_config=opaque,
+        operand_layouts=default_layouts(
+            shapes["in.rays_o"],
+            shapes["in.rays_d"],
+            shapes["in.t_starts"],
+            shapes["in.t_ends"],
+            shapes["in.occupancy_bitfield"],
+            shapes["in.counter"],
+            shapes["in.terminated"],
+            shapes["in.indices_in"],
+        ),
+        result_layouts=default_layouts(
+            shapes["out.counter"],
+            shapes["out.indices_out"],
+            shapes["out.n_samples"],
+            shapes["out.t_starts"],
+            shapes["out.xyzdirs"],
+            shapes["out.dss"],
+            shapes["out.z_vals"],
+        ),
+    )
