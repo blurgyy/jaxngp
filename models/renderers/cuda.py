@@ -239,7 +239,7 @@ def render_image(
 
     image_array = jnp.empty((camera.H, camera.W, 3), dtype=jnp.uint8)
     depth_array = jnp.empty((camera.H, camera.W), dtype=jnp.uint8)
-    for idcs in tqdm(indices, desc="| rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
+    for idcs in indices:
         if options.random_bg:
             KEY, key = jran.split(KEY, 2)
             bg = jran.uniform(key, rgbs.shape, rgbs.dtype, minval=0, maxval=1)
