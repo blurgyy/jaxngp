@@ -365,7 +365,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
             gt_image = Image.open(val_views[val_i].file)
             gt_image = np.asarray(gt_image)
             gt_image = data.blend_rgba_image_array(gt_image, bg=args.render_eval.bg)
-            logger.info("{}: psnr={}dB".format(val_views[val_i].file, data.psnr(gt_image, rgb)))
+            logger.info("{}: psnr={:.4f}dB".format(val_views[val_i].file, data.psnr(gt_image, rgb)))
             dest = args.exp_dir\
                 .joinpath("validataion")\
                 .joinpath("ep{}".format(ep_log))
