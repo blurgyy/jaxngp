@@ -1,5 +1,5 @@
 import functools
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Tuple
 
 import flax.linen as nn
 import jax
@@ -14,9 +14,15 @@ from models.encoders import (
     SphericalHarmonicsEncoderCuda,
 )
 from utils.common import mkValueError
-from utils.types import ActivationType, DirectionalEncodingType, PositionalEncodingType
+from utils.types import (
+    ActivationType,
+    DirectionalEncodingType,
+    PositionalEncodingType,
+    empty_impl,
+)
 
 
+@empty_impl
 class NeRF(nn.Module):
     bound: float
 
@@ -30,7 +36,7 @@ class NeRF(nn.Module):
     rgb_activation: Callable
 
     @nn.compact
-    def __call__(self, xyz: jax.Array, dir: Optional[jax.Array]) -> Tuple[jax.Array, jax.Array]:
+    def __call__(self, xyz: jax.Array, dir: jax.Array | None) -> Tuple[jax.Array, jax.Array]:
         """
         Inputs:
             xyz [..., 3]: coordinates in $\R^3$.
@@ -96,6 +102,81 @@ class CoordinateBasedMLP(nn.Module):
             kernel_init=self.kernel_init,
         )(x)
         return x
+
+
+class BackgroundModel(nn.Module): ...
+
+
+@empty_impl
+class SkySphereBg(BackgroundModel):
+    """
+    A sphere that centers at the origin and encloses a bounded scene and provides all the background
+    color, this is an over-simplified model.
+
+    When a ray intersects with the sphere from inside, it calculates the intersection point's
+    coordinate and predicts a color based on the intersection point and the viewing direction.
+    """
+
+    # radius
+    r: float
+
+    # encoder for position
+    position_encoder: Encoder
+
+    # encoder for viewing direction
+    direction_encoder: Encoder
+
+    # color predictor
+    rgb_mlp: CoordinateBasedMLP
+
+    activation: Callable
+
+    @nn.compact
+    def __call__(self, rays_o: jax.Array, rays_d: jax.Array) -> jax.Array:
+        # the distance of a point (o+td) on the ray to the origin is given by:
+        #
+        #   dist(t) = (dx^2 + dy^2 + dz^2)t^2 + 2(dx*ox + dy*oy + dz*oz)t + ox^2 + oy^2 + oz^2
+        #
+        # the minimal distance is achieved when
+        #
+        #   2(dx^2 + dy^2 + dz^2)t + 2(dx*ox + dy*oy + dz*oz) = 0,
+        #       ==> t = -(dx*ox + dy*oy + dz*oz) / (dx^2 + dy^2 + dz^2)
+        a = (rays_d * rays_d).sum(axis=-1)
+        b = 2 * (rays_o * rays_d).sum(axis=-1)
+        c = (rays_o * rays_o).sum(axis=-1) - self.r ** 2
+
+        # if min_dist < self.r, there are at most two intersections, given by:
+        #
+        #   dist(t) = r^2
+        #
+        # want the farther intersection point
+        t = jnp.maximum(
+            (-b + jnp.sqrt(b ** 2 - 4 * a * c)) / (2 * a),
+            (-b - jnp.sqrt(b ** 2 - 4 * a * c)) / (2 * a),
+        )
+        t = t.reshape(-1, 1)
+
+        finite_mask = jnp.isfinite(t)
+
+        pos = rays_o + t * rays_d
+        pos_dirs = jnp.where(
+            finite_mask,
+            pos / (jnp.linalg.norm(pos) + 1e-15),
+            0.,
+        )
+
+        # we then encode the positions/directions, and predict a view-dependent color for each ray
+        pos_enc = self.position_encoder(pos_dirs)
+        dir_enc = self.direction_encoder(rays_d)
+
+        colors = self.rgb_mlp(jnp.concatenate([pos_enc, dir_enc], axis=-1))
+        colors = self.activation(colors)
+
+        return jnp.where(
+            finite_mask,
+            colors,
+            0.,
+        )
 
 
 def make_activation(act: ActivationType):
@@ -170,32 +251,32 @@ def make_activation(act: ActivationType):
 
 
 def make_nerf(
-        bound: float,
+    bound: float,
 
-        # encodings
-        pos_enc: PositionalEncodingType,
-        dir_enc: DirectionalEncodingType,
+    # encodings
+    pos_enc: PositionalEncodingType,
+    dir_enc: DirectionalEncodingType,
 
-        # encoding levels
-        pos_levels: int,
-        dir_levels: int,
+    # encoding levels
+    pos_levels: int,
+    dir_levels: int,
 
-        # layer widths
-        density_Ds: List[int],
-        rgb_Ds: List[int],
+    # layer widths
+    density_Ds: List[int],
+    rgb_Ds: List[int],
 
-        # output dimensions
-        density_out_dim: int,
-        rgb_out_dim: int,
+    # output dimensions
+    density_out_dim: int,
+    rgb_out_dim: int,
 
-        # skip connections
-        density_skip_in_layers: List[int],
-        rgb_skip_in_layers: List[int],
+    # skip connections
+    density_skip_in_layers: List[int],
+    rgb_skip_in_layers: List[int],
 
-        # activations
-        density_act: ActivationType,
-        rgb_act: ActivationType,
-    ) -> NeRF:
+    # activations
+    density_act: ActivationType,
+    rgb_act: ActivationType,
+) -> NeRF:
     if pos_enc == "identity":
         position_encoder = lambda x: x
     elif pos_enc == "frequency":
@@ -259,6 +340,45 @@ def make_nerf(
     )
 
     return model
+
+
+def make_skysphere_background_model(
+    radius: float,
+
+    pos_levels: int,
+    dir_levels: int,
+
+    Ds: List[int],
+    skip_in_layers: List[int],
+
+    act: ActivationType,
+) -> SkySphereBg:
+    position_encoder = SphericalHarmonicsEncoder(L=pos_levels)
+    direction_encoder = SphericalHarmonicsEncoder(L=dir_levels)
+    rgb_mlp = CoordinateBasedMLP(
+        Ds=Ds,
+        out_dim=3,
+        skip_in_layers=skip_in_layers,
+    )
+    activation = make_activation(act)
+    return SkySphereBg(
+        r=radius,
+        position_encoder=position_encoder,
+        direction_encoder=direction_encoder,
+        rgb_mlp=rgb_mlp,
+        activation=activation,
+    )
+
+
+def make_skysphere_background_model_ngp(bound: float) -> SkySphereBg:
+    return make_skysphere_background_model(
+        radius=bound*4,
+        pos_levels=2,
+        dir_levels=4,
+        Ds=[32, 32],
+        skip_in_layers=[],
+        act="sigmoid",
+    )
 
 
 def make_nerf_ngp(bound: float) -> NeRF:

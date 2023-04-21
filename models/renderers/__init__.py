@@ -1,8 +1,8 @@
-from .cuda import render_image, render_rays, update_ogrid
+from .cuda import render_image_inference, render_rays_train, update_ogrid
 
 
 __all__ = [
-    "render_rays",
-    "render_image",
+    "render_rays_train",
+    "render_image_inference",
     "update_ogrid",
 ]

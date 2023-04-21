@@ -19,6 +19,7 @@ in {
     package = import ./${name};
     args = with builtins; intersectAttrs (functionArgs package) {
       inherit generated;
+      version = "0.1.0";
       source = generated.${name};
     };
   in

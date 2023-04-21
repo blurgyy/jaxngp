@@ -106,6 +106,7 @@ def integrate_rays_backward_abstract(
 
 
 def integrate_rays_inference_abstract(
+    transmittance_threshold: jax.ShapedArray,
     rays_bg: jax.ShapedArray,
     rays_rgb: jax.ShapedArray,
     rays_T: jax.ShapedArray,
@@ -121,7 +122,7 @@ def integrate_rays_inference_abstract(
     (n_total_rays, _), (n_rays, march_steps_cap) = rays_rgb.shape, dss.shape
 
     chex.assert_shape([rays_bg, rays_rgb], (n_total_rays, 3))
-    chex.assert_shape([rays_T, rays_depth], (n_total_rays,))
+    chex.assert_shape([transmittance_threshold, rays_T, rays_depth], (n_total_rays,))
     chex.assert_shape([n_samples, indices], (n_rays,))
     chex.assert_shape([dss, z_vals], (n_rays, march_steps_cap))
     chex.assert_shape(densities, (n_rays, march_steps_cap, 1))

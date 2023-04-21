@@ -7,9 +7,9 @@ from utils.types import PinholeCamera, RigidTransformation
 
 @jit_jaxfn_with(static_argnames=["camera"])
 def make_rays_worldspace(
-        camera: PinholeCamera,
-        transform_cw: RigidTransformation,
-    ):
+    camera: PinholeCamera,
+    transform_cw: RigidTransformation,
+):
     """
     Generate world-space rays for each pixel in the given camera's projection plane.
 
@@ -23,18 +23,16 @@ def make_rays_worldspace(
         o_world [H*W, 3]: ray origins, in world-space
         d_world [H*W, 3]: ray directions, in world-space
     """
-    H, W = camera.H, camera.W
-    n_pixels = H * W
     # [H*W, 1]
-    d_cam_idcs = jnp.arange(n_pixels).reshape(-1, 1)
+    d_cam_idcs = jnp.arange(camera.n_pixels).reshape(-1, 1)
     # [H*W, 1]
     d_cam_xs = jnp.mod(d_cam_idcs, camera.W)
-    d_cam_xs = ((d_cam_xs + 0.5) - camera.W/2)
+    d_cam_xs = ((d_cam_xs + 0.5) - camera.cx) / camera.fx
     # [H*W, 1]
     d_cam_ys = jnp.floor_divide(d_cam_idcs, camera.W)
-    d_cam_ys = -((d_cam_ys + 0.5) - camera.H/2)  # NOTE: y axis indexes from bottom to top, so negate it
+    d_cam_ys = -((d_cam_ys + 0.5) - camera.cy) / camera.fy  # NOTE: y axis indexes from bottom to top, so negate it
     # [H*W, 1]
-    d_cam_zs = -camera.focal * jnp.ones_like(d_cam_idcs)
+    d_cam_zs = -jnp.ones_like(d_cam_idcs)
     # [H*W, 3]
     d_cam = jnp.concatenate([d_cam_xs, d_cam_ys, d_cam_zs], axis=-1)
     d_cam /= jnp.linalg.norm(d_cam, axis=-1, keepdims=True) + 1e-15
@@ -50,11 +48,11 @@ def make_rays_worldspace(
 
 @jit_jaxfn_with(static_argnames=["H", "W", "chunk_size"])
 def get_indices_chunks(
-        KEY: jran.KeyArray,
-        H: int,
-        W: int,
-        chunk_size: int,
-    ):
+    KEY: jran.KeyArray,
+    H: int,
+    W: int,
+    chunk_size: int,
+):
     n_pixels = H * W
     n_chunks = (n_pixels + chunk_size - 1) // chunk_size
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
 from dataclasses import dataclass
+import dataclasses
 from functools import partial, reduce
 import os
 from pathlib import Path
-from typing import Annotated, List, Union
+from typing import Annotated, List
 from typing_extensions import assert_never
 
 from PIL import Image
@@ -12,8 +13,15 @@ import numpy as np
 import tyro
 
 from utils.common import setup_logging
-from utils.data import add_border, blend_rgba_image_array, psnr, side_by_side
-from utils.types import RGBColor
+from utils.data import (
+    add_border,
+    blend_rgba_image_array,
+    create_dataset_from_single_camera_image_collection,
+    create_dataset_from_video,
+    psnr,
+    side_by_side,
+)
+from utils.types import ColmapMatcherType, RGBColor
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -38,26 +46,65 @@ class Metrics:
     bg: RGBColor=(1.0, 1.0, 1.0)
 
 
-Args = Union[
-    Annotated[
-        Concatenate,
-        tyro.conf.subcommand(
-            name="cat",
-            prefix_name=False,
-        ),
-    ],
-    Annotated[
-        Metrics,
-        tyro.conf.subcommand(
-            name="metrics",
-            prefix_name=False,
-        ),
-    ],
+@dataclass(frozen=True, kw_only=True)
+class CreateDataset:
+    # video or directory of image collection
+    src: tyro.conf.Positional[Path]
+
+    # where to write the images and transforms_{train,val,test}.json
+    root_dir: Path
+
+    # `Sequntial` for continuous frames, `Exhaustive` for all possible pairs
+    matcher: ColmapMatcherType
+
+    # given that cameras' average distance to origin is (4.0 * `camera_scale`), what would the
+    # scene's bound be?
+    # (a scene's bound is the half width of its bounding box, e.g. a scene with bound 4.0 has a
+    # bounding box with width 8.0, centered at the origin) this parameter just specifies the 
+    # "aabb_scale" in the generated `transforms_{train,val,test}.json`.
+    bound: float
+
+    # scale the camera's positions, the mean camera-to-origin distance will be `4.0 * camera_scale`.
+    camera_scale: float=dataclasses.field(default_factory=lambda: 1/3, kw_only=True)
+
+    # should the scene be modeled with a background that is not part of the scene geometry?
+    bg: bool=dataclasses.field(default_factory=lambda: True, kw_only=True)
+
+    # how many frames to extract per second, only used when src is a video
+    fps: int
+
+
+CmdCat = Annotated[
+    Concatenate,
+    tyro.conf.subcommand(
+        name="cat",
+        prefix_name=False,
+        description="concatenate images horizontally or vertically",
+    ),
+]
+CmdMetrics = Annotated[
+    Metrics,
+    tyro.conf.subcommand(
+        name="metrics",
+        prefix_name=False,
+        description="compute metrics between images",
+    ),
+]
+CmdCreateDataseet = Annotated[
+    CreateDataset,
+    tyro.conf.subcommand(
+        name="create-dataset",
+        prefix_name=False,
+        description="create a instant-ngp format dataset from a video or a directory of images",
+    ),
 ]
 
 
+Args = CmdCat | CmdCreateDataseet | CmdMetrics
+
+
 def main(args: Args):
-    logger = setup_logging("utils", "INFO")
+    logger = setup_logging("utils", level="DEBUG")
     if isinstance(args, Concatenate):
         if args.out.is_dir():
             logger.error("output path '{}' is a directory".format(args.out))
@@ -101,6 +148,26 @@ def main(args: Args):
         for impath, img in zip(args.image_paths, images):
             if args.psnr:
                 logger.info("psnr={} ({})".format(psnr(gt_image, img), impath))
+
+    elif isinstance(args, CreateDataset):
+        if args.src.is_dir():
+            create_dataset_from_single_camera_image_collection(
+                raw_images_dir=args.src,
+                dataset_root_dir=args.root_dir,
+                matcher=args.matcher,
+                bound=args.bound,
+                camera_scale=args.camera_scale,
+                bg=args.bg,
+            )
+        else:
+            create_dataset_from_video(
+                video_path=args.src,
+                dataset_root_dir=args.root_dir,
+                bound=args.bound,
+                camera_scale=args.camera_scale,
+                bg=args.bg,
+                fps=args.fps,
+            )
 
     else:
         assert_never("tyro already ensures subcommand passed here are valid, this line should never be executed")

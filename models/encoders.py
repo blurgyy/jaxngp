@@ -10,6 +10,7 @@ import jax.random as jran
 import shjax
 
 from utils.common import jit_jaxfn_with, vmap_jaxfn_with
+from utils.types import empty_impl
 
 
 cell_vert_offsets = {
@@ -32,11 +33,11 @@ cell_vert_offsets = {
 }
 
 
-class Encoder(nn.Module):
-    pass
+class Encoder(nn.Module): ...
 
 
 # TODO: enforce types used in arrays
+@empty_impl
 class HashGridEncoder(Encoder):
     dim: int
     # Let's use the same notations as in the paper
@@ -179,6 +180,7 @@ class HashGridEncoder(Encoder):
 
         Returns:
             indices [..., 2**dim]: indices of the grid cell's vertices in the hash table
+            pos_scaled [..., dim]: query points' coordinates scaled to each hierarchies (float)
             vert_pos [..., 2**dim, dim]: positions of the grid cell's vertices in the input space
         """
         chex.assert_type([pos, dim, res, T], [float, int, int, int])
@@ -241,6 +243,7 @@ class HashGridEncoder(Encoder):
         return jnp.mod(indices, T), pos_scaled, vert_pos
 
 
+@empty_impl
 class FrequencyEncoder(Encoder):
     """
     Frequency encoding from Equation(4) of the NeRF paper, except the encoded frequency orders are
@@ -280,6 +283,7 @@ class FrequencyEncoder(Encoder):
         return encodings
 
 
+@empty_impl
 class SphericalHarmonicsEncoderCuda(Encoder):
     # highest degree
     L: int
@@ -290,6 +294,7 @@ class SphericalHarmonicsEncoderCuda(Encoder):
         return shjax.spherical_harmonics_encoding(dirs, self.L)
 
 
+@empty_impl
 class SphericalHarmonicsEncoder(Encoder):
     # highest degree
     L: int

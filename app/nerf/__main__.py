@@ -1,40 +1,34 @@
 #!/usr/bin/env python3
 
-from typing import Annotated, Union
+from typing import Annotated
 from typing_extensions import assert_never
 
 import tyro
 
 
 
-import dearpygui.dearpygui as dpg
-from utils.args import NeRFTestingArgs, NeRFTrainingArgs,GuiWindowArgs
-MainArgsType = Union[
-    Annotated[
-        NeRFTrainingArgs,
-        tyro.conf.subcommand(
-            name="train",
-            prefix_name=False,
-        ),
-    ],
-    Annotated[
-        NeRFTestingArgs,
-        tyro.conf.subcommand(
-            name="test",
-            prefix_name=False,
-        ),
-    ],
-    Annotated[
-        GuiWindowArgs,
-        tyro.conf.subcommand(
-            name="gui",
-            prefix_name=False,
-        ),
-    ],
+CmdTrain = Annotated[
+    NeRFTrainingArgs,
+    tyro.conf.subcommand(
+        name="train",
+        prefix_name=False,
+    ),
+]
+CmdTest = Annotated[
+    NeRFTestingArgs,
+    tyro.conf.subcommand(
+        name="test",
+        prefix_name=False,
+    ),
 ]
 
 
+MainArgsType = CmdTrain | CmdTest
+
+
 def main(args: MainArgsType):
+    # import os
+    # os.environ['CUDA_VISIBLE_DEVICES']='1'
     from utils import common
     
     logger = common.setup_logging("nerf")
@@ -44,11 +38,9 @@ def main(args: MainArgsType):
         from app.nerf.train import train
         train(KEY, args, logger)
     elif isinstance(args, NeRFTestingArgs):
-        from app.nerf.test import test,test_render
-        #test(KEY, args, logger)
-        test_render(KEY, args, logger)
-    elif isinstance(args,GuiWindowArgs):
-        
+        from app.nerf.test import test
+        test(KEY, args, logger)
+    elif isinstance(args,GuiWindowArgs):        
         from app.nerf.gui import GuiWindow
         GuiWindow(KEY, args, logger)
     else:

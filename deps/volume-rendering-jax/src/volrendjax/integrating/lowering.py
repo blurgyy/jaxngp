@@ -206,6 +206,7 @@ def integrate_rays_backward_lowring_rule(
 def integrate_rays_inference_lowering_rule(
     ctx: mlir.LoweringRuleContext,
 
+    transmittance_threshold: ir.Value,
     rays_bg: ir.Value,
     rays_rgb: ir.Value,
     rays_T: ir.Value,
@@ -224,6 +225,7 @@ def integrate_rays_inference_lowering_rule(
     opaque = volrendutils_cuda.make_integrating_inference_descriptor(n_total_rays, n_rays, march_steps_cap)
 
     shapes = {
+        "in.transmittance_threshold": (n_total_rays,),
         "in.rays_bg": (n_total_rays, 3),
         "in.rays_rgb": (n_total_rays, 3),
         "in.rays_T": (n_total_rays,),
@@ -253,6 +255,7 @@ def integrate_rays_inference_lowering_rule(
             ir.RankedTensorType.get(shapes["out.rays_depth"], ir.F32Type.get()),
         ],
         operands=[
+            transmittance_threshold,
             rays_bg,
             rays_rgb,
             rays_T,
@@ -267,6 +270,7 @@ def integrate_rays_inference_lowering_rule(
         ],
         backend_config=opaque,
         operand_layouts=default_layouts(
+            shapes["in.transmittance_threshold"],
             shapes["in.rays_bg"],
             shapes["in.rays_rgb"],
             shapes["in.rays_T"],

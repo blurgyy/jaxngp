@@ -1,25 +1,52 @@
-#!/usr/bin/env python3
-
+from concurrent.futures import Executor, Future, ThreadPoolExecutor
 import logging
+import logging
+from pathlib import Path
 import random
-from typing import (
-    Any,
-    Hashable,
-    Iterable,
-    Optional,
-    Optional,
-    Sequence,
-    Union,
-    get_args,
-)
+from typing import Any, Dict, Hashable, Iterable, Sequence, get_args
 
 import colorama
 from colorama import Back, Fore, Style
+from flax.metrics import tensorboard
 import jax
 from jax._src.lib import xla_client as xc
 import jax.random as jran
 import numpy as np
 import tensorflow as tf
+
+from .types import LogLevel
+
+
+class Logger(logging.Logger):
+    _tb: tensorboard.SummaryWriter | None=None
+    _executor: Executor | None=None
+
+    _last_job: Future=None
+
+    def __init__(self, name: str, level: int | LogLevel) -> None:
+        super().__init__(name, level)
+
+    def setup_tensorboard(self, tb: tensorboard.SummaryWriter, executor: Executor) -> None:
+        self._tb = tb
+        self._executor = executor
+
+    def wait_last_job(self):
+        if self._last_job is not None and not self._last_job.done():
+            return self._last_job.result()
+
+    def write_scalar(self, tag: str, value: Any, step: int) -> None:
+        if self._tb is not None:
+            self.wait_last_job()
+            # NOTE: writing scalars is fast(ish) enough to not need a thread pool
+            self._executor.submit(self._tb.scalar, tag, value, step)
+    def write_image(self, tag: str, image: Any, step: int, max_outputs: int) -> None:
+        if self._tb is not None:
+            self.wait_last_job()
+            self._last_job = self._executor.submit(self._tb.image, tag, image, step, max_outputs)
+    def write_hparams(self, hparams: Dict[str, Any]) -> None:
+        if self._tb is not None:
+            self.wait_last_job()
+            self._last_job = self._executor.submit(self._tb.hparams, hparams)
 
 
 _tqdm_format = "SBRIGHT{desc}RESET: HI{percentage:3.0f}%RESET {n_fmt}/{total_fmt} [{elapsed}<HI{remaining}RESET, {rate_fmt}]"
@@ -27,6 +54,14 @@ tqdm_format = _tqdm_format \
     .replace("HI", Fore.CYAN) \
     .replace("SBRIGHT", Style.BRIGHT) \
     .replace("RESET", Style.RESET_ALL)
+
+
+def compose(*fns):
+    def _inner(x):
+        for fn in reversed(fns):
+            x = fn(x)
+        return x
+    return _inner
 
 
 # NOTE:
@@ -38,11 +73,11 @@ tqdm_format = _tqdm_format \
 #   * <https://github.com/google/jax/issues/7449>
 def vmap_jaxfn_with(
         # kwargs copied from `jax.vmap` source
-        in_axes: Union[int, Sequence[Any]] = 0,
+        in_axes: int | Sequence[Any]=0,
         out_axes: Any = 0,
-        axis_name: Optional[Hashable] = None,
-        axis_size: Optional[int] = None,
-        spmd_axis_name: Optional[Hashable] = None,
+        axis_name: Hashable | None = None,
+        axis_size: int | None = None,
+        spmd_axis_name: Hashable | None = None,
     ):
     return lambda fn: jax.vmap(
             fn,
@@ -62,14 +97,14 @@ def mkValueError(desc, value, type):
 
 def jit_jaxfn_with(
         # kwargs copied from `jax.jit` source
-        static_argnums: Union[int, Iterable[int], None] = None,
-        static_argnames: Union[str, Iterable[str], None] = None,
-        device: Optional[xc.Device] = None,
-        backend: Optional[str] = None,
-        donate_argnums: Union[int, Iterable[int]] = (),
+        static_argnums: int | Iterable[int] | None = None,
+        static_argnames: str | Iterable[str] | None = None,
+        device: xc.Device | None = None,
+        backend: str | None = None,
+        donate_argnums: int | Iterable[int] = (),
         inline: bool = False,
         keep_unused: bool = False,
-        abstracted_axes: Optional[Any] = None,
+        abstracted_axes: Any | None = None,
     ):
     return lambda fn: jax.jit(
             fn,
@@ -85,25 +120,44 @@ def jit_jaxfn_with(
 
 
 def setup_logging(
-        name: str="main",
-        level: str="INFO"
-    ) -> logging.Logger:
+    name: str,
+    /,
+    file: str | Path | None=None,
+    with_tensorboard: bool=False,
+    level: LogLevel="INFO",
+    file_level: LogLevel="DEBUG",
+) -> Logger:
     colorama.just_fix_windows_console()
 
     class _formatter(logging.Formatter):
-        def __init__(self, datefmt):
+        def __init__(self, datefmt, rich_color: bool):
+            fore = {
+                "blue": Fore.BLUE if rich_color else "[",
+                "green": Fore.GREEN if rich_color else "[",
+                "yellow": Fore.YELLOW if rich_color else "[",
+                "red": Fore.RED if rich_color else "[",
+                "black": Fore.BLACK if rich_color else "[",
+            }
+            back = {
+                "red": Back.RED if rich_color else "[",
+            }
+            style = {
+                "bright": Style.BRIGHT if rich_color else "[",
+                "reset_all": Style.RESET_ALL if rich_color else "]",
+            }
+
             pathfmt = "%(module)s::%(funcName)s"
             fmt = "| %(asctime)s.%(msecs)03dZ LVL {bold}{pathfmt}{reset}: %(message)s".format(
-                bold=Style.BRIGHT,
+                bold=style["bright"],
                 pathfmt=pathfmt,
-                reset=Style.RESET_ALL,
+                reset=style["reset_all"],
             )
             formats = {
-                logging.DEBUG: fmt.replace("LVL", Fore.BLUE + "DEBUG" + Style.RESET_ALL),
-                logging.INFO: fmt.replace("LVL", " " + Fore.GREEN + "INFO" + Style.RESET_ALL),
-                logging.WARN: fmt.replace("LVL", " " + Fore.YELLOW + "WARN" + Style.RESET_ALL),
-                logging.ERROR: fmt.replace("LVL", Fore.RED + "ERROR" + Style.RESET_ALL),
-                logging.CRITICAL: fmt.replace("LVL", " " + Back.RED + Fore.BLACK + Style.BRIGHT + "CRIT" + Style.RESET_ALL),
+                logging.DEBUG: fmt.replace("LVL", fore["blue"] + "DEBUG" + style["reset_all"]),
+                logging.INFO: fmt.replace("LVL", " " + fore["green"] + "INFO" + style["reset_all"]),
+                logging.WARN: fmt.replace("LVL", " " + fore["yellow"] + "WARN" + style["reset_all"]),
+                logging.ERROR: fmt.replace("LVL", fore["red"] + "ERROR" + style["reset_all"]),
+                logging.CRITICAL: fmt.replace("LVL", " " + back["red"] + fore["black"] + style["bright"] + "CRIT" + style["reset_all"]),
             }
             self.formatters = {
                 level: logging.Formatter(fmt=format, datefmt=datefmt)
@@ -113,14 +167,35 @@ def setup_logging(
         def format(self, record):
             return self.formatters.get(record.levelno).format(record)
 
+    datefmt = "%Y-%m-%dT%T"
+
+    logger = Logger(name=name, level=level)
+    logger.propagate = False
+
+    # console handler
     ch = logging.StreamHandler()
     ch.setLevel(level)
-    ch.setFormatter(_formatter(datefmt="%Y-%m-%dT%T"))
-
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
+    ch.setFormatter(_formatter(datefmt=datefmt, rich_color=True))
     logger.addHandler(ch)
-    logger.propagate = False
+    logger.setLevel(level)
+
+    # file handler
+    if file is not None:
+        fh = logging.FileHandler(filename=file)
+        fh.setLevel(file_level)
+        fh.setFormatter(_formatter(datefmt=datefmt, rich_color=False))
+        logger.addHandler(fh)
+        def loglevel2int(log_level: LogLevel) -> int:
+            return getattr(logging, log_level)
+        logger.setLevel(min(loglevel2int(level), loglevel2int(file_level)))
+
+    if with_tensorboard:
+        tb = tensorboard.SummaryWriter(log_dir=file.parent, auto_flush=True)
+        executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="logger({})-".format(name),
+        )
+        logger.setup_tensorboard(tb=tb, executor=executor)
 
     # logger complains about `warn` being deprecated with another warning
     logger.warn = logger.warning

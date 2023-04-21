@@ -62,6 +62,7 @@ def integrate_rays(
 
 
 def integrate_rays_inference(
+    transmittance_threshold: jax.Array,
     rays_bg: jax.Array,
     rays_rgb: jax.Array,
     rays_T: jax.Array,
@@ -75,6 +76,7 @@ def integrate_rays_inference(
     rgbs: jax.Array,
 ):
     terminate_cnt, terminated, rays_rgb_out, rays_T_out, rays_depth_out = impl.integrate_rays_inference_p.bind(
+        jax.numpy.broadcast_to(transmittance_threshold, (rays_bg.shape[0],)),
         rays_bg,
         rays_rgb,
         rays_T,

@@ -1,5 +1,6 @@
+#include <serde-helper/serde.h>
+
 #include "volrend.h"
-#include "../serde.h"
 
 namespace volrendjax {
 
@@ -50,7 +51,7 @@ void pack_bits_launcher(cudaStream_t stream, void **buffers, const char *opaque,
     std::uint8_t * const __restrict__ occupancy_bitfield = static_cast<std::uint8_t *>(next_buffer());
 
     // kernel launch
-    std::uint32_t const blockSize = 256;
+    std::uint32_t static constexpr blockSize = 512;
     std::uint32_t const numBlocks = (desc.n_bytes + blockSize - 1) / blockSize;
     pack_bits_kernel<<<numBlocks, blockSize, 0, stream>>>(
         // inputs

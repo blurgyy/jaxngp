@@ -4,7 +4,7 @@
 import logging
 from pathlib import Path
 import numpy as np
-from typing import List, Literal, Optional,Any
+from typing import List, Literal, Optional,Any,Tuple
 import jax.random as jran
 import jax.numpy as jnp
 from dataclasses import dataclass,field
@@ -17,50 +17,326 @@ from utils.args import GuiWindowArgs
 import matplotlib.image as mpimg
 from utils.args import NeRFTestingArgs, NeRFTrainingArgs,GuiWindowArgs
 
+from .train import *
 
+_state:NeRFState
+
+
+from utils.types import (
+    SceneData,
+    SceneMeta,
+    ViewMetadata
+)
+from models.nerfs import (NeRF,SkySphereBg)
+@dataclass
+class Gui_trainer():
+    KEY: jran.KeyArray
+    args: NeRFTrainingArgs
+    logger: common.Logger
+    camera_pose:jnp.array
+    gui_args:GuiWindowArgs
+    
+    scene_train:SceneData=field(init=False)
+    scene_val:SceneData=field(init=False)
+    scene_meta:SceneMeta=field(init=False)
+    val_views:ViewMetadata=field(init=False)
+    
+    nerf_model:NeRF=field(init=False)
+    init_input: tuple=field(init=False)
+    nerf_variables: Any=field(init=False)
+    bg_model: SkySphereBg=field(init=False)
+    bg_variables: Any=field(init=False)
+    optimizer: Any=field(init=False)
+    
+    state:NeRFState=field(init=False)
+    cur_step:int=field(init=False)
+    loss_log:str="--"
+    
+
+    def __post_init__(self):
+        self.cur_step=0
+        logs_dir = self.args.exp_dir.joinpath("logs")
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        self.logger = common.setup_logging(
+        "nerf.train",
+        file=logs_dir.joinpath("train.log"),
+        with_tensorboard=True,
+        level=self.args.common.logging.upper(),
+        file_level="DEBUG",
+        )
+        self.args.exp_dir.joinpath("config.yaml").write_text(tyro.to_yaml(self.args))
+        self.logger.write_hparams(dataclasses.asdict(self.args))
+        self.logger.info("configurations saved to '{}'".format(self.args.exp_dir.joinpath("config.yaml")))
+
+        #load data
+        self.scene_train, _ = data.load_scene(
+        rootdir=self.args.data_root,
+        split="train",
+        world_scale=self.args.scene.world_scale,
+        image_scale=self.args.scene.image_scale,
+        )
+        self.scene_meta = self.scene_train.meta
+        # model parameters
+        self.nerf_model, self.init_input = (
+            make_nerf_ngp(bound=self.scene_meta.bound),
+            (jnp.zeros((1, 3), dtype=jnp.float32), jnp.zeros((1, 3), dtype=jnp.float32))
+        )
+        self.KEY, key = jran.split(self.KEY, 2)
+        self.nerf_variables =self.nerf_model.init(key, *self.init_input)
+        if self.args.common.summary:
+            print(self.nerf_model.tabulate(key, *self.init_input))
+        
+        if self.args.scene.with_bg:
+            self.bg_model, self.init_input = (
+                make_skysphere_background_model_ngp(bound=self.scene_meta.bound),
+                (jnp.zeros((1, 3), dtype=jnp.float32), jnp.zeros((1, 3), dtype=jnp.float32))
+            )
+            self.KEY, key = jran.split(self.KEY, 2)
+            self.bg_variables = self.bg_model.init(key, *self.init_input)
+            
+        lr_sch = optax.exponential_decay(
+        init_value=self.args.train.lr,
+        transition_steps=10_000,
+        decay_rate=1/3,  # decay to `1/3 * init_lr` after `transition_steps` steps
+        staircase=True,  # use integer division to determine lr drop step
+        transition_begin=10_000,  # hold the initial lr value for the initial 10k steps (but first lr drop happens at 20k steps because `staircase` is specified)
+        end_value=self.args.train.lr / 100,  # stop decaying at `1/100 * init_lr`
+        )
+        self.optimizer = optax.adamw(
+        learning_rate=lr_sch,
+        b1=0.9,
+        b2=0.99,
+        # paper:
+        #   the small value of 𝜖 = 10^{−15} can significantly accelerate the convergence of the
+        #   hash table entries when their gradients are sparse and weak.
+        eps=1e-15,
+        eps_root=1e-15,
+        # In NeRF experiments, the network can converge to a reasonably low loss during the
+        # frist ~50k training steps (with 1024 rays per batch and 1024 samples per ray), but the
+        # loss becomes NaN after about 50~150k training steps.
+        # paper:
+        #   To prevent divergence after long training periods, we apply a weak L2 regularization
+        #   (factor 10^{−6}) to the neural network weights, ...
+        weight_decay=1e-6,
+        # paper:
+        #   ... to the neural network weights, but not to the hash table entries.
+        mask={
+            "nerf": {
+                "density_mlp": True,
+                "rgb_mlp": True,
+                "position_encoder": False,
+            },
+            "bg": self.args.scene.with_bg,
+        },
+        )
+        
+         # training state
+        self.state = NeRFState.create(
+            ogrid=OccupancyDensityGrid.create(
+                cascades=data.cascades_from_bound(self.scene_meta.bound),
+                grid_resolution=self.args.raymarch.density_grid_res,
+            ),
+            batch_config=NeRFBatchConfig(
+                mean_effective_samples_per_ray=self.args.raymarch.diagonal_n_steps,
+                mean_samples_per_ray=self.args.raymarch.diagonal_n_steps,
+                n_rays=self.args.train.bs // self.args.raymarch.diagonal_n_steps,
+            ),
+            raymarch=self.args.raymarch,
+            render=self.args.render,
+            scene_options=self.args.scene,
+            scene_meta=self.scene_meta,
+            # unfreeze the frozen dict so that the weight_decay mask can apply, see:
+            #   <https://github.com/deepmind/optax/issues/160>
+            #   <https://github.com/google/flax/issues/1223>
+            nerf_fn=self.nerf_model.apply,
+            bg_fn=self.bg_model.apply if self.args.scene.with_bg else None,
+            params={
+                "nerf": self.nerf_variables["params"].unfreeze(),
+                "bg": self.bg_variables["params"].unfreeze() if self.args.scene.with_bg else None,
+            },
+            tx=self.optimizer,
+        )
+        self.cur_step=0
+        
+    def train_steps(self,steps:int)->Tuple[np.array,np.array,np.array]:
+        gc.collect()
+        
+        if self.cur_step<self.gui_args.max_step:
+            self.KEY, key = jran.split(self.KEY, 2)
+            self.logger.info("self.scene_train.all_xys.shape:{}".format(self.scene_train.all_xys.shape))
+            permutation = data.make_permutation(
+                key,
+                size=self.scene_train.all_xys.shape[0],
+                loop=self.args.train.data_loop,
+                shuffle=True,
+            )
+            
+            self.KEY, key = jran.split(self.KEY, 2)
+            loss_log, self.state = gui_train_epoch(
+                KEY=key,
+                state=self.state,
+                scene=self.scene_train,
+                n_batches=steps,
+                total_samples=self.args.train.bs,
+                cur_steps=self.cur_step,
+                logger=self.logger,
+                camera_pose=self.camera_pose,
+                args=self.gui_args
+            )
+            self.cur_step=self.cur_step+steps
+            self.loss_log=str(loss_log)
+        loss_db = data.linear_to_db(loss_log, maxval=1)
+        self.logger.info("epoch#{:03d}: loss={:.2e}({:.2f}dB)".format(self.cur_step, loss_log, loss_db))
+
+        #camera pose
+        transform = RigidTransformation(rotation=self.camera_pose[:3, :3],
+                                        translation=jnp.squeeze(self.camera_pose[:3, 3].reshape(-1,3),axis=0))
+        self.KEY, key = jran.split(self.KEY, 2)
+        bg, rgb, depth = render_image_inference(
+            KEY=key,
+            transform_cw=transform,
+            state=self.state.replace(render=self.state.render.replace(random_bg=False)),
+        )
+        bg=np.array(bg,dtype=np.float32)/255.
+        rgb=np.array(rgb,dtype=np.float32)/255.
+        depth=np.array(depth,dtype=np.float32)/255.
+
+        return (bg, rgb, depth)
+
+        
+def gui_train_epoch(
+    KEY: jran.KeyArray,
+    state: NeRFState,
+    scene: SceneData,
+    permutation: jax.Array,
+    n_batches: int,
+    total_samples: int,
+    cur_steps: int,
+    logger: common.Logger,
+    camera_pose:jnp.array,
+    args: GuiWindowArgs
+):
+    n_processed_rays = 0
+    total_loss = 0
+    running_mean_effective_samp_per_ray = state.batch_config.mean_effective_samples_per_ray
+    running_mean_samp_per_ray = state.batch_config.mean_samples_per_ray
+
+    for _ in (pbar := tqdm(range(n_batches), desc="Training epoch#{:03d}".format(cur_steps), bar_format=common.tqdm_format)):
+        KEY, key_perm, key_train_step = jran.split(KEY, 3)
+        perm = jran.choice(key_perm, scene.meta.n_pixels, shape=(state.batch_config.n_rays,), replace=True)
+        state, metrics = train_step(
+            KEY=key,
+            state=state,
+            total_samples=total_samples,
+            camera=scene.meta.camera,
+            all_xys=scene.all_xys,
+            all_rgbas=scene.all_rgbas,
+            all_transforms=scene.all_transforms,
+            perm=perm,
+        )
+        cur_steps=cur_steps+1
+        n_processed_rays += state.batch_config.n_rays
+        total_loss += metrics["loss"]
+        loss_log = metrics["loss"] / state.batch_config.n_rays
+        running_mean_samp_per_ray, running_mean_effective_samp_per_ray = (
+            running_mean_samp_per_ray * .95 + .05 * metrics["measured_batch_size_before_compaction"] / state.batch_config.n_rays,
+            running_mean_effective_samp_per_ray * .95 + .05 * metrics["measured_batch_size"] / state.batch_config.n_rays,
+        )
+
+        loss_db = data.linear_to_db(loss_log, maxval=1)
+        
+        pbar.set_description_str(
+            desc="Training step#{:03d} batch_size={}/{} samp./ray={}/{} n_rays={} loss={:.3e}({:.2f}dB)".format(
+                cur_steps,
+                metrics["measured_batch_size"],
+                metrics["measured_batch_size_before_compaction"],
+                state.batch_config.mean_effective_samples_per_ray,
+                state.batch_config.mean_samples_per_ray,
+                state.batch_config.n_rays,
+                loss_log,
+                loss_db,
+            )
+        )
+ 
+        if state.should_call_update_ogrid:
+            # update occupancy grid
+            KEY, key = jran.split(KEY, 2)
+            state = update_ogrid(
+                KEY=key,
+                update_all=bool(state.should_update_all_ogrid_cells),
+                state=state,
+            )
+
+        if state.should_update_batch_config:
+            new_mean_effective_samples_per_ray = int(running_mean_effective_samp_per_ray + 1.5)
+            new_mean_samples_per_ray = int(running_mean_samp_per_ray + 1.5)
+            new_n_rays = total_samples // new_mean_samples_per_ray
+            state = state.replace(
+                batch_config=NeRFBatchConfig(
+                    mean_effective_samples_per_ray=new_mean_effective_samples_per_ray,
+                    mean_samples_per_ray=new_mean_samples_per_ray,
+                    n_rays=new_n_rays,
+                ),
+            )
+
+        if state.should_write_batch_metrics:
+            logger.write_scalar("batch/↓loss", loss_log, state.step)
+            logger.write_scalar("batch/↑loss (db)", loss_db, state.step)
+            logger.write_scalar("batch/effective batch size (not compacted)", metrics["measured_batch_size_before_compaction"], state.step)
+            logger.write_scalar("batch/↑effective batch size (compacted)", metrics["measured_batch_size"], state.step)
+            logger.write_scalar("rendering/↓effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
+            logger.write_scalar("rendering/↓marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
+            logger.write_scalar("rendering/↑number of rays", state.batch_config.n_rays, state.step)
+        #gui_render(KEY,state,camera_pose,args)
+        
+    return total_loss / n_processed_rays, state
 class TrainThread(threading.Thread):
-    # istraining:bool=False
-    # KEY: jran.KeyArray=None
-    # args: GuiWindowArgs=None
-    # logger: logging.Logger=None
-    def __init__(self,istraining,KEY,args,logger):
+    def __init__(self,KEY,args,gui_args,logger,camera_pose,step):
         super(TrainThread,self).__init__()   
-        self.istraining=istraining
+        self.istraining=True
         self.KEY=KEY
         self.args=args
+        self.gui_args=gui_args
         self.logger=logger
+        self.camera_pose=camera_pose
+        self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args)
+        self.step=step
+  
+        
+        self.framebuff=np.ones(shape=(self.gui_args.H,self.gui_args.W,3),dtype=np.float32)
     def run(self):
-        from app.nerf.train import train
-        train(self.KEY, self.args, self.logger)
-        for i in range(1000):
-            print(i)
-        import time
-        while self.istraining:
-            print(time.time())
-            time.sleep(3)
+        while self.istraining and self.trainer.cur_step<self.gui_args.max_step:
+            _,self.framebuff,_=self.trainer.train_steps(self.step)
+        self.logger.info("training finished")    
     def stop(self):
         self.istraining=False
     
 
 @dataclass
-class NerfGUI():
+class NeRFGUI():
     
-    framebuff:Any
-    H:int=300
-    W:int=600
+    framebuff:Any= field(init=False)
+    H:int= field(init=False)
+    W:int= field(init=False)
     isTest:bool=False
-    training:bool=False
+    need_train:bool=False
     need_update:bool=False
-    train_thread:Any= field(init=False)
+    train_thread:TrainThread= field(init=False)
     
-    train_args: NeRFTrainingArgs=None
-    test_args:NeRFTestingArgs=None
+    train_args: NeRFTrainingArgs= field(init=False)
+    gui_args:GuiWindowArgs=None
     
     KEY: jran.KeyArray=None
     logger: logging.Logger=None
     camera_pose:jnp.array=None
     
+    trainer:Gui_trainer=field(init=False)
+    
+    
     def __post_init__(self):
+        self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
+        self.H,self.W=self.gui_args.H,self.gui_args.W
+        self.framebuff=np.ones(shape=(self.W,self.H,3),dtype=np.float32)#default background is white
         dpg.create_context()
         self.ItemsLayout()
         self.train_thread=None
@@ -90,13 +366,10 @@ class NerfGUI():
                     1.0
                 ]
             ])
-        #self.train_thread=TrainThread(self.training,KEY=self.KEY,args=self.args,logger=self.logger)
-        #self.train_thread=TrainThread(istraining=self.training,KEY=self.KEY,args=self.args,logger=self.logger)
-        #self.train_thread.start()
-        #train_thread.join()
+        self.trainer=None
         
     def ItemsLayout(self):
-        dpg.create_viewport(title='Nerf', width=self.W, height=self.H)
+        dpg.create_viewport(title='NeRf', width=self.W, height=self.H)
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb, tag="_texture")
 
@@ -134,15 +407,17 @@ class NerfGUI():
                             with dpg.group(horizontal=True):
                                 dpg.add_text("Train: ")
                                 def callback_train(sender, app_data):
-                                    if self.training:
-                                        self.training = False
+                                    if self.need_train:
+                                        self.logger.info("set need_train:{}".format(self.need_train))
+                                        self.need_train = False
+                                        self.train_thread.stop()
                                         dpg.configure_item("_button_train", label="start")
                                     else:
-                                        self.training = True
+                                        
                                         dpg.configure_item("_button_train", label="stop")
-                                        self.train_thread=TrainThread(self.training,KEY=self.KEY,args=self.train_args,logger=self.logger)
+                                        self.need_train = True
+                                        self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.camera_pose,step=5)
                                         self.train_thread.start()
-                                        #self.train_thread.join()
 
                                 dpg.add_button(label="start", tag="_button_train", callback=callback_train)
                                 dpg.bind_item_theme("_button_train", theme_button)
@@ -151,39 +426,7 @@ class NerfGUI():
                                 dpg.add_text("Checkpoint: ")
 
                                 def callback_save(sender, app_data):
-                                    
-                                    self.camera_pose=jnp.array([
-                                                                [
-                                                                    0.30901381373405457,
-                                                                    -0.5914012789726257,
-                                                                    0.7448187470436096,
-                                                                    3.002460479736328
-                                                                ],
-                                                                [
-                                                                    0.9510576128959656,
-                                                                    0.19215571880340576,
-                                                                    -0.24200350046157837,
-                                                                    -0.9755473136901855
-                                                                ],
-                                                                [
-                                                                    0.0,
-                                                                    0.7831478714942932,
-                                                                    0.621835470199585,
-                                                                    2.5066988468170166
-                                                                ],
-                                                                [
-                                                                    0.0,
-                                                                    0.0,
-                                                                    0.0,
-                                                                    1.0
-                                                                ]
-                                                            ])
-                                    self.need_update=True
-                                    print("save")
                                     pass
-                                    # self.trainer.save_checkpoint(full=True, best=False)
-                                    # dpg.set_value("_log_ckpt", "saved " + os.path.basename(self.trainer.stats["checkpoints"][-1]))
-                                    # self.trainer.epoch += 1 # use epoch to indicate different calls.
                                 dpg.add_button(label="save", tag="_button_save", callback=callback_save)
                                 dpg.bind_item_theme("_button_save", theme_button)
 
@@ -191,64 +434,20 @@ class NerfGUI():
         dpg.setup_dearpygui()
         dpg.show_viewport()
     def train_step(self):
-        pass
-    def test_step(self):
-        
-        if self.need_update:
-            from app.nerf.test import test_render
-            # self.framebuff=test_render(self.KEY, self.test_args, self.logger)
+        self.framebuff=self.train_thread.framebuff
+        dpg.set_value("_texture", self.framebuff)
+
             
-            self.framebuff,_=test_render(self.KEY, self.test_args, self.logger,camera_pose=self.camera_pose)
-            dpg.set_value("_texture", self.framebuff)
-            self.need_update=False
-            pass
     def render(self):
         while dpg.is_dearpygui_running():
-            ##resize
-            # View_H=dpg.get_viewport_height()
-            # View_W=dpg.get_viewport_width()
-            # W=View_W
-            # H=View_H
-            # with Image.open(filename) as img:
-            #     img = np.array(img.resize((W,H), PIL.Image.Resampling.BILINEAR),dtype=np.float)    
-            #     img=img/256. 
-            # dpg.set_item_width("_primary_window",W)
-            # dpg.set_item_height("_primary_window",H)
-            # dpg.set_value("_texture", img)
-            #print("render")
-            if self.train_thread!=None and not self.training:
-                self.train_thread.stop()
-            self.test_step()
+            if self.need_train and self.train_thread:  
+                self.train_step()
             dpg.render_dearpygui_frame()
-
-        #dpg.destroy_context()
+        dpg.destroy_context()
 
 
 
 def GuiWindow(KEY: jran.KeyArray, args: GuiWindowArgs, logger: logging.Logger):
-    #todo:--args
-    testArgs=NeRFTestingArgs(data_root=Path("/home/cad_83/E/chenyingxi/jaxngp/data/nerf_synthetic/lego"),
-                             exp_dir=Path("/home/cad_83/E/chenyingxi/jaxngp/data/gui/test"),
-                             test_ckpt=Path("/home/cad_83/E/chenyingxi/jaxngp/data/train1/checkpoint_3072"))
-    trainArgs=NeRFTrainingArgs(data_root=Path("/home/cad_83/E/chenyingxi/jaxngp/data/nerf_synthetic/lego"),
-                               exp_dir=Path("--exp-dir /home/cad_83/E/chenyingxi/jaxngp/data/gui/train1"))
-    #(for debug)init shows
-    filename="/home/cad_83/E/chenyingxi/jaxngp/data/test1/rgb.png"
-    img = mpimg.imread(filename) 
-    img=np.array(img)
-    H,W=img.shape[:2]
-    #H,W=800,000
-    
-    # train_thread=TrainThread(istraining=True,KEY=KEY,args=trainArgs,logger=logger)
-    # train_thread.start()
-    # train_thread.join()
-    
-    #create gui and run it
-    nerfGui=NerfGUI(framebuff=img,H=H,W=W,KEY=KEY,train_args=trainArgs,test_args=testArgs,logger=logger)
+    nerfGui=NeRFGUI(gui_args=args,KEY=KEY,logger=logger)
     nerfGui.render()
     
-    
-    # from app.nerf.test import test_render
-    # test_render(KEY, testArgs, logger)
-    # from app.nerf.train import train
-    # train(KEY, trainArgs, logger)
