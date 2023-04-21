@@ -45,7 +45,7 @@ class NeRF(nn.Module):
             rgb [..., 3]: predicted color for each query point
         """
         original_aux_shapes = xyz.shape[:-1]
-        xyz, dir = xyz.reshape(-1, 3), dir.reshape(-1, 3)
+        xyz = xyz.reshape(-1, 3)
         # scale and translate xyz coordinates into unit cube
         xyz = (xyz + self.bound) / (2 * self.bound)
 
@@ -58,6 +58,7 @@ class NeRF(nn.Module):
 
         if dir is None:
             return density
+        dir = dir.reshape(-1, 3)
 
         # [..., D_dir]
         dir_enc = self.direction_encoder(dir)
