@@ -26,6 +26,10 @@ integrate_rays_bwd_p.multiple_results = True
 integrate_rays_bwd_p.def_impl(functools.partial(xla.apply_primitive, integrate_rays_bwd_p))
 integrate_rays_bwd_p.def_abstract_eval(abstract.integrate_rays_backward_abstract)
 
+integrate_rays_inference_p = jax.core.Primitive("integrate_rays🎨inference")
+integrate_rays_inference_p.multiple_results = True
+integrate_rays_inference_p.def_impl(functools.partial(xla.apply_primitive, integrate_rays_inference_p))
+integrate_rays_inference_p.def_abstract_eval(abstract.integrate_rays_inference_abstract)
 
 # register mlir lowering rules
 mlir.register_lowering(
@@ -38,7 +42,11 @@ mlir.register_lowering(
     rule=lowering.integrate_rays_backward_lowring_rule,
     platform="gpu",
 )
-
+mlir.register_lowering(
+    prim=integrate_rays_inference_p,
+    rule=lowering.integrate_rays_inference_lowering_rule,
+    platform="gpu",
+)
 
 @jax.custom_vjp
 def __integrate_rays(

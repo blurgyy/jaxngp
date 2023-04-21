@@ -6,10 +6,11 @@ import jax
 import jax.numpy as jnp
 import jax.random as jran
 import numpy as np
+from tqdm import tqdm
 
 from models.nerfs import make_nerf_ngp
 from models.renderers import render_image
-from utils import data
+from utils import common, data
 from utils.args import NeRFTestingArgs
 from utils.data import make_nerf_synthetic_scene_metadata
 from utils.types import NeRFBatchConfig, OccupancyDensityGrid, RigidTransformation
@@ -53,10 +54,10 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
 
     n_tested, mean_psnr = 0, 0.0
     logger.info("starting testing (totally {} image(s) to test)".format(len(args.test_indices)))
-    for test_i in args.test_indices:
+    for test_i in (pbar := tqdm(args.test_indices, desc="Testing", bar_format=common.tqdm_format)):
         if test_i < 0 or test_i >= len(test_views):
             logger.warn("skipping out-of-bounds index {} (index should be in range [0, {}])".format(test_i, len(args.test_indices) - 1))
-        logger.info("testing on image index {}".format(test_i))
+        logger.debug("testing on image index {}".format(test_i))
         transform = RigidTransformation(
             rotation=scene_metadata_test.all_transforms[test_i, :9].reshape(3, 3),
             translation=scene_metadata_test.all_transforms[test_i, -3:].reshape(3),
@@ -78,7 +79,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
         gt_image = np.asarray(gt_image)
         gt_image = data.blend_rgba_image_array(gt_image, bg=args.render.bg)
         psnr = data.psnr(gt_image, rgb)
-        logger.info("{}: psnr={}".format(test_views[test_i].file, psnr))
+        logger.debug("{}: psnr={}".format(test_views[test_i].file, psnr))
         dest = args.exp_dir\
             .joinpath(args.test_split)
         dest.mkdir(parents=True, exist_ok=True)
@@ -107,6 +108,15 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
 
         mean_psnr += psnr
         n_tested += 1
+
+        pbar.set_description_str(
+            desc="Testing {:03d}/{:03d} psnr(this)={:.3f} psnr(mean)={:.3f}".format(
+                test_i + 1,
+                len(args.test_indices),
+                psnr,
+                mean_psnr / n_tested,
+            ),
+        )
 
     mean_psnr /= n_tested
     logger.info("tested {} images, mean psnr={}".format(n_tested, mean_psnr))

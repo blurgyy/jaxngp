@@ -37,13 +37,15 @@ class NeRF(nn.Module):
         """
         Inputs:
             xyz [..., 3]: coordinates in $\R^3$.
-            dirs [..., 3]: **unit** vectors, representing viewing directions.  If `None`, only
+            dir [..., 3]: **unit** vectors, representing viewing directions.  If `None`, only
                            return densities.
 
         Returns:
             density [..., 1]: density (ray terminating probability) of each query points
             rgb [..., 3]: predicted color for each query point
         """
+        original_aux_shapes = xyz.shape[:-1]
+        xyz, dir = xyz.reshape(-1, 3), dir.reshape(-1, 3)
         # scale and translate xyz coordinates into unit cube
         xyz = (xyz + self.bound) / (2 * self.bound)
 
@@ -63,6 +65,8 @@ class NeRF(nn.Module):
         rgb = self.rgb_mlp(jnp.concatenate([x, dir_enc], axis=-1))
 
         density, rgb = self.density_activation(density), self.rgb_activation(rgb)
+
+        density, rgb = density.reshape(*original_aux_shapes, 1), rgb.reshape(*original_aux_shapes, 3)
 
         return density, rgb
 

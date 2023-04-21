@@ -6,7 +6,14 @@ import jax
 import jax.numpy as jnp
 import jax.random as jran
 from tqdm import tqdm
-from volrendjax import integrate_rays, march_rays, morton3d_invert, packbits
+from volrendjax import (
+    integrate_rays,
+    integrate_rays_inference,
+    march_rays,
+    march_rays_inference,
+    morton3d_invert,
+    packbits,
+)
 
 from utils.common import jit_jaxfn_with, tqdm_format
 from utils.data import cascades_from_bound, set_pixels
@@ -220,6 +227,69 @@ def render_rays(
     return batch_metrics, opacities, final_rgbs, depths
 
 
+@jit_jaxfn_with(static_argnames=["bound", "march_steps_cap", "raymarch_options", "nerf_fn"])
+def march_and_integrate_inference(
+    bound: float,
+    march_steps_cap: int,
+    raymarch_options: RayMarchingOptions,
+
+    counter: jax.Array,
+    rays_o: jax.Array,
+    rays_d: jax.Array,
+    t_starts: jax.Array,
+    t_ends: jax.Array,
+    occupancy_bitfield: jax.Array,
+    terminated: jax.Array,
+    indices: jax.Array,
+
+    rays_bg: jax.Array,
+    rays_rgb: jax.Array,
+    rays_T: jax.Array,
+    rays_depth: jax.Array,
+
+    param_dict: FrozenVariableDict,
+    nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
+):
+    counter, indices, n_samples, t_starts, xyzdirs, dss, z_vals = march_rays_inference(
+        diagonal_n_steps=raymarch_options.diagonal_n_steps,
+        K=cascades_from_bound(bound),
+        G=raymarch_options.density_grid_res,
+        march_steps_cap=march_steps_cap,
+        bound=bound,
+        stepsize_portion=raymarch_options.stepsize_portion,
+        rays_o=rays_o,
+        rays_d=rays_d,
+        t_starts=t_starts,
+        t_ends=t_ends,
+        occupancy_bitfield=occupancy_bitfield,
+        counter=counter,
+        terminated=terminated,
+        indices=indices,
+    )
+
+    densities, rgbs = nerf_fn(
+        param_dict,
+        xyzdirs[..., :3],
+        xyzdirs[..., 3:],
+    )
+
+    terminated_cnt, terminated, rays_rgb, rays_T, rays_depth = integrate_rays_inference(
+        rays_bg=rays_bg,
+        rays_rgb=rays_rgb,
+        rays_T=rays_T,
+        rays_depth=rays_depth,
+
+        n_samples=n_samples,
+        indices=indices,
+        dss=dss,
+        z_vals=z_vals,
+        densities=densities,
+        rgbs=rgbs,
+    )
+
+    return terminated_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth
+
+
 def render_image(
     KEY: jran.KeyArray,
     bound: float,
@@ -234,32 +304,58 @@ def render_image(
 ):
     o_world, d_world = make_rays_worldspace(camera=camera, transform_cw=transform_cw)
 
-    KEY, key = jran.split(KEY, 2)
-    xys, indices = get_indices_chunks(key, camera.H, camera.W, int(batch_config.n_rays))
+    t_starts, t_ends = make_near_far_from_bound(bound, o_world, d_world)
 
-    image_array = jnp.empty((camera.H, camera.W, 3), dtype=jnp.uint8)
-    depth_array = jnp.empty((camera.H, camera.W), dtype=jnp.uint8)
-    for idcs in tqdm(indices, desc="| rendering {}x{} image".format(camera.W, camera.H), bar_format=tqdm_format):
-        if options.random_bg:
-            KEY, key = jran.split(KEY, 2)
-            bg = jran.uniform(key, rgbs.shape, rgbs.dtype, minval=0, maxval=1)
-        else:
-            bg = jnp.asarray(options.bg)
+    rays_rgb = jnp.zeros((camera.n_pixels, 3), dtype=jnp.float32)
+    rays_T = jnp.ones(camera.n_pixels, dtype=jnp.float32)
+    rays_depth = jnp.zeros(camera.n_pixels, dtype=jnp.float32)
+
+    if options.random_bg:
         KEY, key = jran.split(KEY, 2)
-        _, _, rgbs, depths = render_rays(
-            KEY=key,
-            o_world=o_world[idcs],
-            d_world=d_world[idcs],
-            bg=bg,
+        rays_bg = jran.uniform(key, rays_rgb.shape, rays_rgb.dtype, minval=0, maxval=1)
+    else:
+        rays_bg = jnp.broadcast_to(jnp.asarray(options.bg, dtype=rays_rgb.dtype), rays_rgb.shape)
+
+    march_rays_cap = max(1, min(batch_config.mean_samples_per_ray // 3, 8))
+    n_rays = batch_config.estimated_batch_size // march_rays_cap
+
+    # all_terminated = jnp.zeros(camera.n_pixels, dtype=jnp.bool_)
+    # render_cost = jnp.zeros(camera.n_pixels, dtype=jnp.uint32)
+
+    counter = jnp.zeros(1, dtype=jnp.uint32)
+    terminated = jnp.ones(n_rays, dtype=jnp.bool_)  # all rays are terminated at the beginning
+    indices = jnp.zeros(n_rays, dtype=jnp.uint32)
+    n_rendered_rays = 0
+
+    while n_rendered_rays < camera.n_pixels:
+        terminated_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth = march_and_integrate_inference(
             bound=bound,
-            total_samples=int(batch_config.estimated_batch_size * 1.25),  # FIXME: implement a reliable way to render all rays
-            ogrid=ogrid,
-            options=raymarch_options,
+            march_steps_cap=march_rays_cap,
+            raymarch_options=raymarch_options,
+
+            counter=counter,
+            rays_o=o_world,
+            rays_d=d_world,
+            t_starts=t_starts,
+            t_ends=t_ends,
+            occupancy_bitfield=ogrid.occupancy,
+            terminated=terminated,
+            indices=indices,
+
+            rays_bg=rays_bg,
+            rays_rgb=rays_rgb,
+            rays_T=rays_T,
+            rays_depth=rays_depth,
+
             param_dict=param_dict,
             nerf_fn=nerf_fn,
         )
-        depths = depths / (bound * 2 + jnp.linalg.norm(transform_cw.translation))
-        image_array = set_pixels(image_array, xys, idcs, rgbs)
-        depth_array = set_pixels(depth_array, xys, idcs, depths)
+        n_rendered_rays += terminated_cnt
+
+    image_array = jnp.clip(rays_rgb * 255, 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W, 3))
+    rays_depth = rays_depth / (bound * 2 + jnp.linalg.norm(transform_cw.translation))
+    depth_array = jnp.clip(rays_depth * 255, 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W))
+    # depth_array = jnp.clip(all_terminated.astype(jnp.uint8) * 255, 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W))
+    # depth_array = jnp.clip(render_cost * 255 / render_cost.max(), 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W))
 
     return image_array, depth_array
