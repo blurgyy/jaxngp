@@ -2,11 +2,11 @@
 
 , setuptools-scm
 
-, cython
-, pyopengl
-, glfw
-, wheel
 , click
+, cython
+, glfw
+, pyopengl
+, wheel
 }:
 
 buildPythonPackage {
@@ -14,13 +14,8 @@ buildPythonPackage {
   format = "pyproject";
 
   nativeBuildInputs = [ setuptools-scm ];
-  buildInputs = [
-    click
-    cython
-    glfw
-    pyopengl
-    wheel
-  ];
+  buildInputs = [ wheel ];
+  propagatedBuildInputs = [ click cython glfw pyopengl ];
 
   pythonImportsCheck = [ "imgui" ];
 
