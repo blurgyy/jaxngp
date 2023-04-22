@@ -1,4 +1,19 @@
 {
+    "pyimgui": {
+        "cargoLocks": null,
+        "date": null,
+        "extract": null,
+        "name": "pyimgui",
+        "passthru": null,
+        "pinned": false,
+        "src": {
+            "name": null,
+            "sha256": "sha256-L7247tO429fqmK+eTBxlgrC8TalColjeFjM9jGU9Z+E=",
+            "type": "url",
+            "url": "https://pypi.io/packages/source/i/imgui/imgui-2.0.0.tar.gz"
+        },
+        "version": "2.0.0"
+    },
     "tyro": {
         "cargoLocks": null,
         "date": null,

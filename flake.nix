@@ -74,6 +74,7 @@
           tqdm
           icecream
           (depsWith pp).tyro
+          (depsWith pp).pyimgui
           pillow
           ipdb
           colorama

@@ -1,3 +1,7 @@
+[pyimgui]
+src.pypi = "imgui"
+fetch.pypi = "imgui"
+
 [tyro]
 src.pypi = "tyro"
 fetch.pypi = "tyro"
