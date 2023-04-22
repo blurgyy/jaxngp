@@ -1,3 +1,12 @@
+[dearpygui]
+src.github = "hoffstadt/DearPyGui"
+fetch.github = "hoffstadt/DearPyGui"
+git.fetchSubmodules = true
+
+[pyimgui]
+src.pypi = "imgui"
+fetch.pypi = "imgui"
+
 [tyro]
 src.pypi = "tyro"
 fetch.pypi = "tyro"

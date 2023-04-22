@@ -54,7 +54,6 @@ class HashGridEncoder(Encoder):
 
     param_dtype: Dtype = jnp.float32
 
-    @nn.jit
     @nn.compact
     def __call__(self, pos: jax.Array) -> jax.Array:
         chex.assert_axis_dimension(pos, -1, self.dim)
@@ -261,7 +260,6 @@ class FrequencyEncoder(Encoder):
     # TODO:
     #   using a function for this (vmap, then jit the vmapped function) seems to be faster (~47ms vs
     #   ~57ms)
-    @nn.jit  # use nn.jit instead of jax.jit because first argument is a Module
     def __call__(self, pos: jax.Array) -> jax.Array:
         """
         Inuts:
@@ -286,7 +284,6 @@ class SphericalHarmonicsEncoderCuda(Encoder):
     # highest degree
     L: int
 
-    @nn.jit
     def __call__(self, dirs: jax.Array) -> jax.Array:
         "Just a thin wrapper on top of :func:`shjax.spherical_harmonics_encoding()`"
         dirs /= jnp.linalg.norm(dirs, axis=-1, keepdims=True) + 1e-15
@@ -297,7 +294,6 @@ class SphericalHarmonicsEncoder(Encoder):
     # highest degree
     L: int
 
-    @nn.jit
     def __call__(self, dirs: jax.Array) -> jax.Array:
         """
         Adapted from <https://github.com/NVlabs/tiny-cuda-nn/blob/39df2387a684e4fe0cfa33542aebf5eab237716b/include/tiny-cuda-nn/encodings/spherical_harmonics.h#L52-L123>

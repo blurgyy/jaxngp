@@ -57,3 +57,52 @@ def march_rays_abstract(
         jax.ShapedArray(shape=shapes["out.dss"], dtype=jnp.float32),
         jax.ShapedArray(shape=shapes["out.z_vals"], dtype=jnp.float32),
     )
+
+
+def march_rays_inference_abstract(
+    # arrays
+    rays_o: jax.ShapedArray,
+    rays_d: jax.ShapedArray,
+    t_starts: jax.ShapedArray,
+    t_ends: jax.ShapedArray,
+    occupancy_bitfield: jax.ShapedArray,
+    counter: jax.ShapedArray,
+    terminated: jax.ShapedArray,
+    indices_in: jax.ShapedArray,
+
+    # static args
+    diagonal_n_steps: int,
+    K: int,
+    G: int,
+    march_steps_cap: int,
+    bound: float,
+    stepsize_portion: float,
+):
+    (n_total_rays, _), (n_rays,) = rays_o.shape, terminated.shape
+
+    chex.assert_shape([rays_o, rays_d], (n_total_rays, 3))
+    chex.assert_shape([t_starts, t_ends], (n_total_rays,))
+    chex.assert_shape(occupancy_bitfield, (K*G*G*G//8,))
+    chex.assert_type(occupancy_bitfield, jnp.uint8)
+    chex.assert_shape(counter, (1,))
+    chex.assert_shape([terminated, indices_in], (n_rays,))
+
+    out_shapes = {
+        "counter": (1,),
+        "indices_out": (n_rays,),
+        "n_samples": (n_rays,),
+        "t_starts": (n_rays,),
+        "xyzdirs": (n_rays, march_steps_cap, 6),
+        "dss": (n_rays, march_steps_cap),
+        "z_vals": (n_rays, march_steps_cap),
+    }
+
+    return (
+        jax.ShapedArray(shape=out_shapes["counter"], dtype=jnp.uint32),
+        jax.ShapedArray(shape=out_shapes["indices_out"], dtype=jnp.uint32),
+        jax.ShapedArray(shape=out_shapes["n_samples"], dtype=jnp.uint32),
+        jax.ShapedArray(shape=out_shapes["t_starts"], dtype=jnp.float32),
+        jax.ShapedArray(shape=out_shapes["xyzdirs"], dtype=jnp.float32),
+        jax.ShapedArray(shape=out_shapes["dss"], dtype=jnp.float32),
+        jax.ShapedArray(shape=out_shapes["z_vals"], dtype=jnp.float32),
+    )

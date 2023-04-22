@@ -29,21 +29,20 @@ class NeRF(nn.Module):
     density_activation: Callable
     rgb_activation: Callable
 
-    # TODO:
-    #   * input "dir" does not need to be batched
-    #   * use vmap
     @nn.compact
     def __call__(self, xyz: jax.Array, dir: Optional[jax.Array]) -> Tuple[jax.Array, jax.Array]:
         """
         Inputs:
             xyz [..., 3]: coordinates in $\R^3$.
-            dirs [..., 3]: **unit** vectors, representing viewing directions.  If `None`, only
+            dir [..., 3]: **unit** vectors, representing viewing directions.  If `None`, only
                            return densities.
 
         Returns:
             density [..., 1]: density (ray terminating probability) of each query points
             rgb [..., 3]: predicted color for each query point
         """
+        original_aux_shapes = xyz.shape[:-1]
+        xyz = xyz.reshape(-1, 3)
         # scale and translate xyz coordinates into unit cube
         xyz = (xyz + self.bound) / (2 * self.bound)
 
@@ -55,7 +54,8 @@ class NeRF(nn.Module):
         density, _ = jnp.split(x, [1], axis=-1)
 
         if dir is None:
-            return density
+            return density.reshape(*original_aux_shapes, 1)
+        dir = dir.reshape(-1, 3)
 
         # [..., D_dir]
         dir_enc = self.direction_encoder(dir)
@@ -64,7 +64,7 @@ class NeRF(nn.Module):
 
         density, rgb = self.density_activation(density), self.rgb_activation(rgb)
 
-        return density, rgb
+        return density.reshape(*original_aux_shapes, 1), rgb.reshape(*original_aux_shapes, 3)
 
 
 class CoordinateBasedMLP(nn.Module):

@@ -5,11 +5,10 @@ from typing_extensions import assert_never
 
 import tyro
 
-from utils import common
+
+
+import dearpygui.dearpygui as dpg
 from utils.args import NeRFTestingArgs, NeRFTrainingArgs,GuiWindowArgs
-
-
-
 MainArgsType = Union[
     Annotated[
         NeRFTrainingArgs,
@@ -36,6 +35,8 @@ MainArgsType = Union[
 
 
 def main(args: MainArgsType):
+    from utils import common
+    
     logger = common.setup_logging("nerf")
     KEY = common.set_deterministic(args.common.seed)
 
@@ -43,9 +44,11 @@ def main(args: MainArgsType):
         from app.nerf.train import train
         train(KEY, args, logger)
     elif isinstance(args, NeRFTestingArgs):
-        from app.nerf.test import test
-        test(KEY, args, logger)
+        from app.nerf.test import test,test_render
+        #test(KEY, args, logger)
+        test_render(KEY, args, logger)
     elif isinstance(args,GuiWindowArgs):
+        
         from app.nerf.gui import GuiWindow
         GuiWindow(KEY, args, logger)
     else:

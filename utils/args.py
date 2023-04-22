@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Literal, Optional
 
-from utils.types import LogLevel, RayMarchingOptions, RenderingOptions
+from utils.types import LogLevel, RayMarchingOptions, RenderingOptions, SceneOptions
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -15,7 +15,7 @@ class CommonArgs:
     # random seed
     seed: int = 1_000_000_007
     # display model information after model init
-    display_model_summary: bool=False
+    summary: bool=False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -82,9 +82,6 @@ class ImageFitArgs:
 
 @dataclass(frozen=True, kw_only=True)
 class _NeRFArgs:
-    # scale camera positions with this scalar
-    scale: float
-
     # a nerf-synthetic format directory
     data_root: Path
 
@@ -93,18 +90,13 @@ class _NeRFArgs:
 
     raymarch: RayMarchingOptions
     render: RenderingOptions
-
-    # half width of axis-aligned bounding-box, i.e. aabb's width is `bound*2`
-    bound: float=1.0
+    scene: SceneOptions
 
     common: CommonArgs=CommonArgs()
 
 
 @dataclass(frozen=True, kw_only=True)
 class NeRFTrainingArgs(_NeRFArgs):
-    # scale the scene by this factor
-    scale: float=0.8
-
     # number of images to validate
     val_num: int=3
 
@@ -135,6 +127,10 @@ class NeRFTrainingArgs(_NeRFArgs):
         bg=(1.0, 1.0, 1.0),  # white, but ignored by default due to random_bg=True
         random_bg=True,
     )
+    scene: SceneOptions=SceneOptions(
+        bound=1.0,
+        scale=0.8,
+    )
 
     # raymarching/rendering options for validating during training
     raymarch_eval: RayMarchingOptions=RayMarchingOptions(
@@ -151,8 +147,6 @@ class NeRFTrainingArgs(_NeRFArgs):
 
 @dataclass(frozen=True, kw_only=True)
 class NeRFTestingArgs(_NeRFArgs):
-    scale: float=0.8
-
     # if specified, switch to test mode and use this checkpoint
     test_ckpt: Path
 
@@ -173,3 +167,22 @@ class NeRFTestingArgs(_NeRFArgs):
         bg=(0.0, 0.0, 0.0),  # black
         random_bg=False,
     )
+<<<<<<< HEAD
+    
+
+
+@dataclass(frozen=True,kw_only=True)
+class GuiWindowArgs():
+    W:int=100 
+    H:int=100
+    common: CommonArgs=CommonArgs()
+<<<<<<< HEAD
+=======
+    scene: SceneOptions=SceneOptions(
+        bound=1.0,
+        scale=0.8,
+    )
+>>>>>>> 5c6544b... args(nerf): group scene scale and bound
+=======
+    
+>>>>>>> ce83299... framework

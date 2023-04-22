@@ -1,5 +1,7 @@
 #include "volrend.h"
 #include "../serde.h"
+#include <driver_types.h>
+#include <stdexcept>
 
 namespace volrendjax {
 
@@ -94,11 +96,10 @@ __global__ void march_rays_kernel(
     float const * const __restrict__ ray_d = rays_d + i * 3;  // [3]
     float const ray_t_start = t_starts[i];  // [] (a scalar has no shape)
     float const ray_t_end = t_ends[i];  // [] (a scalar has no shape)
-    float const ray_noise = noises[i];  // [] (a scalar has no shape)
 
-    // if ray does not intersect with scene bounding box, no need to generate samples
-    if (ray_t_start <= 0) { return; }
-    if (ray_t_start >= ray_t_end) { return; }
+    if (ray_t_end <= 0.f) { return; }
+
+    float const ray_noise = noises[i];  // [] (a scalar has no shape)
 
     // precompute
     std::uint32_t const G3 = G*G*G;
@@ -227,6 +228,109 @@ __global__ void march_rays_kernel(
     }
 }
 
+
+__global__ void march_rays_inference_kernel(
+    std::uint32_t const n_total_rays
+    , std::uint32_t const n_rays
+    , std::uint32_t const diagonal_n_steps
+    , std::uint32_t const K
+    , std::uint32_t const G
+    , std::uint32_t const march_steps_cap
+    , float const bound
+    , float const stepsize_portion
+
+    , float const * const __restrict__ rays_o  // [n_total_rays, 3]
+    , float const * const __restrict__ rays_d  // [n_total_rays, 3]
+    , float const * const __restrict__ t_starts  // [n_total_rays]
+    , float const * const __restrict__ t_ends  // [n_total_rays]
+    , std::uint8_t const * const __restrict__ occupancy_bitfield  // [K*G*G*G//8]
+    , bool const * const __restrict__ terminated  // [n_rays]
+    , std::uint32_t const * const __restrict__ indices_in  // [n_rays]
+
+    , std::uint32_t * const __restrict__ counter  // [1]
+    , std::uint32_t * const __restrict__ indices_out  // [n_rays]
+    , std::uint32_t * const __restrict__ n_samples  // [n_rays]
+    , float * const __restrict__ t_starts_out  // [n_rays]
+    , float * const __restrict__ xyzdirs  // [n_rays, march_steps_cap, 6]
+    , float * const __restrict__ dss  // [n_rays, march_steps_cap]
+    , float * const __restrict__ z_vals  // [n_rays, march_steps_cap]
+) {
+    std::uint32_t const i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n_rays) { return; }
+
+    std::uint32_t const ray_idx = terminated[i] ? atomicAdd(counter, 1u) : indices_in[i];
+    indices_out[i] = ray_idx;
+    if (ray_idx >= n_total_rays) { return; }
+
+    float const * const __restrict__ ray_o = rays_o + ray_idx * 3;
+    float const * const __restrict__ ray_d = rays_d + ray_idx * 3;
+    float const ray_t_start = t_starts[ray_idx];
+    float const ray_t_end = t_ends[ray_idx];
+
+    if (ray_t_end <= 0.f) { return; }
+
+    float * const __restrict__ ray_xyzdirs = xyzdirs + i * march_steps_cap * 6;
+    float * const __restrict__ ray_dss = dss + i * march_steps_cap;
+    float * const __restrict__ ray_z_vals = z_vals + i * march_steps_cap;
+
+    std::uint32_t const G3 = G*G*G;
+
+    std::uint32_t steps = 0;
+    float ray_t = ray_t_start;
+    while (steps < march_steps_cap && ray_t < ray_t_end) {
+        float const x = ray_o[0] + ray_t * ray_d[0];
+        float const y = ray_o[1] + ray_t * ray_d[1];
+        float const z = ray_o[2] + ray_t * ray_d[2];
+
+        float const ds = calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps);
+
+        // among the grids covering xyz, the finest one with cell side-length larger than Δ𝑡 is
+        // queried.
+        std::uint32_t const cascade = max(
+            mip_from_xyz(x, y, z, K),
+            mip_from_ds(ds, G, K)
+        );
+
+        // the bound of this mip is [-mip_bound, mip_bound]
+        float const mip_bound = fminf(scalbnf(1.f, cascade), bound);
+
+        // round down
+        std::uint32_t const grid_x = clampi((int)(.5f * (x / mip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_y = clampi((int)(.5f * (y / mip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_z = clampi((int)(.5f * (z / mip_bound + 1) * G), 0, G-1);
+
+        std::uint32_t const occupancy_grid_idx = cascade * G3 + __morton3D(grid_x, grid_y, grid_z);
+        bool const occupied = occupancy_bitfield[occupancy_grid_idx >> 3] & (1 << (occupancy_grid_idx & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
+
+        if (occupied) {
+            ray_xyzdirs[steps * 6 + 0] = x;
+            ray_xyzdirs[steps * 6 + 1] = y;
+            ray_xyzdirs[steps * 6 + 2] = z;
+            ray_xyzdirs[steps * 6 + 3] = ray_d[0];
+            ray_xyzdirs[steps * 6 + 4] = ray_d[1];
+            ray_xyzdirs[steps * 6 + 5] = ray_d[2];
+            ray_dss[steps] = ds;
+            ray_z_vals[steps] = ray_t;
+
+            ++steps;
+            ray_t += ds;
+        } else {
+            float const tx = (((grid_x + .5f + .5f * signf(ray_d[0])) / G * 2 - 1) * mip_bound - x) / ray_d[0];
+            float const ty = (((grid_y + .5f + .5f * signf(ray_d[1])) / G * 2 - 1) * mip_bound - y) / ray_d[1];
+            float const tz = (((grid_z + .5f + .5f * signf(ray_d[2])) / G * 2 - 1) * mip_bound - z) / ray_d[2];
+
+            // distance to next voxel
+            float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
+            // step until next voxel
+            do { 
+                ray_t += calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps);
+            } while (ray_t < tt);
+        }
+    }
+    n_samples[i] = steps;
+    t_starts_out[i] = ray_t;
+}
+
 __global__ void morton3d_kernel(
     // inputs
     /// static
@@ -343,6 +447,88 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     CUDA_CHECK_THROW(cudaGetLastError());
 }
 
+void march_rays_inference_launcher(cudaStream_t stream, void **buffers, char const *opaque, std::size_t opaque_len) {
+    // buffer indexing helper
+    std::uint32_t __buffer_idx = 0;
+    auto const next_buffer = [&]() { return buffers[__buffer_idx++]; };
+
+    // inputs
+    /// static
+    MarchingInferenceDescriptor const &desc = *deserialize<MarchingInferenceDescriptor>(opaque, opaque_len);
+    std::uint32_t const n_total_rays = desc.n_total_rays;
+    std::uint32_t const n_rays = desc.n_rays;
+    std::uint32_t const diagonal_n_steps = desc.diagonal_n_steps;
+    std::uint32_t const K = desc.K;
+    std::uint32_t const G = desc.G;
+    std::uint32_t const march_steps_cap = desc.march_steps_cap;
+    float const bound = desc.bound;
+    float const stepsize_portion = desc.stepsize_portion;
+
+    /// arrays
+    float const * const __restrict__ rays_o = static_cast<float *>(next_buffer());  // [n_total_rays, 3]
+    float const * const __restrict__ rays_d = static_cast<float *>(next_buffer());  // [n_total_rays, 3]
+    float const * const __restrict__ t_starts = static_cast<float *>(next_buffer());  // [n_total_rays]
+    float const * const __restrict__ t_ends = static_cast<float *>(next_buffer());  // [n_total_rays]
+    std::uint8_t const * const __restrict__ occupancy_bitfield = static_cast<std::uint8_t *>(next_buffer());  // [K*G*G*G//8]
+    std::uint32_t const * const __restrict__ counter_in = static_cast<std::uint32_t *>(next_buffer());  // [1]
+    bool const * const __restrict__ terminated = static_cast<bool *>(next_buffer());  // [n_rays]
+    std::uint32_t const * const __restrict__ indices_in = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
+
+    // outputs
+    std::uint32_t * const __restrict__ counter = static_cast<std::uint32_t *>(next_buffer());  // [1]
+    std::uint32_t * const __restrict__ indices_out = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
+    std::uint32_t * const __restrict__ n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
+    float * const __restrict__ t_starts_out = static_cast<float *>(next_buffer());  // [n_rays]
+    float * const __restrict__ xyzdirs = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap, 6]
+    float * const __restrict__ dss = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap]
+    float * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap]
+
+    // copy input counter value to output counter
+    CUDA_CHECK_THROW(cudaMemcpyAsync(counter, counter_in, sizeof(std::uint32_t), cudaMemcpyKind::cudaMemcpyDeviceToDevice, stream));
+    CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
+
+    // initialize output arrays to zeros
+    CUDA_CHECK_THROW(cudaMemsetAsync(indices_out, 0x00, n_rays * sizeof(std::uint32_t), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(n_samples, 0x00, n_rays * sizeof(std::uint32_t), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(t_starts_out, 0x00, n_rays * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(xyzdirs, 0x00, n_rays * march_steps_cap * 6 * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(dss, 0x00, n_rays * march_steps_cap * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(z_vals, 0x00, n_rays * march_steps_cap * sizeof(float), stream));
+
+    // kernel launch
+    std::uint32_t const blockSize = 256;
+    std::uint32_t const numBlocks = (n_rays + blockSize - 1) / blockSize;
+    march_rays_inference_kernel<<<numBlocks, blockSize, 0, stream>>>(
+        n_total_rays
+        , n_rays
+        , diagonal_n_steps
+        , K
+        , G
+        , march_steps_cap
+        , bound
+        , stepsize_portion
+
+        , rays_o
+        , rays_d
+        , t_starts
+        , t_ends
+        , occupancy_bitfield
+        , terminated
+        , indices_in
+
+        , counter
+        , indices_out
+        , n_samples
+        , t_starts_out
+        , xyzdirs
+        , dss
+        , z_vals
+    );
+
+    // abort on error
+    CUDA_CHECK_THROW(cudaGetLastError());
+}
+
 void morton3d_launcher(cudaStream_t stream, void **buffers, char const *opaque, std::size_t opaque_len) {
     // buffer indexing helper
     std::uint32_t __buffer_idx = 0;
@@ -413,6 +599,15 @@ void march_rays(
     std::size_t opaque_len
 ) {
     march_rays_launcher(stream, buffers, opaque, opaque_len);
+}
+
+void march_rays_inference(
+    cudaStream_t stream,
+    void **buffers,
+    char const *opaque,
+    std::size_t opaqlne_len
+) {
+    march_rays_inference_launcher(stream, buffers, opaque, opaqlne_len);
 }
 
 void morton3d(

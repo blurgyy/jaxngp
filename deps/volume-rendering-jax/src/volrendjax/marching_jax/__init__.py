@@ -94,3 +94,43 @@ def march_rays(
     )
 
     return measured_batch_size_before_compaction[0], rays_n_samples, rays_sample_startidx, xyzs, dirs, dss, z_vals
+
+
+def march_rays_inference(
+    # static
+    diagonal_n_steps: int,
+    K: int,
+    G: int,
+    march_steps_cap: int,
+    bound: float,
+    stepsize_portion: float,
+
+    # inputs
+    rays_o: jax.Array,
+    rays_d: jax.Array,
+    t_starts: jax.Array,
+    t_ends: jax.Array,
+    occupancy_bitfield: jax.Array,
+    counter: jax.Array,
+    terminated: jax.Array,
+    indices: jax.Array,
+):
+    counter, indices, n_samples, t_starts_out, xyzdirs, dss, z_vals = impl.march_rays_inference_p.bind(
+        rays_o,
+        rays_d,
+        t_starts,
+        t_ends,
+        occupancy_bitfield,
+        counter,
+        terminated,
+        indices,
+
+        diagonal_n_steps=diagonal_n_steps,
+        K=K,
+        G=G,
+        march_steps_cap=march_steps_cap,
+        bound=bound,
+        stepsize_portion=stepsize_portion,
+    )
+    t_starts = t_starts.at[indices].set(t_starts_out)
+    return counter, indices, n_samples, t_starts, xyzdirs, dss, z_vals

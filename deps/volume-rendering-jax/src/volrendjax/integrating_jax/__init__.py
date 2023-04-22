@@ -59,3 +59,35 @@ def integrate_rays(
     )
 
     return counter[0], opacities, final_rgbs, depths
+
+
+def integrate_rays_inference(
+    rays_bg: jax.Array,
+    rays_rgb: jax.Array,
+    rays_T: jax.Array,
+    rays_depth: jax.Array,
+
+    n_samples: jax.Array,
+    indices: jax.Array,
+    dss: jax.Array,
+    z_vals: jax.Array,
+    densities: jax.Array,
+    rgbs: jax.Array,
+):
+    terminate_cnt, terminated, rays_rgb_out, rays_T_out, rays_depth_out = impl.integrate_rays_inference_p.bind(
+        rays_bg,
+        rays_rgb,
+        rays_T,
+        rays_depth,
+
+        n_samples,
+        indices,
+        dss,
+        z_vals,
+        densities,
+        rgbs,
+    )
+    rays_rgb = rays_rgb.at[indices].set(rays_rgb_out)
+    rays_T = rays_T.at[indices].set(rays_T_out)
+    rays_depth = rays_depth.at[indices].set(rays_depth_out)
+    return terminate_cnt[0], terminated, rays_rgb, rays_T, rays_depth

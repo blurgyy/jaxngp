@@ -31,6 +31,7 @@ pybind11::dict get_packbits_registrations() {
 pybind11::dict get_marching_registrations() {
     pybind11::dict dict;
     dict["march_rays"] = encapsulate_function(march_rays);
+    dict["march_rays_inference"] = encapsulate_function(march_rays_inference);
     return dict;
 }
 
@@ -45,6 +46,7 @@ pybind11::dict get_integrating_registrations() {
     pybind11::dict dict;
     dict["integrate_rays"] = encapsulate_function(integrate_rays);
     dict["integrate_rays_backward"] = encapsulate_function(integrate_rays_backward);
+    dict["integrate_rays_inference"] = encapsulate_function(integrate_rays_inference);
     return dict;
 }
 
@@ -89,11 +91,47 @@ PYBIND11_MODULE(volrendutils_cuda, m) {
           "Static arguments passed to the `march_rays` function.\n\n"
           "Args:\n"
           "    n_rays: number of input rays\n"
-          "    total_samples: number of available slots to write generated samples to, i.e. the"
+          "    total_samples: number of available slots to write generated samples to, i.e. the\n"
           "                   length of output samples array\n"
           "    diagonal_n_steps: used to calculate the length of a minimal ray marching step\n"
           "    K: total number of cascades of the occupancy bitfield\n"
           "    G: occupancy grid resolution, the paper uses 128 for every cascade\n"
+          "    bound: the half length of the longest axis of the scene’s bounding box,\n"
+          "           e.g. the `bound` of the bounding box [-1, 1]^3 is 1\n"
+          "    stepsize_portion: next step size is calculated as t * stepsize_portion,\n"
+          "                      the paper uses 1/256\n"
+          );
+    m.def("make_marching_inference_descriptor",
+          [](std::uint32_t const n_total_rays
+             , std::uint32_t const n_rays
+             , std::uint32_t const diagonal_n_steps
+             , std::uint32_t const K
+             , std::uint32_t const G
+             , std::uint32_t const march_steps_cap
+             , float const bound
+             , float const stepsize_portion) {
+            if (K == 0) {
+                throw std::runtime_error("expected K to be a positive integer, got 0");
+            }
+            return to_pybind11_bytes(MarchingInferenceDescriptor{
+                .n_total_rays = n_total_rays,
+                .n_rays = n_rays,
+                .diagonal_n_steps = diagonal_n_steps,
+                .K = K,
+                .G = G,
+                .march_steps_cap = march_steps_cap,
+                .bound = bound,
+                .stepsize_portion = stepsize_portion,
+            });
+          },
+          "Static arguments passed to the `march_rays_inference` function.\n\n"
+          "Args:\n"
+          "    n_total_rays: total number of rays to march\n"
+          "    n_rays: number of rays to march during this iteration\n"
+          "    diagonal_n_steps: used to calculate the length of a minimal ray marching step\n"
+          "    K: total number of cascades of the occupancy bitfield\n"
+          "    G: occupancy grid resolution, the paper uses 128 for every cascade\n"
+          "    march_steps_cap: max number of samples to generate for each ray\n"
           "    bound: the half length of the longest axis of the scene’s bounding box,\n"
           "           e.g. the `bound` of the bounding box [-1, 1]^3 is 1\n"
           "    stepsize_portion: next step size is calculated as t * stepsize_portion,\n"
@@ -131,6 +169,22 @@ PYBIND11_MODULE(volrendutils_cuda, m) {
           "Returns:\n"
           "    Serialized bytes that can be passed as the opaque parameter to `integrate_rays`\n"
           "    or `integrate_rays_backward`"
+          );
+    m.def("make_integrating_inference_descriptor",
+          [](std::uint32_t const n_total_rays
+             , std::uint32_t const n_rays
+             , std::uint32_t const march_steps_cap) {
+            return to_pybind11_bytes(IntegratingInferenceDescriptor{
+                .n_total_rays = n_total_rays,
+                .n_rays = n_rays,
+                .march_steps_cap = march_steps_cap,
+            });
+          },
+          "Static arguments passed to the `integrate_rays_inference`\n\n"
+          "Args:\n"
+          "    n_total_rays: total number of rays to march\n"
+          "    n_rays: number of rays to integrate during this iteration\n"
+          "    march_steps_cap: see MarchingInferenceDescriptor\n"
           );
 };
 

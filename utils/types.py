@@ -61,6 +61,7 @@ class OccupancyDensityGrid:
 
 @dataclass
 class NeRFBatchConfig:
+    mean_effective_samples_per_ray: int
     mean_samples_per_ray: int
     n_rays: int
 
@@ -136,6 +137,15 @@ class RenderingOptions:
 
     # ignore `bg` specification and use random color for transparent parts of the image
     random_bg: bool
+
+
+@dataclass
+class SceneOptions:
+    # half width of axis-aligned bounding-box, i.e. aabb's width is `bound*2`
+    bound: float
+
+    # scale camera positions with this scalar
+    scale: float
 
 
 @dataclass
