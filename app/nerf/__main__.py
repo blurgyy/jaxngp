@@ -6,7 +6,8 @@ from typing_extensions import assert_never
 import tyro
 
 from utils import common
-from utils.args import NeRFTestingArgs, NeRFTrainingArgs
+from utils.args import NeRFTestingArgs, NeRFTrainingArgs,GuiWindowArgs
+
 
 
 MainArgsType = Union[
@@ -24,6 +25,13 @@ MainArgsType = Union[
             prefix_name=False,
         ),
     ],
+    Annotated[
+        GuiWindowArgs,
+        tyro.conf.subcommand(
+            name="gui",
+            prefix_name=False,
+        ),
+    ],
 ]
 
 
@@ -37,6 +45,9 @@ def main(args: MainArgsType):
     elif isinstance(args, NeRFTestingArgs):
         from app.nerf.test import test
         test(KEY, args, logger)
+    elif isinstance(args,GuiWindowArgs):
+        from app.nerf.gui import GuiWindow
+        GuiWindow(KEY, args, logger)
     else:
         assert_never()
 
