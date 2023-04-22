@@ -73,8 +73,8 @@
           tensorflow
           tqdm
           icecream
+          (depsWith pp).dearpygui
           (depsWith pp).tyro
-          (depsWith pp).pyimgui
           pillow
           ipdb
           colorama
