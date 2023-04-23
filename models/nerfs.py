@@ -54,7 +54,7 @@ class NeRF(nn.Module):
         density, _ = jnp.split(x, [1], axis=-1)
 
         if dir is None:
-            return density
+            return density.reshape(*original_aux_shapes, 1)
         dir = dir.reshape(-1, 3)
 
         # [..., D_dir]
@@ -64,9 +64,7 @@ class NeRF(nn.Module):
 
         density, rgb = self.density_activation(density), self.rgb_activation(rgb)
 
-        density, rgb = density.reshape(*original_aux_shapes, 1), rgb.reshape(*original_aux_shapes, 3)
-
-        return density, rgb
+        return density.reshape(*original_aux_shapes, 1), rgb.reshape(*original_aux_shapes, 3)
 
 
 class CoordinateBasedMLP(nn.Module):
