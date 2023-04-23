@@ -164,6 +164,8 @@ def blend_rgba_image_array(imgarr, bg: RGBColor):
           background color.
           E.g.: `final_color = ray_accumulated_color + (1 - ray_opacity) * bg_color`
     """
+    if isinstance(imgarr, Image.Image):
+        imgarr = np.asarray(imgarr)
     chex.assert_shape(imgarr, [..., 4])
     rgbs, alpha = imgarr[..., :-1], imgarr[..., -1:]
     bg_color = jnp.asarray(bg)

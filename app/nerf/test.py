@@ -1,6 +1,9 @@
 import logging
+from pathlib import Path
+from typing import List
 
 from PIL import Image
+from flax.struct import dataclass
 from flax.training import checkpoints
 import jax
 import jax.numpy as jnp
@@ -13,7 +16,34 @@ from models.renderers import render_image
 from utils import common, data
 from utils.args import NeRFTestingArgs
 from utils.data import make_nerf_synthetic_scene_metadata
-from utils.types import NeRFBatchConfig, OccupancyDensityGrid, RigidTransformation
+from utils.types import NeRFBatchConfig, OccupancyDensityGrid, RGBColor, RigidTransformation
+
+
+@dataclass
+class TestedImage:
+    rgb: Image.Image
+    depth: Image.Image
+    gt_path: Path
+
+    def gt_image(self, bg: RGBColor) -> Image.Image:
+        return data.blend_rgba_image_array(Image.open(self.gt_path), bg=bg)
+
+    def psnr(self, bg: RGBColor) -> float:
+        return data.psnr(self.gt_image(bg), self.rgb)
+
+    def save_rgb(self, dest: Path):
+        Image.fromarray(np.asarray(self.rgb)).save(dest)
+    def save_depth(self, dest: Path):
+        Image.fromarray(np.asarray(self.depth)).save(dest)
+    def save_comparison(self, dest: Path, bg: RGBColor):
+        gt_image = self.gt_image(bg)
+        comparison_image_data = data.side_by_side(
+            gt_image,
+            self.rgb,
+            H=gt_image.shape[0],
+            W=gt_image.shape[1]
+        )
+        Image.fromarray(np.asarray(comparison_image_data)).save(dest)
 
 
 def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
@@ -52,7 +82,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
         scale=args.scene.scale,
     )
 
-    n_tested, mean_psnr = 0, 0.0
+    tested_images: List[TestedImage] = []
     logger.info("starting testing (totally {} image(s) to test)".format(len(args.test_indices)))
     for test_i in (pbar := tqdm(args.test_indices, desc="Testing", bar_format=common.tqdm_format)):
         if test_i < 0 or test_i >= len(test_views):
@@ -75,49 +105,28 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
             param_dict={"params": params},
             nerf_fn=model.apply,
         )
-        gt_image = Image.open(test_views[test_i].file)
-        gt_image = np.asarray(gt_image)
-        gt_image = data.blend_rgba_image_array(gt_image, bg=args.render.bg)
-        psnr = data.psnr(gt_image, rgb)
-        logger.debug("{}: psnr={}".format(test_views[test_i].file, psnr))
-        dest = args.exp_dir\
-            .joinpath(args.test_split)
+        tested_images.append(TestedImage(
+            rgb=rgb,
+            depth=depth,
+            gt_path=test_views[test_i].file,
+        ))
+
+    # calculate psnr
+    logger.debug("calculating psnr")
+    mean_psnr = sum(map(lambda timg: timg.psnr(args.render.bg), tqdm(tested_images, desc="calculating psnr", bar_format=common.tqdm_format))) / len(tested_images)
+    logger.info("tested {} images, mean psnr={}".format(len(tested_images), mean_psnr))
+
+    # save images
+    for save_i, timg in enumerate(tqdm(tested_images, desc="saving images", bar_format=common.tqdm_format)):
+        dest = args.exp_dir.joinpath(args.test_split)
         dest.mkdir(parents=True, exist_ok=True)
 
-        # rgb
-        dest_rgb = dest.joinpath("{:03d}-rgb.png".format(test_i))
-        logger.debug("saving comparison image to {}".format(dest_rgb))
-        Image.fromarray(np.asarray(rgb)).save(dest_rgb)
+        dest_rgb = dest.joinpath("{:03d}-rgb.png".format(save_i))
+        dest_depth = dest.joinpath("{:03d}-depth.png".format(save_i))
+        dest_comparison = dest.joinpath("{:03d}-comparison.png".format(save_i))
 
-        # comparison image
-        dest_comparison = dest.joinpath("{:03d}-comparison.png".format(test_i))
-        logger.debug("saving comparison image to {}".format(dest_comparison))
-        comparison_image_data = data.side_by_side(
-            gt_image,
-            rgb,
-            H=scene_metadata_test.camera.H,
-            W=scene_metadata_test.camera.W
-        )
-        comparison_image_data = data.add_border(comparison_image_data)
-        Image.fromarray(np.asarray(comparison_image_data)).save(dest_comparison)
+        timg.save_rgb(dest_rgb)
+        timg.save_depth(dest_depth)
+        timg.save_comparison(dest_comparison, bg=args.render.bg)
 
-        # depth
-        dest_depth = dest.joinpath("{:03d}-depth.png".format(test_i))
-        logger.debug("saving predicted depth image to {}".format(dest_depth))
-        Image.fromarray(np.asarray(depth)).save(dest_depth)
-
-        mean_psnr += psnr
-        n_tested += 1
-
-        pbar.set_description_str(
-            desc="Testing {:03d}/{:03d} psnr(this)={:.3f} psnr(mean)={:.3f}".format(
-                test_i + 1,
-                len(args.test_indices),
-                psnr,
-                mean_psnr / n_tested,
-            ),
-        )
-
-    mean_psnr /= n_tested
-    logger.info("tested {} images, mean psnr={}".format(n_tested, mean_psnr))
     return mean_psnr
