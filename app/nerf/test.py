@@ -31,7 +31,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
     # model parameters
     KEY, key = jran.split(KEY, 2)
     model, init_input = (
-        make_nerf_ngp(bound=args.bound),
+        make_nerf_ngp(bound=args.scene.bound),
         (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
     )
     # initialize model structure but discard parameters, as parameters are loaded later
@@ -49,7 +49,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
     scene_metadata_test, test_views = make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split=args.test_split,
-        scale=args.scale,
+        scale=args.scene.scale,
     )
 
     n_tested, mean_psnr = 0, 0.0
@@ -65,7 +65,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
         KEY, key = jran.split(KEY, 2)
         rgb, depth = render_image(
             KEY=key,
-            bound=args.bound,
+            bound=args.scene.bound,
             camera=scene_metadata_test.camera,
             transform_cw=transform,
             options=args.render,

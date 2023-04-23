@@ -223,7 +223,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
 
     # model parameters
     model, init_input = (
-        make_nerf_ngp(bound=args.bound),
+        make_nerf_ngp(bound=args.scene.bound),
         (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
     )
     KEY, key = jran.split(KEY, 2)
@@ -273,7 +273,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
         params=variables["params"].unfreeze(),
         tx=optimizer,
         ogrid=OccupancyDensityGrid.create(
-            cascades=data.cascades_from_bound(args.bound),
+            cascades=data.cascades_from_bound(args.scene.bound),
             grid_resolution=args.raymarch.density_grid_res,
         ),
         batch_config=NeRFBatchConfig(
@@ -287,13 +287,13 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
     scene_metadata_train, _ = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split="train",
-        scale=args.scale,
+        scale=args.scene.scale,
     )
 
     scene_metadata_val, val_views = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
         split="val",
-        scale=args.scale,
+        scale=args.scene.scale,
     )
 
     logger.info("starting training")
@@ -312,7 +312,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
             KEY, key = jran.split(KEY, 2)
             loss_log, state = train_epoch(
                 KEY=key,
-                bound=args.bound,
+                bound=args.scene.bound,
                 scene_metadata=scene_metadata_train,
                 raymarch_options=args.raymarch,
                 render_options=args.render,
@@ -360,7 +360,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
             KEY, key = jran.split(KEY, 2)
             rgb, depth = render_image(
                 KEY=key,
-                bound=args.bound,
+                bound=args.scene.bound,
                 camera=scene_metadata_val.camera,
                 transform_cw=val_transform,
                 options=args.render_eval,

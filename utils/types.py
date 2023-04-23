@@ -140,6 +140,15 @@ class RenderingOptions:
 
 
 @dataclass
+class SceneOptions:
+    # half width of axis-aligned bounding-box, i.e. aabb's width is `bound*2`
+    bound: float
+
+    # scale camera positions with this scalar
+    scale: float
+
+
+@dataclass
 class RigidTransformation:
     # [3, 3] rotation matrix
     rotation: jax.Array
