@@ -91,7 +91,7 @@ def march_rays_inference_abstract(
         "counter": (1,),
         "indices_out": (n_rays,),
         "n_samples": (n_rays,),
-        "t_starts": (n_total_rays,),
+        "t_starts": (n_rays,),
         "xyzdirs": (n_rays, march_steps_cap, 6),
         "dss": (n_rays, march_steps_cap),
         "z_vals": (n_rays, march_steps_cap),

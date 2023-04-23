@@ -273,11 +273,11 @@ __global__ void integrate_rays_inference_kernel(
     terminated[i] = ray_terminated;
 
     bool const ray_reached_bg = (ray_terminated && ray_T > 1e-4);
-    rays_rgb_out[ray_idx*3+0] = r + (ray_reached_bg ? ray_T * rays_bg[ray_idx*3+0] : 0.f);
-    rays_rgb_out[ray_idx*3+1] = g + (ray_reached_bg ? ray_T * rays_bg[ray_idx*3+1] : 0.f);
-    rays_rgb_out[ray_idx*3+2] = b + (ray_reached_bg ? ray_T * rays_bg[ray_idx*3+2] : 0.f);
-    rays_T_out[ray_idx] = ray_T;
-    rays_depth_out[ray_idx] = ray_depth;
+    rays_rgb_out[i*3+0] = r + (ray_reached_bg ? ray_T * rays_bg[ray_idx*3+0] : 0.f);
+    rays_rgb_out[i*3+1] = g + (ray_reached_bg ? ray_T * rays_bg[ray_idx*3+1] : 0.f);
+    rays_rgb_out[i*3+2] = b + (ray_reached_bg ? ray_T * rays_bg[ray_idx*3+2] : 0.f);
+    rays_T_out[i] = ray_T;
+    rays_depth_out[i] = ray_depth;
 }
 
 // kernel launchers
@@ -451,18 +451,16 @@ void integrate_rays_inference_launcher(cudaStream_t stream, void **buffers, char
     // outputs
     std::uint32_t * const __restrict__ terminate_cnt = static_cast<std::uint32_t *>(next_buffer());  // [1]
     bool * const __restrict__ terminated = static_cast<bool *>(next_buffer());  // [n_rays]
-    float * const __restrict__ rays_rgb_out = static_cast<float *>(next_buffer());  // [n_total_rays, 3]
-    float * const __restrict__ rays_T_out = static_cast<float *>(next_buffer());  // [n_total_rays]
-    float * const __restrict__ rays_depth_out = static_cast<float *>(next_buffer());  // [n_total_rays]
+    float * const __restrict__ rays_rgb_out = static_cast<float *>(next_buffer());  // [n_rays, 3]
+    float * const __restrict__ rays_T_out = static_cast<float *>(next_buffer());  // [n_rays]
+    float * const __restrict__ rays_depth_out = static_cast<float *>(next_buffer());  // [n_rays]
 
     CUDA_CHECK_THROW(cudaMemsetAsync(terminate_cnt, 0x00, sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(terminated, false, n_rays * sizeof(bool), stream));
 
-    CUDA_CHECK_THROW(cudaMemcpyAsync(rays_rgb_out, rays_rgb, n_total_rays * 3 * sizeof(float), cudaMemcpyKind::cudaMemcpyDeviceToDevice, stream));
-    CUDA_CHECK_THROW(cudaMemcpyAsync(rays_T_out, rays_T, n_total_rays * sizeof(float), cudaMemcpyKind::cudaMemcpyDeviceToDevice, stream));
-    CUDA_CHECK_THROW(cudaMemcpyAsync(rays_depth_out, rays_depth, n_total_rays * sizeof(float), cudaMemcpyKind::cudaMemcpyDeviceToDevice, stream));
-
-    CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(rays_rgb_out, 0x00, n_rays * 3 * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(rays_T_out, 0x00, n_rays * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(rays_depth_out, 0x00, n_rays * sizeof(float), stream));
 
     // kernel launch
     std::uint32_t const blockSize = 256;

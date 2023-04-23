@@ -74,7 +74,7 @@ def integrate_rays_inference(
     densities: jax.Array,
     rgbs: jax.Array,
 ):
-    terminate_cnt, terminated, rays_rgb, rays_T, rays_depth = impl.integrate_rays_inference_p.bind(
+    terminate_cnt, terminated, rays_rgb_out, rays_T_out, rays_depth_out = impl.integrate_rays_inference_p.bind(
         rays_bg,
         rays_rgb,
         rays_T,
@@ -87,4 +87,7 @@ def integrate_rays_inference(
         densities,
         rgbs,
     )
+    rays_rgb = rays_rgb.at[indices].set(rays_rgb_out)
+    rays_T = rays_T.at[indices].set(rays_T_out)
+    rays_depth = rays_depth.at[indices].set(rays_depth_out)
     return terminate_cnt[0], terminated, rays_rgb, rays_T, rays_depth

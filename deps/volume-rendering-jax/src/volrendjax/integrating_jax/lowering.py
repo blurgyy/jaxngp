@@ -238,9 +238,9 @@ def integrate_rays_inference_lowering_rule(
 
         "out.terminate_cnt": (1,),
         "out.terminated": (n_rays,),
-        "out.rays_rgb": (n_total_rays, 3),
-        "out.rays_T": (n_total_rays,),
-        "out.rays_depth": (n_total_rays,),
+        "out.rays_rgb": (n_rays, 3),
+        "out.rays_T": (n_rays,),
+        "out.rays_depth": (n_rays,),
     }
 
     return custom_call(

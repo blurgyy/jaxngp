@@ -152,7 +152,7 @@ def march_rays_inference_lowering_rule(
         "out.counter": (1,),
         "out.indices_out": (n_rays,),
         "out.n_samples": (n_rays,),
-        "out.t_starts": (n_total_rays,),
+        "out.t_starts": (n_rays,),
         "out.xyzdirs": (n_rays, march_steps_cap, 6),
         "out.dss": (n_rays, march_steps_cap),
         "out.z_vals": (n_rays, march_steps_cap),

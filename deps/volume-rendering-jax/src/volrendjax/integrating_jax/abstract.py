@@ -130,9 +130,9 @@ def integrate_rays_inference_abstract(
     out_shapes = {
         "terminate_cnt": (1,),
         "terminated": (n_rays,),
-        "rays_rgb": (n_total_rays, 3),
-        "rays_T": (n_total_rays,),
-        "rays_depth": (n_total_rays,),
+        "rays_rgb": (n_rays, 3),
+        "rays_T": (n_rays,),
+        "rays_depth": (n_rays,),
     }
 
     return (

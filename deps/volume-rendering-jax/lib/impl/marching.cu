@@ -330,7 +330,7 @@ __global__ void march_rays_inference_kernel(
         }
     }
     n_samples[i] = steps;
-    t_starts_out[ray_idx] = ray_t;
+    t_starts_out[i] = ray_t;
 }
 
 __global__ void morton3d_kernel(
@@ -480,25 +480,22 @@ void march_rays_inference_launcher(cudaStream_t stream, void **buffers, char con
     std::uint32_t * const __restrict__ counter = static_cast<std::uint32_t *>(next_buffer());  // [1]
     std::uint32_t * const __restrict__ indices_out = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     std::uint32_t * const __restrict__ n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
-    float * const __restrict__ t_starts_out = static_cast<float *>(next_buffer());  // [n_total_rays]
+    float * const __restrict__ t_starts_out = static_cast<float *>(next_buffer());  // [n_rays]
     float * const __restrict__ xyzdirs = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap, 6]
     float * const __restrict__ dss = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap]
     float * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap]
 
     // copy input counter value to output counter
     CUDA_CHECK_THROW(cudaMemcpyAsync(counter, counter_in, sizeof(std::uint32_t), cudaMemcpyKind::cudaMemcpyDeviceToDevice, stream));
-
-    // copy t_starts to t_starts_out
-    CUDA_CHECK_THROW(cudaMemcpyAsync(t_starts_out, t_starts, n_total_rays * sizeof(float), cudaMemcpyKind::cudaMemcpyDeviceToDevice, stream));
+    CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
 
     // initialize output arrays to zeros
     CUDA_CHECK_THROW(cudaMemsetAsync(indices_out, 0x00, n_rays * sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(n_samples, 0x00, n_rays * sizeof(std::uint32_t), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(t_starts_out, 0x00, n_rays * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(xyzdirs, 0x00, n_rays * march_steps_cap * 6 * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(dss, 0x00, n_rays * march_steps_cap * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(z_vals, 0x00, n_rays * march_steps_cap * sizeof(float), stream));
-
-    CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
 
     // kernel launch
     std::uint32_t const blockSize = 256;

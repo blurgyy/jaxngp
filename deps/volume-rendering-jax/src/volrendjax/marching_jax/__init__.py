@@ -115,7 +115,7 @@ def march_rays_inference(
     terminated: jax.Array,
     indices: jax.Array,
 ):
-    counter, indices, n_samples, t_starts, xyzdirs, dss, z_vals = impl.march_rays_inference_p.bind(
+    counter, indices, n_samples, t_starts_out, xyzdirs, dss, z_vals = impl.march_rays_inference_p.bind(
         rays_o,
         rays_d,
         t_starts,
@@ -132,4 +132,5 @@ def march_rays_inference(
         bound=bound,
         stepsize_portion=stepsize_portion,
     )
+    t_starts = t_starts.at[indices].set(t_starts_out)
     return counter, indices, n_samples, t_starts, xyzdirs, dss, z_vals
