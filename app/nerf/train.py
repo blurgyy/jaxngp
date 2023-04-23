@@ -134,6 +134,7 @@ def train_epoch(
     ):
     n_processed_rays = 0
     loss, running_loss = 0, -1
+    running_mean_effective_samp_per_ray = state.batch_config.mean_effective_samples_per_ray
     running_mean_samp_per_ray = state.batch_config.mean_samples_per_ray
 
     beg_idx = 0
@@ -164,16 +165,20 @@ def train_epoch(
             running_loss = loss_log
         else:
             running_loss = running_loss * 0.99 + 0.01 * loss_log
-        running_mean_samp_per_ray = running_mean_samp_per_ray * .95 + .05 * metrics["measured_batch_size_before_compaction"] / state.batch_config.n_rays
+        running_mean_samp_per_ray, running_mean_effective_samp_per_ray = (
+            running_mean_samp_per_ray * .95 + .05 * metrics["measured_batch_size_before_compaction"] / state.batch_config.n_rays,
+            running_mean_effective_samp_per_ray * .95 + .05 * metrics["measured_batch_size"] / state.batch_config.n_rays,
+        )
 
         pbar.set_description_str(
-            desc="Training epoch#{:03d}/{:d} batch_size={}/{} n_rays={} samp./ray={} loss={:.3e} psnr~{:.2f}dB".format(
+            desc="Training epoch#{:03d}/{:d} batch_size={}/{} samp./ray={}/{} n_rays={} loss={:.3e} psnr~{:.2f}dB".format(
                 ep_log,
                 total_epochs,
                 metrics["measured_batch_size"],
                 metrics["measured_batch_size_before_compaction"],
-                state.batch_config.n_rays,
+                state.batch_config.mean_effective_samples_per_ray,
                 state.batch_config.mean_samples_per_ray,
+                state.batch_config.n_rays,
                 running_loss,
                 data.linear2psnr(running_loss, maxval=1)
             )
@@ -191,10 +196,12 @@ def train_epoch(
             )
 
         if state.should_update_batch_config:
+            new_mean_effective_samples_per_ray = int(running_mean_effective_samp_per_ray + 1.5)
             new_mean_samples_per_ray = int(running_mean_samp_per_ray + 1.5)
             new_n_rays = total_samples // new_mean_samples_per_ray
             state = state.replace(
                 batch_config=NeRFBatchConfig(
+                    mean_effective_samples_per_ray=new_mean_effective_samples_per_ray,
                     mean_samples_per_ray=new_mean_samples_per_ray,
                     n_rays=new_n_rays,
                 ),
@@ -270,6 +277,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
             grid_resolution=args.raymarch.density_grid_res,
         ),
         batch_config=NeRFBatchConfig(
+            mean_effective_samples_per_ray=args.raymarch.diagonal_n_steps,
             mean_samples_per_ray=args.raymarch.diagonal_n_steps,
             n_rays=args.train.bs // args.raymarch.diagonal_n_steps,
         ),

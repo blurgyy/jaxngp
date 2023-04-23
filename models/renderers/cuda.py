@@ -316,8 +316,8 @@ def render_image(
     else:
         rays_bg = jnp.broadcast_to(jnp.asarray(options.bg, dtype=rays_rgb.dtype), rays_rgb.shape)
 
-    march_rays_cap = max(1, min(batch_config.mean_samples_per_ray // 3, 8))
-    n_rays = batch_config.estimated_batch_size // march_rays_cap
+    march_rays_cap = batch_config.mean_effective_samples_per_ray
+    n_rays = 16384
 
     # all_terminated = jnp.zeros(camera.n_pixels, dtype=jnp.bool_)
     # render_cost = jnp.zeros(camera.n_pixels, dtype=jnp.uint32)

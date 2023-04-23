@@ -61,6 +61,7 @@ class OccupancyDensityGrid:
 
 @dataclass
 class NeRFBatchConfig:
+    mean_effective_samples_per_ray: int
     mean_samples_per_ray: int
     n_rays: int
 
