@@ -29,9 +29,6 @@ class NeRF(nn.Module):
     density_activation: Callable
     rgb_activation: Callable
 
-    # TODO:
-    #   * input "dir" does not need to be batched
-    #   * use vmap
     @nn.compact
     def __call__(self, xyz: jax.Array, dir: Optional[jax.Array]) -> Tuple[jax.Array, jax.Array]:
         """
