@@ -84,8 +84,8 @@ def update_ogrid(
         )
 
         new_densities = state.apply_fn(
-            {"params": state.params},
-            coordinates,
+            {"params": jax.lax.stop_gradient(state.params)},
+            jax.lax.stop_gradient(coordinates),
             None,
         )
 
