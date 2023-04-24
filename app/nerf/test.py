@@ -84,7 +84,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
 
     tested_images: List[TestedImage] = []
     logger.info("starting testing (totally {} image(s) to test)".format(len(args.test_indices)))
-    for test_i in (pbar := tqdm(args.test_indices, desc="Testing", bar_format=common.tqdm_format)):
+    for test_i in tqdm(args.test_indices, desc="Testing", bar_format=common.tqdm_format):
         if test_i < 0 or test_i >= len(test_views):
             logger.warn("skipping out-of-bounds index {} (index should be in range [0, {}])".format(test_i, len(args.test_indices) - 1))
         logger.debug("testing on image index {}".format(test_i))

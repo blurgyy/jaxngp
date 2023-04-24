@@ -58,15 +58,14 @@ def update_ogrid(
             # sets.
             M = G3 // 2
             # The first 𝑀/2 cells are sampled uniformly among all cells.
-            KEY, key = jran.split(KEY, 2)
-            indices_firsthalf = jran.choice(key=key, a=jnp.arange(G3, dtype=jnp.uint32), shape=(M//2,), replace=True)  # allow duplicated choices
+            KEY, key_firsthalf, key_secondhalf = jran.split(KEY, 3)
+            indices_firsthalf = jran.choice(key=key_firsthalf, a=jnp.arange(G3, dtype=jnp.uint32), shape=(M//2,), replace=True)  # allow duplicated choices
             # Rejection sampling is used for the remaining samples to restrict selection to cells
             # that are currently occupied.
             # NOTE: Below is just uniformly sampling the occupied cells, not rejection sampling.
             cas_occ_mask = state.ogrid.occ_mask[cas*G3:(cas+1)*G3]
             p = cas_occ_mask.astype(jnp.float32)
-            KEY, key = jran.split(KEY, 2)
-            indices_secondhalf = jran.choice(key=key, a=jnp.arange(G3, dtype=jnp.uint32), shape=(M//2,), replace=True, p=p)
+            indices_secondhalf = jran.choice(key=key_secondhalf, a=jnp.arange(G3, dtype=jnp.uint32), shape=(M//2,), replace=True, p=p)
             indices = jnp.concatenate([indices_firsthalf, indices_secondhalf])
 
         coordinates = morton3d_invert(indices).astype(jnp.float32)
