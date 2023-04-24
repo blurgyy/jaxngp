@@ -1,11 +1,11 @@
 from collections.abc import Callable
+import math
 
 from flax.core.scope import FrozenVariableDict
 from icecream import ic
 import jax
 import jax.numpy as jnp
 import jax.random as jran
-from tqdm import tqdm
 from volrendjax import (
     integrate_rays,
     integrate_rays_inference,
@@ -15,8 +15,8 @@ from volrendjax import (
     packbits,
 )
 
-from utils.common import jit_jaxfn_with, tqdm_format
-from utils.data import cascades_from_bound, set_pixels
+from utils.common import jit_jaxfn_with
+from utils.data import cascades_from_bound
 from utils.types import (
     DensityAndRGB,
     NeRFBatchConfig,
@@ -28,7 +28,7 @@ from utils.types import (
     RigidTransformation,
 )
 
-from ._utils import get_indices_chunks, make_rays_worldspace
+from ._utils import make_rays_worldspace
 
 
 @jit_jaxfn_with(static_argnames=["update_all", "bound", "raymarch"])
@@ -274,7 +274,7 @@ def march_and_integrate_inference(
         xyzdirs[..., 3:],
     )
 
-    terminated_cnt, terminated, rays_rgb, rays_T, rays_depth = integrate_rays_inference(
+    terminate_cnt, terminated, rays_rgb, rays_T, rays_depth = integrate_rays_inference(
         rays_bg=rays_bg,
         rays_rgb=rays_rgb,
         rays_T=rays_T,
@@ -288,7 +288,7 @@ def march_and_integrate_inference(
         rgbs=rgbs,
     )
 
-    return terminated_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth
+    return terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth
 
 
 def render_image(
@@ -328,29 +328,35 @@ def render_image(
     n_rendered_rays = 0
 
     while n_rendered_rays < camera.n_pixels:
-        terminated_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth = march_and_integrate_inference(
-            bound=bound,
-            march_steps_cap=march_rays_cap,
-            raymarch_options=raymarch_options,
+        iters = max(1, (camera.n_pixels - n_rendered_rays) // n_rays)
+        iters = 2 ** int(math.log2(iters))
 
-            counter=counter,
-            rays_o=o_world,
-            rays_d=d_world,
-            t_starts=t_starts,
-            t_ends=t_ends,
-            occupancy_bitfield=ogrid.occupancy,
-            terminated=terminated,
-            indices=indices,
+        terminate_cnt = 0
+        for _ in range(iters):
+            iter_terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth = march_and_integrate_inference(
+                bound=bound,
+                march_steps_cap=march_rays_cap,
+                raymarch_options=raymarch_options,
 
-            rays_bg=rays_bg,
-            rays_rgb=rays_rgb,
-            rays_T=rays_T,
-            rays_depth=rays_depth,
+                counter=counter,
+                rays_o=o_world,
+                rays_d=d_world,
+                t_starts=t_starts,
+                t_ends=t_ends,
+                occupancy_bitfield=ogrid.occupancy,
+                terminated=terminated,
+                indices=indices,
 
-            param_dict=param_dict,
-            nerf_fn=nerf_fn,
-        )
-        n_rendered_rays += terminated_cnt
+                rays_bg=rays_bg,
+                rays_rgb=rays_rgb,
+                rays_T=rays_T,
+                rays_depth=rays_depth,
+
+                param_dict=param_dict,
+                nerf_fn=nerf_fn,
+            )
+            terminate_cnt += iter_terminate_cnt
+        n_rendered_rays += terminate_cnt
 
     image_array = jnp.clip(rays_rgb * 255, 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W, 3))
     rays_depth = rays_depth / (bound * 2 + jnp.linalg.norm(transform_cw.translation))
