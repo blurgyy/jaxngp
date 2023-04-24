@@ -15,7 +15,7 @@ class CommonArgs:
     # random seed
     seed: int = 1_000_000_007
     # display model information after model init
-    display_model_summary: bool=False
+    summary: bool=False
 
 
 @dataclass(frozen=True, kw_only=True)

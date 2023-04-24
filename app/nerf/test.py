@@ -66,7 +66,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
     )
     # initialize model structure but discard parameters, as parameters are loaded later
     model.init(key, *init_input)
-    if args.common.display_model_summary:
+    if args.common.summary:
         print(model.tabulate(key, *init_input))
 
     # load parameters

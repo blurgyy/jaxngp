@@ -228,7 +228,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
     )
     KEY, key = jran.split(KEY, 2)
     variables = model.init(key, *init_input)
-    if args.common.display_model_summary:
+    if args.common.summary:
         print(model.tabulate(key, *init_input))
 
     lr_sch = optax.exponential_decay(
