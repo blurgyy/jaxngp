@@ -75,6 +75,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
     batch_config = batch_config
     ogrid, params = OccupancyDensityGrid(**ckpt["ogrid"]), ckpt["params"]
     params = jax.tree_util.tree_map(lambda x: jnp.asarray(x), params)
+    params = jax.lax.stop_gradient(params)
 
     scene_metadata_test, test_views = make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
