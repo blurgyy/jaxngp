@@ -303,24 +303,23 @@ def render_image(
     nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
 ):
     o_world, d_world = make_rays_worldspace(camera=camera, transform_cw=transform_cw)
-
     t_starts, t_ends = make_near_far_from_bound(bound, o_world, d_world)
-
     rays_rgb = jnp.zeros((camera.n_pixels, 3), dtype=jnp.float32)
     rays_T = jnp.ones(camera.n_pixels, dtype=jnp.float32)
     rays_depth = jnp.zeros(camera.n_pixels, dtype=jnp.float32)
-
     if options.random_bg:
         KEY, key = jran.split(KEY, 2)
         rays_bg = jran.uniform(key, rays_rgb.shape, rays_rgb.dtype, minval=0, maxval=1)
     else:
         rays_bg = jnp.broadcast_to(jnp.asarray(options.bg, dtype=rays_rgb.dtype), rays_rgb.shape)
 
-    march_rays_cap = batch_config.mean_effective_samples_per_ray
-    n_rays = 16384
+    o_world, d_world, t_starts, t_ends, rays_bg, rays_rgb, rays_T, rays_depth, param_dict = map(
+        jax.lax.stop_gradient,
+        [o_world, d_world, t_starts, t_ends, rays_bg, rays_rgb, rays_T, rays_depth, param_dict],
+    )
 
-    # all_terminated = jnp.zeros(camera.n_pixels, dtype=jnp.bool_)
-    # render_cost = jnp.zeros(camera.n_pixels, dtype=jnp.uint32)
+    march_rays_cap = max(1, min(batch_config.mean_effective_samples_per_ray, 8))
+    n_rays = 65536 // march_rays_cap
 
     counter = jnp.zeros(1, dtype=jnp.uint32)
     terminated = jnp.ones(n_rays, dtype=jnp.bool_)  # all rays are terminated at the beginning
@@ -355,7 +354,5 @@ def render_image(
     image_array = jnp.clip(rays_rgb * 255, 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W, 3))
     rays_depth = rays_depth / (bound * 2 + jnp.linalg.norm(transform_cw.translation))
     depth_array = jnp.clip(rays_depth * 255, 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W))
-    # depth_array = jnp.clip(all_terminated.astype(jnp.uint8) * 255, 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W))
-    # depth_array = jnp.clip(render_cost * 255 / render_cost.max(), 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W))
 
     return image_array, depth_array
