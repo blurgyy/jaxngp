@@ -119,7 +119,7 @@ def make_near_far_from_bound(
         o: jax.Array,  # [n_rays, 3]
         d: jax.Array,  # [n_rays, 3]
     ):
-    "Finds a smallest non-negative `t` for each ray, such that o+td is inside the given aabb."
+    "Calculates near and far intersections with the bounding box [-bound, bound]^3 for each ray."
 
     # make sure d is normalized
     d /= jnp.linalg.norm(d, axis=-1, keepdims=True) + 1e-15
@@ -153,6 +153,8 @@ def make_near_far_from_bound(
     # the `march_rays` implementation
     t_start = jnp.maximum(jnp.maximum(tx_start, ty_start), tz_start)  # last axis that gose inside the bbox
     t_end = jnp.minimum(jnp.minimum(tx_end, ty_end), tz_end)  # first axis that goes out of the bbox
+
+    t_start = jnp.maximum(0., t_start)
 
     # [n_rays], [n_rays]
     return t_start, t_end

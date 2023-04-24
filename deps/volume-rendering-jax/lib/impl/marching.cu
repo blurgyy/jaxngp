@@ -96,11 +96,10 @@ __global__ void march_rays_kernel(
     float const * const __restrict__ ray_d = rays_d + i * 3;  // [3]
     float const ray_t_start = t_starts[i];  // [] (a scalar has no shape)
     float const ray_t_end = t_ends[i];  // [] (a scalar has no shape)
-    float const ray_noise = noises[i];  // [] (a scalar has no shape)
 
-    // if ray does not intersect with scene bounding box, no need to generate samples
-    if (ray_t_start <= 0) { return; }
-    if (ray_t_start >= ray_t_end) { return; }
+    if (ray_t_end <= 0.f) { return; }
+
+    float const ray_noise = noises[i];  // [] (a scalar has no shape)
 
     // precompute
     std::uint32_t const G3 = G*G*G;
@@ -268,8 +267,7 @@ __global__ void march_rays_inference_kernel(
     float const ray_t_start = t_starts[ray_idx];
     float const ray_t_end = t_ends[ray_idx];
 
-    if (ray_t_start <= 0) { return; }
-    if (ray_t_start >= ray_t_end) { return; }
+    if (ray_t_end <= 0.f) { return; }
 
     float * const __restrict__ ray_xyzdirs = xyzdirs + i * march_steps_cap * 6;
     float * const __restrict__ ray_dss = dss + i * march_steps_cap;
