@@ -214,7 +214,9 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
     if args.exp_dir.exists():
         logger.error("specified experiment directory '{}' already exists".format(args.exp_dir))
         exit(2)
-    args.exp_dir.mkdir(parents=True)
+    logs_dir = args.exp_dir.joinpath("logs")
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    logger = common.setup_logging("nerf.train", file=logs_dir.joinpath("train.log"))
     args.exp_dir.joinpath("config.yaml").write_text(tyro.to_yaml(args))
     logger.info("configurations saved to '{}'".format(args.exp_dir.joinpath("config.yaml")))
 

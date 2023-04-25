@@ -47,6 +47,9 @@ class TestedImage:
 
 
 def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
+    logs_dir = args.exp_dir.joinpath("logs")
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    logger = common.setup_logging("nerf.test", file=logs_dir.joinpath("test.log"))
     if not args.test_ckpt.exists():
         logger.warn("specified checkpoint '{}' does not exist".format(args.test_ckpt))
         exit(1)

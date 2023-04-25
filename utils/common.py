@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import logging
+from pathlib import Path
 import random
 from typing import (
     Any,
@@ -20,6 +21,8 @@ from jax._src.lib import xla_client as xc
 import jax.random as jran
 import numpy as np
 import tensorflow as tf
+
+from .types import LogLevel
 
 
 _tqdm_format = "SBRIGHT{desc}RESET: HI{percentage:3.0f}%RESET {n_fmt}/{total_fmt} [{elapsed}<HI{remaining}RESET, {rate_fmt}]"
@@ -85,25 +88,43 @@ def jit_jaxfn_with(
 
 
 def setup_logging(
-        name: str="main",
-        level: str="INFO"
-    ) -> logging.Logger:
+    name: str,
+    /,
+    file: Optional[Union[str, Path]]=None,
+    level: LogLevel="INFO",
+    file_level: LogLevel="DEBUG",
+) -> logging.Logger:
     colorama.just_fix_windows_console()
 
     class _formatter(logging.Formatter):
-        def __init__(self, datefmt):
+        def __init__(self, datefmt, rich_color: bool):
+            fore = {
+                "blue": Fore.BLUE if rich_color else "[",
+                "green": Fore.GREEN if rich_color else "[",
+                "yellow": Fore.YELLOW if rich_color else "[",
+                "red": Fore.RED if rich_color else "[",
+                "black": Fore.BLACK if rich_color else "[",
+            }
+            back = {
+                "red": Back.RED if rich_color else "[",
+            }
+            style = {
+                "bright": Style.BRIGHT if rich_color else "[",
+                "reset_all": Style.RESET_ALL if rich_color else "]",
+            }
+
             pathfmt = "%(module)s::%(funcName)s"
             fmt = "| %(asctime)s.%(msecs)03dZ LVL {bold}{pathfmt}{reset}: %(message)s".format(
-                bold=Style.BRIGHT,
+                bold=style["bright"],
                 pathfmt=pathfmt,
-                reset=Style.RESET_ALL,
+                reset=style["reset_all"],
             )
             formats = {
-                logging.DEBUG: fmt.replace("LVL", Fore.BLUE + "DEBUG" + Style.RESET_ALL),
-                logging.INFO: fmt.replace("LVL", " " + Fore.GREEN + "INFO" + Style.RESET_ALL),
-                logging.WARN: fmt.replace("LVL", " " + Fore.YELLOW + "WARN" + Style.RESET_ALL),
-                logging.ERROR: fmt.replace("LVL", Fore.RED + "ERROR" + Style.RESET_ALL),
-                logging.CRITICAL: fmt.replace("LVL", " " + Back.RED + Fore.BLACK + Style.BRIGHT + "CRIT" + Style.RESET_ALL),
+                logging.DEBUG: fmt.replace("LVL", fore["blue"] + "DEBUG" + style["reset_all"]),
+                logging.INFO: fmt.replace("LVL", " " + fore["green"] + "INFO" + style["reset_all"]),
+                logging.WARN: fmt.replace("LVL", " " + fore["yellow"] + "WARN" + style["reset_all"]),
+                logging.ERROR: fmt.replace("LVL", fore["red"] + "ERROR" + style["reset_all"]),
+                logging.CRITICAL: fmt.replace("LVL", " " + back["red"] + fore["black"] + style["bright"] + "CRIT" + style["reset_all"]),
             }
             self.formatters = {
                 level: logging.Formatter(fmt=format, datefmt=datefmt)
@@ -113,14 +134,23 @@ def setup_logging(
         def format(self, record):
             return self.formatters.get(record.levelno).format(record)
 
-    ch = logging.StreamHandler()
-    ch.setLevel(level)
-    ch.setFormatter(_formatter(datefmt="%Y-%m-%dT%T"))
+    datefmt = "%Y-%m-%dT%T"
 
     logger = logging.getLogger(name)
-    logger.setLevel(level)
-    logger.addHandler(ch)
     logger.propagate = False
+
+    # console handler
+    ch = logging.StreamHandler()
+    ch.setLevel(level)
+    ch.setFormatter(_formatter(datefmt=datefmt, rich_color=True))
+    logger.addHandler(ch)
+
+    # file handler
+    if file is not None:
+        fh = logging.FileHandler(filename=file)
+        fh.setLevel(file_level)
+        fh.setFormatter(_formatter(datefmt=datefmt, rich_color=False))
+        logger.addHandler(fh)
 
     # logger complains about `warn` being deprecated with another warning
     logger.warn = logger.warning
