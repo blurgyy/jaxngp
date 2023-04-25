@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
-from typing import Literal, Tuple, Union
+from typing import List, Literal, Tuple, Union
 
 from PIL import Image
 import chex
@@ -267,7 +267,7 @@ def make_nerf_synthetic_scene_metadata(
         rootdir: Union[Path, str],
         split: Literal["train", "val", "test"],
         scale: float,
-    ) -> Tuple[SceneMetadata, list[ViewMetadata]]:
+    ) -> Tuple[SceneMetadata, List[ViewMetadata]]:
     rootdir = Path(rootdir)
 
     transforms_path = rootdir.joinpath("transforms_{}.json".format(split))
