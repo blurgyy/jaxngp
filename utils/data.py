@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
@@ -14,39 +13,15 @@ import tensorflow as tf
 from tqdm import tqdm
 
 from utils.common import mkValueError, tqdm_format
-from utils.types import PinholeCamera, RGBColor, RenderingOptions, RigidTransformation
+from utils.types import (
+    ImageMetadata,
+    PinholeCamera,
+    RGBColor,
+    RigidTransformation,
+    SceneMetadata,
+    ViewMetadata,
+)
 Dataset = tf.data.Dataset
-
-
-@dataclass(frozen=True, kw_only=True)
-class ImageMetadata:
-    H: int
-    W: int
-    xys: jax.Array  # int,[H*W, 2]: original integer coordinates in range [0, W] for x and [0, H] for y
-    uvs: jax.Array  # float,[H*W, 2]: normalized coordinates in range [0, 1]
-    rgbs: jax.Array  # float,[H*W, 3]: normalized rgb values in range [0, 1]
-
-
-@dataclass(frozen=True, kw_only=True)
-class ViewMetadata:
-    H: int
-    W: int
-    xys: jax.Array  # int,[H*W, 2]: original integer coordinates in range [0, W] for x and [0, H] for y
-    rgbs: jax.Array  # float,[H*W, 3]: normalized rgb values in range [0, 1]
-    transform: RigidTransformation
-    file: Path
-
-
-@dataclass(frozen=True, kw_only=True)
-class SceneMetadata:
-    # TODO:
-    #   Make this `camera`'s H, W configurable and resize loaded images accordingly (specified H,W
-    #   must have same aspect ratio as the loaded images).
-    #   For now it's just read from the dataset.
-    camera: PinholeCamera  # the camera model used to render this scene
-    all_xys: jax.Array  # int,[n_pixels, 2], flattened xy coordinates from loaded images
-    all_rgbs: jax.Array  # float,[n_pixels, 3+9+3], flattened rgb values from loaded images
-    all_transforms: jax.Array  # float,[n_views, 9+3] each row comprises of R(flattened,9), T(3), from loaded images
 
 
 def to_unit_cube_2d(xys: jax.Array, W: int, H: int):
@@ -101,17 +76,15 @@ def add_border(
     return img
 
 
-def linear2psnr(val: float, maxval: float):
+def linear2db(val: float, maxval: float):
     return 20 * math.log10(math.sqrt(maxval / val))
 
 
+@jax.jit
 def psnr(lhs: jax.Array, rhs: jax.Array):
     chex.assert_type([lhs, rhs], jnp.uint8)
     mse = ((lhs.astype(float) - rhs.astype(float)) ** 2).mean()
-    if mse == 0:
-        return 100.
-    else:
-        return float(20 * jnp.log10(255 / jnp.sqrt(mse)))
+    return jnp.clip(20 * jnp.log10(255 / jnp.sqrt(mse + 1e-15)), 0, 100)
 
 
 def cascades_from_bound(bound: float) -> int:
@@ -248,13 +221,13 @@ def make_view(
     ) -> ViewMetadata:
     image_path = Path(image_path)
     image = jnp.asarray(Image.open(image_path))
-    xys, rgbs = get_xyrgbas(image)
+    xys, rgbas = get_xyrgbas(image)
     H, W = image.shape[:2]
     return ViewMetadata(
         H=H,
         W=W,
         xys=xys,
-        rgbs=rgbs,
+        rgbas=rgbas,
         transform=RigidTransformation(
             rotation=transform_4x4[:3, :3],
             translation=transform_4x4[:3, 3],
@@ -300,9 +273,9 @@ def make_nerf_synthetic_scene_metadata(
         axis=0,
     )
 
-    # float,[n_pixels, 3]
-    all_rgbs = jnp.concatenate(
-        list(map(lambda view: view.rgbs, views)),
+    # float,[n_pixels, 4]
+    all_rgbas = jnp.concatenate(
+        list(map(lambda view: view.rgbas, views)),
         axis=0,
     )
 
@@ -323,7 +296,7 @@ def make_nerf_synthetic_scene_metadata(
     scene = SceneMetadata(
         camera=camera,
         all_xys=all_xys,
-        all_rgbs=all_rgbs,
+        all_rgbas=all_rgbas,
         all_transforms=all_transforms,
     )
 
@@ -345,22 +318,15 @@ def make_permutation(
 
 
 def main():
-    sce = make_nerf_synthetic_scene_metadata(
+    scene, views = make_nerf_synthetic_scene_metadata(
         rootdir="data/nerf/nerf_synthetic/lego",
         split="train",
+        scale=.8,
     )
-    print(sce.all_xys.shape)
-    print(sce.all_rgbs.shape)
-    print(sce.all_transforms.shape)
-
-    # imdata = make_image_metadata("./h.jpg", bg="white")
-    # K, key = jran.split(jran.PRNGKey(0xabcdef), 2)
-    # ds = make_permutation_dataset(key, imdata.H*imdata.W, shuffle=True)
-    # print(ds.element_spec)
-    # # _NumpyIterator does not support len()
-    # print(len(ds.batch(3).as_numpy_iterator()))
-    # for x in tqdm(ds.batch(4).as_numpy_iterator(), bar_format=tqdm_format):
-    #     pass
+    print(scene.all_xys.shape)
+    print(scene.all_rgbas.shape)
+    print(scene.all_transforms.shape)
+    print(len(views))
 
 
 if __name__ == "__main__":

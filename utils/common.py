@@ -16,13 +16,14 @@ from typing import (
 
 import colorama
 from colorama import Back, Fore, Style
+from flax.metrics import tensorboard
 import jax
 from jax._src.lib import xla_client as xc
 import jax.random as jran
 import numpy as np
 import tensorflow as tf
 
-from .types import LogLevel
+from .types import LogLevel, Logger
 
 
 _tqdm_format = "SBRIGHT{desc}RESET: HI{percentage:3.0f}%RESET {n_fmt}/{total_fmt} [{elapsed}<HI{remaining}RESET, {rate_fmt}]"
@@ -91,9 +92,10 @@ def setup_logging(
     name: str,
     /,
     file: Optional[Union[str, Path]]=None,
+    with_tensorboard: bool=False,
     level: LogLevel="INFO",
     file_level: LogLevel="DEBUG",
-) -> logging.Logger:
+) -> Logger:
     colorama.just_fix_windows_console()
 
     class _formatter(logging.Formatter):
@@ -152,9 +154,19 @@ def setup_logging(
         fh.setFormatter(_formatter(datefmt=datefmt, rich_color=False))
         logger.addHandler(fh)
 
+    if with_tensorboard:
+        tb = tensorboard.SummaryWriter(log_dir=file.parent, auto_flush=True)
+        logger.tb = tb
+
     # logger complains about `warn` being deprecated with another warning
     logger.warn = logger.warning
     return logger
+
+
+def setup_tensorboard(
+    logs_dir: Union[str, Path],
+) -> tensorboard.SummaryWriter:
+    return tensorboard.SummaryWriter(logs_dir, auto_flush=True)
 
 
 def set_deterministic(seed: int) -> jran.KeyArray:

@@ -72,6 +72,7 @@
       mkPythonDeps = { pp, extraPackages }: with pp; [
           ipython
           tensorflow
+          keras
           tqdm
           icecream
           pkgs.dearpygui

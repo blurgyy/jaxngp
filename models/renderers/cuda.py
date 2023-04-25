@@ -1,5 +1,6 @@
 from collections.abc import Callable
 import math
+from typing import Union
 
 from flax.core.scope import FrozenVariableDict
 from icecream import ic
@@ -23,6 +24,7 @@ from utils.types import (
     NeRFTrainState,
     OccupancyDensityGrid,
     PinholeCamera,
+    RGBColor,
     RayMarchingOptions,
     RenderingOptions,
     RigidTransformation,
@@ -292,11 +294,10 @@ def march_and_integrate_inference(
 
 
 def render_image(
-    KEY: jran.KeyArray,
+    bg: Union[RGBColor, jax.Array],
     bound: float,
     camera: PinholeCamera,
     transform_cw: RigidTransformation,
-    options: RenderingOptions,
     raymarch_options: RayMarchingOptions,
     batch_config: NeRFBatchConfig,
     ogrid: OccupancyDensityGrid,
@@ -308,11 +309,7 @@ def render_image(
     rays_rgb = jnp.zeros((camera.n_pixels, 3), dtype=jnp.float32)
     rays_T = jnp.ones(camera.n_pixels, dtype=jnp.float32)
     rays_depth = jnp.zeros(camera.n_pixels, dtype=jnp.float32)
-    if options.random_bg:
-        KEY, key = jran.split(KEY, 2)
-        rays_bg = jran.uniform(key, rays_rgb.shape, rays_rgb.dtype, minval=0, maxval=1)
-    else:
-        rays_bg = jnp.broadcast_to(jnp.asarray(options.bg, dtype=rays_rgb.dtype), rays_rgb.shape)
+    rays_bg = jnp.broadcast_to(jnp.asarray(bg), rays_rgb.shape)
 
     o_world, d_world, t_starts, t_ends, rays_bg, rays_rgb, rays_T, rays_depth, param_dict = map(
         jax.lax.stop_gradient,

@@ -1,6 +1,9 @@
+import logging
+from pathlib import Path
 from typing import Literal, Tuple
 
 import chex
+from flax.metrics import tensorboard
 from flax.struct import dataclass
 from flax.training.train_state import TrainState
 import jax
@@ -21,6 +24,10 @@ ActivationType = Literal[
 DensityAndRGB = Tuple[jax.Array, jax.Array]
 LogLevel = Literal["DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL"]
 RGBColor = Tuple[float, float, float]
+
+
+class Logger(logging.Logger):
+    tb: tensorboard.SummaryWriter
 
 
 @dataclass
@@ -99,6 +106,10 @@ class NeRFTrainState(TrainState):
             and int(self.step) % 16 == 0
         )
 
+    @property
+    def should_write_batch_metrics(self):
+        return self.step % 16 == 0
+
 
 @dataclass
 class PinholeCamera:
@@ -159,3 +170,44 @@ class RigidTransformation:
     def __post_init__(self):
         chex.assert_shape([self.rotation, self.translation], [(3, 3), (3,)])
 
+
+@dataclass
+class ImageMetadata:
+    H: int
+    W: int
+    xys: jax.Array  # int,[H*W, 2]: original integer coordinates in range [0, W] for x and [0, H] for y
+    uvs: jax.Array  # float,[H*W, 2]: normalized coordinates in range [0, 1]
+    rgbs: jax.Array  # float,[H*W, 3]: normalized rgb values in range [0, 1]
+
+
+@dataclass
+class ViewMetadata:
+    H: int
+    W: int
+    xys: jax.Array  # int,[H*W, 2]: original integer coordinates in range [0, W] for x and [0, H] for y
+    rgbas: jax.Array  # float,[H*W, 4]: normalized rgb values in range [0, 1]
+    transform: RigidTransformation
+    file: Path
+
+    @property
+    def image_rgba(self) -> jax.Array:
+        return self.rgbas.reshape(self.H, self.W, 4)
+
+
+# TODO:
+#   Make this `camera`'s H, W configurable and resize loaded images accordingly (specified H,W
+#   must have same aspect ratio as the loaded images).
+#   For now it's just read from the dataset.
+@dataclass
+class SceneMetadata:
+    camera: PinholeCamera  # the camera model used to render this scene
+    all_xys: jax.Array  # int,[n_pixels, 2], flattened xy coordinates from loaded images
+    all_rgbas: jax.Array  # float,[n_pixels, 4], flattened rgb values from loaded images
+    all_transforms: jax.Array  # float,[n_views, 9+3] each row comprises of R(flattened,9), T(3), from loaded images
+
+
+@dataclass
+class RenderedImage:
+    bg: jax.Array
+    rgb: jax.Array
+    depth: jax.Array

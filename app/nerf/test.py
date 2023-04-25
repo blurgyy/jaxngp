@@ -16,34 +16,7 @@ from models.renderers import render_image
 from utils import common, data
 from utils.args import NeRFTestingArgs
 from utils.data import make_nerf_synthetic_scene_metadata
-from utils.types import NeRFBatchConfig, OccupancyDensityGrid, RGBColor, RigidTransformation
-
-
-@dataclass
-class TestedImage:
-    rgb: Image.Image
-    depth: Image.Image
-    gt_path: Path
-
-    def gt_image(self, bg: RGBColor) -> Image.Image:
-        return data.blend_rgba_image_array(Image.open(self.gt_path), bg=bg)
-
-    def psnr(self, bg: RGBColor) -> float:
-        return data.psnr(self.gt_image(bg), self.rgb)
-
-    def save_rgb(self, dest: Path):
-        Image.fromarray(np.asarray(self.rgb)).save(dest)
-    def save_depth(self, dest: Path):
-        Image.fromarray(np.asarray(self.depth)).save(dest)
-    def save_comparison(self, dest: Path, bg: RGBColor):
-        gt_image = self.gt_image(bg)
-        comparison_image_data = data.side_by_side(
-            gt_image,
-            self.rgb,
-            H=gt_image.shape[0],
-            W=gt_image.shape[1]
-        )
-        Image.fromarray(np.asarray(comparison_image_data)).save(dest)
+from utils.types import NeRFBatchConfig, OccupancyDensityGrid, RenderedImage, RigidTransformation
 
 
 def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
@@ -86,7 +59,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
         scale=args.scene.scale,
     )
 
-    tested_images: List[TestedImage] = []
+    rendered_images: List[RenderedImage] = []
     logger.info("starting testing (totally {} image(s) to test)".format(len(args.test_indices)))
     for test_i in tqdm(args.test_indices, desc="Testing", bar_format=common.tqdm_format):
         if test_i < 0 or test_i >= len(test_views):
@@ -96,41 +69,50 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
             rotation=scene_metadata_test.all_transforms[test_i, :9].reshape(3, 3),
             translation=scene_metadata_test.all_transforms[test_i, -3:].reshape(3),
         )
-        KEY, key = jran.split(KEY, 2)
+        if args.render.random_bg:
+            KEY, key = jran.split(KEY, 2)
+            bg = jran.uniform(key, (3,), dtype=jnp.float32, minval=0, maxval=1)
+        else:
+            bg = args.render.bg
         rgb, depth = render_image(
-            KEY=key,
+            bg=bg,
             bound=args.scene.bound,
             camera=scene_metadata_test.camera,
             transform_cw=transform,
-            options=args.render,
             raymarch_options=args.raymarch,
             batch_config=batch_config,
             ogrid=ogrid,
             param_dict={"params": params},
             nerf_fn=model.apply,
         )
-        tested_images.append(TestedImage(
+        rendered_images.append(RenderedImage(
+            bg=bg,
             rgb=rgb,
             depth=depth,
-            gt_path=test_views[test_i].file,
         ))
 
-    # calculate psnr
+    gt_rgbs = map(
+        lambda i, test_i: data.blend_rgba_image_array(test_views[i].image_rgba, rendered_images[test_i].bg),
+        args.test_indices,
+        range(len(args.test_indices)),
+    )
     logger.debug("calculating psnr")
-    mean_psnr = sum(map(lambda timg: timg.psnr(args.render.bg), tqdm(tested_images, desc="calculating psnr", bar_format=common.tqdm_format))) / len(tested_images)
-    logger.info("tested {} images, mean psnr={}".format(len(tested_images), mean_psnr))
+    mean_psnr = sum(map(
+        jax.jit(data.psnr),
+        map(lambda gt_rgb: jnp.clip(gt_rgb * 255, 0, 255).astype(jnp.uint8), gt_rgbs),
+        map(lambda ri: ri.rgb, rendered_images),
+    )) / len(rendered_images)
+    logger.info("tested {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
 
-    # save images
-    for save_i, timg in enumerate(tqdm(tested_images, desc="saving images", bar_format=common.tqdm_format)):
+    logger.debug("saving images")
+    for save_i, img in enumerate(tqdm(rendered_images, desc="saving images", bar_format=common.tqdm_format)):
         dest = args.exp_dir.joinpath(args.test_split)
         dest.mkdir(parents=True, exist_ok=True)
 
         dest_rgb = dest.joinpath("{:03d}-rgb.png".format(save_i))
         dest_depth = dest.joinpath("{:03d}-depth.png".format(save_i))
-        dest_comparison = dest.joinpath("{:03d}-comparison.png".format(save_i))
 
-        timg.save_rgb(dest_rgb)
-        timg.save_depth(dest_depth)
-        timg.save_comparison(dest_comparison, bg=args.render.bg)
+        Image.fromarray(np.asarray(img.rgb)).save(dest_rgb)
+        Image.fromarray(np.asarray(img.depth)).save(dest_depth)
 
     return mean_psnr

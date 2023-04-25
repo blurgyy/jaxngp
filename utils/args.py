@@ -38,12 +38,19 @@ class TrainingArgs:
     # dataloader overhead.
     data_loop: int
 
+    # will validate every `validate_interval_steps` steps
+    validate_interval_steps: int
+
     # number of latest checkpoints to keep
     keep: int=1
 
     # how many epochs should a new checkpoint to be kept (in addition to keeping the last `keep`
     # checkpoints)
     keep_every: Optional[int]=None
+
+    @property
+    def validate_interval_epochs(self) -> int:
+        return (self.validate_interval_steps + self.n_batches - 1) // self.n_batches
 
     @property
     def keep_every_n_steps(self) -> Optional[int]:
@@ -77,6 +84,7 @@ class ImageFitArgs:
         n_epochs=32,
         n_batches=2**30,
         data_loop=1,
+        validate_interval_steps=1<<10,
     )
 
 
@@ -97,9 +105,6 @@ class _NeRFArgs:
 
 @dataclass(frozen=True, kw_only=True)
 class NeRFTrainingArgs(_NeRFArgs):
-    # number of images to validate
-    val_num: int=3
-
     # if specified, continue training from this checkpoint
     train_ckpt: Optional[Path]=None
 
@@ -114,6 +119,7 @@ class NeRFTrainingArgs(_NeRFArgs):
         n_epochs=50,
         n_batches=2**10,
         data_loop=1,
+        validate_interval_steps=5<<10,
     )
 
     # raymarching/rendering options during training
