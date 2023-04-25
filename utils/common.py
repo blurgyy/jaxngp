@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-
+from concurrent.futures import ThreadPoolExecutor
 import logging
 from pathlib import Path
 import random
@@ -138,7 +137,7 @@ def setup_logging(
 
     datefmt = "%Y-%m-%dT%T"
 
-    logger = logging.getLogger(name)
+    logger = Logger(name=name, level=level)
     logger.propagate = False
 
     # console handler
@@ -160,17 +159,15 @@ def setup_logging(
 
     if with_tensorboard:
         tb = tensorboard.SummaryWriter(log_dir=file.parent, auto_flush=True)
-        logger.tb = tb
+        executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="logger({})-".format(name),
+        )
+        logger.setup_tensorboard(tb=tb, executor=executor)
 
     # logger complains about `warn` being deprecated with another warning
     logger.warn = logger.warning
     return logger
-
-
-def setup_tensorboard(
-    logs_dir: Union[str, Path],
-) -> tensorboard.SummaryWriter:
-    return tensorboard.SummaryWriter(logs_dir, auto_flush=True)
 
 
 def set_deterministic(seed: int) -> jran.KeyArray:

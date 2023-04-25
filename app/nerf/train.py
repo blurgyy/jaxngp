@@ -212,13 +212,13 @@ def train_epoch(
             )
 
         if state.should_write_batch_metrics:
-            logger.tb.scalar("batch/loss", loss_log, state.step)
-            logger.tb.scalar("batch/loss (db)", loss_db, state.step)
-            logger.tb.scalar("batch/effective batch size (not compaced)", metrics["measured_batch_size_before_compaction"], state.step)
-            logger.tb.scalar("batch/effective batch size (compaced)", metrics["measured_batch_size"], state.step)
-            logger.tb.scalar("rendering/effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
-            logger.tb.scalar("rendering/marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
-            logger.tb.scalar("rendering/number of rays", state.batch_config.n_rays, state.step)
+            logger.write_scalar("batch/loss", loss_log, state.step)
+            logger.write_scalar("batch/loss (db)", loss_db, state.step)
+            logger.write_scalar("batch/effective batch size (not compaced)", metrics["measured_batch_size_before_compaction"], state.step)
+            logger.write_scalar("batch/effective batch size (compaced)", metrics["measured_batch_size"], state.step)
+            logger.write_scalar("rendering/effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
+            logger.write_scalar("rendering/marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
+            logger.write_scalar("rendering/number of rays", state.batch_config.n_rays, state.step)
 
     return total_loss / n_processed_rays, state
 
@@ -231,7 +231,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
     logs_dir.mkdir(parents=True, exist_ok=True)
     logger = common.setup_logging("nerf.train", file=logs_dir.joinpath("train.log"), with_tensorboard=True)
     args.exp_dir.joinpath("config.yaml").write_text(tyro.to_yaml(args))
-    logger.tb.hparams(dataclasses.asdict(args))
+    logger.write_hparams(dataclasses.asdict(args))
     logger.info("configurations saved to '{}'".format(args.exp_dir.joinpath("config.yaml")))
 
     dtype = getattr(jnp, "float{}".format(args.common.prec))
@@ -350,8 +350,8 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
 
         loss_db = data.linear2db(loss_log, maxval=1)
         logger.info("epoch#{:03d}: loss={:.2e}({:.2f}dB)".format(ep_log, loss_log, loss_db))
-        logger.tb.scalar("epoch/loss", loss_log, step=ep_log)
-        logger.tb.scalar("epoch/loss (db)", loss_db, step=ep_log)
+        logger.write_scalar("epoch/loss", loss_log, step=ep_log)
+        logger.write_scalar("epoch/loss (db)", loss_db, step=ep_log)
 
         logger.info("saving training state ... ")
         ckpt_name = checkpoints.save_checkpoint(
@@ -395,20 +395,20 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
                     depth=depth,
                 ))
             val_end_time = time.time()
-            logger.tb.scalar(
+            logger.write_scalar(
                 tag="validation/rendering time (ms) per image",
                 value=(val_end_time - val_start_time) / len(rendered_images) * 1000,
                 step=ep_log,
             )
 
             logger.debug("writing images to tensorboard")
-            logger.tb.image(
+            logger.write_image(
                 tag="validation/rgb",
                 image=list(map(lambda ri: ri.rgb, rendered_images)),
                 step=ep_log,
                 max_outputs=len(rendered_images),
             )
-            logger.tb.image(
+            logger.write_image(
                 tag="validation/depth",
                 image=list(map(lambda ri: ri.depth, rendered_images)),
                 step=ep_log,
@@ -426,4 +426,4 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
                 map(lambda ri: ri.rgb, rendered_images),
             )) / len(rendered_images)
             logger.info("validated {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
-            logger.tb.scalar("validation/mean psnr", mean_psnr, step=ep_log)
+            logger.write_scalar("validation/mean psnr", mean_psnr, step=ep_log)
