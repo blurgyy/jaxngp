@@ -146,6 +146,7 @@ def setup_logging(
     ch.setLevel(level)
     ch.setFormatter(_formatter(datefmt=datefmt, rich_color=True))
     logger.addHandler(ch)
+    logger.setLevel(level)
 
     # file handler
     if file is not None:
@@ -153,6 +154,9 @@ def setup_logging(
         fh.setLevel(file_level)
         fh.setFormatter(_formatter(datefmt=datefmt, rich_color=False))
         logger.addHandler(fh)
+        def loglevel2int(log_level: LogLevel) -> int:
+            return getattr(logging, log_level)
+        logger.setLevel(min(loglevel2int(level), loglevel2int(file_level)))
 
     if with_tensorboard:
         tb = tensorboard.SummaryWriter(log_dir=file.parent, auto_flush=True)
