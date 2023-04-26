@@ -1,4 +1,4 @@
-{ lib, symlinkJoin, buildPythonPackage
+{ lib, version, symlinkJoin, buildPythonPackage
 
 , setuptools-scm
 , cmake
@@ -6,6 +6,7 @@
 , pybind11
 , fmt
 
+, serde-helper
 , cudatoolkit
 , python3
 , chex
@@ -27,7 +28,7 @@ in
 
 buildPythonPackage rec {
   pname = "volume-rendering-jax";
-  version = "0.1.0";
+  inherit version;
   src = ./.;
 
   format = "pyproject";
@@ -43,6 +44,7 @@ buildPythonPackage rec {
   dontUseCmakeConfigure = true;
 
   buildInputs = [
+    serde-helper
     cudatoolkit-unsplit
     fmt-unsplit
   ];
@@ -67,6 +69,7 @@ buildPythonPackage rec {
       Add:
         - "-Wall"                     # enable more warnings
         - "-std=c++20"                # use cpp20 standard (std::bit_cast needs this)
+        - "-I${serde-helper}/include"
         - "-I${cudatoolkit-unsplit}/include"
         - "-I${fmt.dev}/include"
         - "-I${pybind11}/include"

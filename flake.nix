@@ -129,9 +129,6 @@
           [[ "$-" == *i* ]] && exec "$SHELL"
         '';
       };
-
-      shjax = cudaPkgs.${py}.pkgs.callPackage ./deps/spherical-harmonics-encoding-jax {};
-      volrendjax = cudaPkgs.${py}.pkgs.callPackage ./deps/volume-rendering-jax {};
     };
     packages = deps.packages basePkgs;
   }) // {

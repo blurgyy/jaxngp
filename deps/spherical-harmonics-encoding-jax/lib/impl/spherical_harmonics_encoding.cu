@@ -12,8 +12,9 @@
 
 #include <cstdint>
 
+#include <serde-helper/serde.h>
+
 #include "spherical_harmonics_encoding.h"
-#include "../serde.h"
 
 
 namespace shjax {
