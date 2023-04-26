@@ -1,4 +1,4 @@
-{ symlinkJoin, buildPythonPackage
+{ lib, symlinkJoin, buildPythonPackage
 
 , setuptools-scm
 , cmake
@@ -18,9 +18,13 @@ let
     name = "${cudatoolkit.name}-unsplit";
     paths = [ cudatoolkit.out cudatoolkit.lib ];
   };
+  fmt-unsplit = symlinkJoin {
+    name = "${fmt.name}-unsplit";
+    paths = [ fmt.out fmt.dev ];
+  };
 in
 
-buildPythonPackage {
+buildPythonPackage rec {
   pname = "spherical-harmonics-encoding-jax";
   version = "0.1.0";
   src = ./.;
@@ -39,7 +43,7 @@ buildPythonPackage {
 
   buildInputs = [
     cudatoolkit-unsplit
-    fmt.dev
+    fmt-unsplit
   ];
 
   propagatedBuildInputs = [
@@ -49,6 +53,10 @@ buildPythonPackage {
   ];
 
   doCheck = false;
+
+  preFixup = ''
+    patchelf --set-rpath "${lib.makeLibraryPath buildInputs}" $out/lib/python${python3.pythonVersion}/site-packages/shjax/*.so
+  '';
 
   pythonImportsCheck = [ "shjax" ];
 

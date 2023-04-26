@@ -1,4 +1,4 @@
-{ symlinkJoin, buildPythonPackage
+{ lib, symlinkJoin, buildPythonPackage
 
 , setuptools-scm
 , cmake
@@ -18,9 +18,14 @@ let
     name = "${cudatoolkit.name}-unsplit";
     paths = [ cudatoolkit.out cudatoolkit.lib ];
   };
+  fmt-unsplit = symlinkJoin {
+    name = "fmtlib";
+    # libfmt.so resides in the "out" output and is set into RPATH of the python extension
+    paths = [ fmt.dev fmt.out ];
+  };
 in
 
-buildPythonPackage {
+buildPythonPackage rec {
   pname = "volume-rendering-jax";
   version = "0.1.0";
   src = ./.;
@@ -39,7 +44,7 @@ buildPythonPackage {
 
   buildInputs = [
     cudatoolkit-unsplit
-    fmt.dev
+    fmt-unsplit
   ];
 
   propagatedBuildInputs = [
@@ -47,6 +52,10 @@ buildPythonPackage {
     jax
     jaxlib
   ];
+
+  preFixup = ''
+    patchelf --set-rpath "${lib.makeLibraryPath buildInputs}" $out/lib/python${python3.pythonVersion}/site-packages/volrendjax/*.so
+  '';
 
   doCheck = false;
 
