@@ -3,7 +3,6 @@ import math
 from typing import Union
 
 from flax.core.scope import FrozenVariableDict
-from icecream import ic
 import jax
 import jax.numpy as jnp
 import jax.random as jran
@@ -26,7 +25,6 @@ from utils.types import (
     PinholeCamera,
     RGBColor,
     RayMarchingOptions,
-    RenderingOptions,
     RigidTransformation,
 )
 
@@ -117,10 +115,10 @@ def update_ogrid(
 
 
 def make_near_far_from_bound(
-        bound: float,
-        o: jax.Array,  # [n_rays, 3]
-        d: jax.Array,  # [n_rays, 3]
-    ):
+    bound: float,
+    o: jax.Array,  # [n_rays, 3]
+    d: jax.Array,  # [n_rays, 3]
+):
     "Calculates near and far intersections with the bounding box [-bound, bound]^3 for each ray."
 
     # make sure d is normalized

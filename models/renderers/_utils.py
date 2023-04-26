@@ -7,9 +7,9 @@ from utils.types import PinholeCamera, RigidTransformation
 
 @jit_jaxfn_with(static_argnames=["camera"])
 def make_rays_worldspace(
-        camera: PinholeCamera,
-        transform_cw: RigidTransformation,
-    ):
+    camera: PinholeCamera,
+    transform_cw: RigidTransformation,
+):
     """
     Generate world-space rays for each pixel in the given camera's projection plane.
 
@@ -50,11 +50,11 @@ def make_rays_worldspace(
 
 @jit_jaxfn_with(static_argnames=["H", "W", "chunk_size"])
 def get_indices_chunks(
-        KEY: jran.KeyArray,
-        H: int,
-        W: int,
-        chunk_size: int,
-    ):
+    KEY: jran.KeyArray,
+    H: int,
+    W: int,
+    chunk_size: int,
+):
     n_pixels = H * W
     n_chunks = (n_pixels + chunk_size - 1) // chunk_size
 

@@ -3,12 +3,10 @@ import logging
 import time
 from typing import List, Tuple
 
-from PIL import Image
 from flax.training import checkpoints
 import jax
 import jax.numpy as jnp
 import jax.random as jran
-import numpy as np
 import optax
 from tqdm import tqdm
 import tyro
@@ -28,24 +26,23 @@ from utils.types import (
     RenderingOptions,
     RigidTransformation,
     SceneMetadata,
-    ViewMetadata,
 )
 
 
 @common.jit_jaxfn_with(static_argnames=["bound", "total_samples", "raymarch_options", "render_options"])
 def train_step(
-        KEY: jran.KeyArray,
-        state: NeRFTrainState,
-        bound: float,
-        total_samples: int,
-        camera: PinholeCamera,
-        raymarch_options: RayMarchingOptions,
-        render_options: RenderingOptions,
-        all_xys: jax.Array,
-        all_rgbas: jax.Array,
-        all_transforms: jax.Array,
-        perm: jax.Array,
-    ):
+    KEY: jran.KeyArray,
+    state: NeRFTrainState,
+    bound: float,
+    total_samples: int,
+    camera: PinholeCamera,
+    raymarch_options: RayMarchingOptions,
+    render_options: RenderingOptions,
+    all_xys: jax.Array,
+    all_rgbas: jax.Array,
+    all_transforms: jax.Array,
+    perm: jax.Array,
+):
     # TODO:
     #   merge this and `models.renderers.make_rays_worldspace` as a single function
     def make_rays_worldspace() -> Tuple[jax.Array, jax.Array]:
@@ -126,19 +123,19 @@ def train_step(
 
 
 def train_epoch(
-        KEY: jran.KeyArray,
-        bound: float,
-        scene_metadata: SceneMetadata,
-        raymarch_options: RayMarchingOptions,
-        render_options: RenderingOptions,
-        state: NeRFTrainState,
-        permutation: jax.Array,
-        n_batches: int,
-        total_samples: int,
-        ep_log: int,
-        total_epochs: int,
-        logger: Logger,
-    ):
+    KEY: jran.KeyArray,
+    bound: float,
+    scene_metadata: SceneMetadata,
+    raymarch_options: RayMarchingOptions,
+    render_options: RenderingOptions,
+    state: NeRFTrainState,
+    permutation: jax.Array,
+    n_batches: int,
+    total_samples: int,
+    ep_log: int,
+    total_epochs: int,
+    logger: Logger,
+):
     n_processed_rays = 0
     total_loss = 0
     running_mean_effective_samp_per_ray = state.batch_config.mean_effective_samples_per_ray

@@ -1,6 +1,6 @@
 from typing import Literal
-import chex
 
+import chex
 import flax.linen as nn
 from flax.linen.dtypes import Dtype
 import jax
