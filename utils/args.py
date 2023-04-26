@@ -1,7 +1,6 @@
-from dataclasses import field
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import Literal, Optional, Tuple
 
 from utils.types import LogLevel, RayMarchingOptions, RenderingOptions, SceneOptions
 
@@ -157,7 +156,7 @@ class NeRFTestingArgs(_NeRFArgs):
     test_ckpt: Path
 
     # which test images should be tested on, indices are 0-based
-    test_indices: List[int]=field(default_factory=list)
+    test_indices: Tuple[int, ...]
 
     # which split to test on
     test_split: Literal["train", "test", "val"]="test"
