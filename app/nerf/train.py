@@ -211,8 +211,8 @@ def train_epoch(
         if state.should_write_batch_metrics:
             logger.write_scalar("batch/loss", loss_log, state.step)
             logger.write_scalar("batch/loss (db)", loss_db, state.step)
-            logger.write_scalar("batch/effective batch size (not compaced)", metrics["measured_batch_size_before_compaction"], state.step)
-            logger.write_scalar("batch/effective batch size (compaced)", metrics["measured_batch_size"], state.step)
+            logger.write_scalar("batch/effective batch size (not compacted)", metrics["measured_batch_size_before_compaction"], state.step)
+            logger.write_scalar("batch/effective batch size (compacted)", metrics["measured_batch_size"], state.step)
             logger.write_scalar("rendering/effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
             logger.write_scalar("rendering/marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
             logger.write_scalar("rendering/number of rays", state.batch_config.n_rays, state.step)
