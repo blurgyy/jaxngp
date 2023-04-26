@@ -318,6 +318,7 @@ def render_image(
         march_rays_cap = max(4, min(batch_config.mean_effective_samples_per_ray // 2 + 1, 8))
     else:
         march_rays_cap = min(4, batch_config.mean_effective_samples_per_ray)
+    march_rays_cap = int(march_rays_cap)
     n_rays = 65536 // march_rays_cap
 
     counter = jnp.zeros(1, dtype=jnp.uint32)
