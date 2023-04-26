@@ -132,6 +132,7 @@
               extraPackages = with pp; [
                 pkgs.spherical-harmonics-encoding-jax
                 pkgs.volume-rendering-jax
+                pkgs.jax-tcnn
               ];
             }))
         ];
