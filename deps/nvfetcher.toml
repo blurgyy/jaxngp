@@ -12,6 +12,11 @@ git.fetchSubmodules = true
 src.pypi = "imgui"
 fetch.pypi = "imgui"
 
+[tiny-cuda-nn]
+src.github = "NVlabs/tiny-cuda-nn"
+fetch.github = "NVlabs/tiny-cuda-nn"
+git.fetchSubmodules = true
+
 [tyro]
 src.pypi = "tyro"
 fetch.pypi = "tyro"

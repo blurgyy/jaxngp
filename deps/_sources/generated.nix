@@ -31,6 +31,17 @@
       sha256 = "sha256-L7247tO429fqmK+eTBxlgrC8TalColjeFjM9jGU9Z+E=";
     };
   };
+  tiny-cuda-nn = {
+    pname = "tiny-cuda-nn";
+    version = "v1.6";
+    src = fetchFromGitHub ({
+      owner = "NVlabs";
+      repo = "tiny-cuda-nn";
+      rev = "v1.6";
+      fetchSubmodules = true;
+      sha256 = "sha256-qW6Fk2GB71fvZSsfu+mykabSxEKvaikZ/pQQZUycOy0=";
+    });
+  };
   tyro = {
     pname = "tyro";
     version = "0.4.2";

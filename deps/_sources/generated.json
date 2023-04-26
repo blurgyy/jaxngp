@@ -54,6 +54,26 @@
         },
         "version": "2.0.0"
     },
+    "tiny-cuda-nn": {
+        "cargoLocks": null,
+        "date": null,
+        "extract": null,
+        "name": "tiny-cuda-nn",
+        "passthru": null,
+        "pinned": false,
+        "src": {
+            "deepClone": false,
+            "fetchSubmodules": true,
+            "leaveDotGit": false,
+            "name": null,
+            "owner": "NVlabs",
+            "repo": "tiny-cuda-nn",
+            "rev": "v1.6",
+            "sha256": "sha256-qW6Fk2GB71fvZSsfu+mykabSxEKvaikZ/pQQZUycOy0=",
+            "type": "github"
+        },
+        "version": "v1.6"
+    },
     "tyro": {
         "cargoLocks": null,
         "date": null,
