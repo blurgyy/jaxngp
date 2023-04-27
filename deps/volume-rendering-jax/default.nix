@@ -68,6 +68,7 @@ buildPythonPackage rec {
     CompileFlags:                     # Tweak the parse settings
       Add:
         - "-Wall"                     # enable more warnings
+        - "-Wshadow"                  # warn if a local declared variable shadows a global one
         - "-std=c++20"                # use cpp20 standard (std::bit_cast needs this)
         - "-I${serde-helper}/include"
         - "-I${cudatoolkit-unsplit}/include"
