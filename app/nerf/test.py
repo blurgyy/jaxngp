@@ -20,7 +20,12 @@ from utils.types import NeRFBatchConfig, OccupancyDensityGrid, RenderedImage, Ri
 def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
     logs_dir = args.exp_dir.joinpath("logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
-    logger = common.setup_logging("nerf.test", file=logs_dir.joinpath("test.log"))
+    logger = common.setup_logging(
+        "nerf.test",
+        file=logs_dir.joinpath("test.log"),
+        level=args.common.logging,
+        file_level="DEBUG",
+    )
     if not args.test_ckpt.exists():
         logger.warn("specified checkpoint '{}' does not exist".format(args.test_ckpt))
         exit(1)
@@ -30,7 +35,6 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
         logger.warn("proceeding anyway ...")
 
     dtype = getattr(jnp, "float{}".format(args.common.prec))
-    logger.setLevel(args.common.logging.upper())
 
     # model parameters
     KEY, key = jran.split(KEY, 2)

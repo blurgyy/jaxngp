@@ -226,13 +226,18 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
         exit(2)
     logs_dir = args.exp_dir.joinpath("logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
-    logger = common.setup_logging("nerf.train", file=logs_dir.joinpath("train.log"), with_tensorboard=True)
+    logger = common.setup_logging(
+        "nerf.train",
+        file=logs_dir.joinpath("train.log"),
+        with_tensorboard=True,
+        level=args.common.logging.upper(),
+        file_level="DEBUG",
+    )
     args.exp_dir.joinpath("config.yaml").write_text(tyro.to_yaml(args))
     logger.write_hparams(dataclasses.asdict(args))
     logger.info("configurations saved to '{}'".format(args.exp_dir.joinpath("config.yaml")))
 
     dtype = getattr(jnp, "float{}".format(args.common.prec))
-    logger.setLevel(args.common.logging.upper())
 
     # model parameters
     model, init_input = (
