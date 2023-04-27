@@ -161,6 +161,11 @@ class NeRFTestingArgs(_NeRFArgs):
     # which split to test on
     test_split: Literal["train", "test", "val"]="test"
 
+    # if specified value contains "video", a video will be saved; if specified value contains
+    # "image", rendered images will be saved.  Value can contain both "video" and "image", e.g.,
+    # `--save-as "video-image"` will save both video and images.
+    save_as: str="image and video"
+
     # raymarching/rendering options during testing
     raymarch: RayMarchingOptions=RayMarchingOptions(
         diagonal_n_steps=1<<10,

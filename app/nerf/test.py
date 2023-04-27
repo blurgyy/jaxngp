@@ -1,4 +1,5 @@
 from typing import List
+from typing_extensions import assert_never
 
 from PIL import Image
 from flax.training import checkpoints
@@ -110,15 +111,37 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     )) / len(rendered_images)
     logger.info("tested {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
 
-    logger.debug("saving images")
-    for save_i, img in enumerate(tqdm(rendered_images, desc="saving images", bar_format=common.tqdm_format)):
-        dest = args.exp_dir.joinpath(args.test_split)
-        dest.mkdir(parents=True, exist_ok=True)
+    save_dest = args.exp_dir.joinpath(args.test_split)
+    save_dest.mkdir(parents=True, exist_ok=True)
+    if "image" in args.save_as:
+        dest_rgb = save_dest.joinpath("rgb")
+        dest_depth = save_dest.joinpath("depth")
 
-        dest_rgb = dest.joinpath("{:03d}-rgb.png".format(save_i))
-        dest_depth = dest.joinpath("{:03d}-depth.png".format(save_i))
+        dest_rgb.mkdir(parents=True, exist_ok=True)
+        dest_depth.mkdir(parents=True, exist_ok=True)
 
-        Image.fromarray(np.asarray(img.rgb)).save(dest_rgb)
-        Image.fromarray(np.asarray(img.depth)).save(dest_depth)
+        logger.debug("saving as images")
+        for save_i, img in enumerate(tqdm(rendered_images, desc="saving images", bar_format=common.tqdm_format)):
+            Image.fromarray(np.asarray(img.rgb)).save(dest_rgb.joinpath("{:03d}.png".format(save_i)))
+            Image.fromarray(np.asarray(img.depth)).save(dest_depth.joinpath("{:03d}.png".format(save_i)))
+
+    if "video" in args.save_as:
+        dest_rgb_video = save_dest.joinpath("rgb.mp4")
+        dest_depth_video = save_dest.joinpath("depth.mp4")
+
+        logger.debug("saving predicted color images as a video at '{}'".format(dest_rgb_video))
+        data.write_video(
+            save_dest.joinpath("rgb.mp4"),
+            map(lambda img: img.rgb, rendered_images),
+        )
+
+        logger.debug("saving predicted depths as a video at '{}'".format(dest_depth_video))
+        data.write_video(
+            save_dest.joinpath("depth.mp4"),
+            map(lambda img: img.depth, rendered_images),
+        )
+
+    else:
+        assert_never()
 
     return mean_psnr

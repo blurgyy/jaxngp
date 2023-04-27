@@ -80,6 +80,7 @@
           pillow
           ipdb
           colorama
+          imageio
 
           jaxlib-bin
           jax

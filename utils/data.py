@@ -1,10 +1,11 @@
 import json
 import math
 from pathlib import Path
-from typing import List, Literal, Tuple, Union
+from typing import List, Literal, Sequence, Tuple, Union
 
 from PIL import Image
 import chex
+import imageio
 import jax
 import jax.numpy as jnp
 import jax.random as jran
@@ -85,6 +86,14 @@ def psnr(lhs: jax.Array, rhs: jax.Array):
     chex.assert_type([lhs, rhs], jnp.uint8)
     mse = ((lhs.astype(float) - rhs.astype(float)) ** 2).mean()
     return jnp.clip(20 * jnp.log10(255 / jnp.sqrt(mse + 1e-15)), 0, 100)
+
+
+def write_video(dest: Path, images: Sequence, *, fps: int=24, loop: int=3):
+    images = list(images) * loop
+    assert len(images) > 0, "cannot write empty video"
+    video_writer = imageio.get_writer(dest, mode="I", fps=fps)
+    for im in tqdm(images, desc="writing video to {}".format(dest.as_posix()), bar_format=tqdm_format):
+        video_writer.append_data(np.asarray(im))
 
 
 def cascades_from_bound(bound: float) -> int:
