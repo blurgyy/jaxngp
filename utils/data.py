@@ -31,14 +31,14 @@ def to_unit_cube_2d(xys: jax.Array, W: int, H: int):
 
 
 def side_by_side(
-        lhs: jax.Array,
-        rhs: jax.Array,
-        H: int=None,
-        W: int=None,
-        vertical: bool=False,
-        gap: int=5,
-        gap_color: jax.Array=jnp.asarray([0xab, 0xcd, 0xef], dtype=jnp.uint8),
-    ) -> jax.Array:
+    lhs: jax.Array,
+    rhs: jax.Array,
+    H: int=None,
+    W: int=None,
+    vertical: bool=False,
+    gap: int=5,
+    gap_color: jax.Array=jnp.asarray([0xab, 0xcd, 0xef], dtype=jnp.uint8),
+) -> jax.Array:
     chex.assert_not_both_none(H, W)
     chex.assert_scalar_non_negative(vertical)
     chex.assert_type([lhs, rhs], jnp.uint8)
@@ -59,10 +59,10 @@ def side_by_side(
 
 
 def add_border(
-        img: jax.Array,
-        width: int=5,
-        color: jax.Array=jnp.asarray([0xfe, 0xdc, 0xba], dtype=jnp.uint8),
-    ) -> jax.Array:
+    img: jax.Array,
+    width: int=5,
+    color: jax.Array=jnp.asarray([0xfe, 0xdc, 0xba], dtype=jnp.uint8),
+) -> jax.Array:
     chex.assert_rank(img, 3)
     chex.assert_axis_dimension(img, -1, 3)
     chex.assert_scalar_non_negative(width)
@@ -179,9 +179,9 @@ def get_xyrgbas(imgarr: jax.Array) -> Tuple[jax.Array, jax.Array]:
 
 _ImageSourceType = Union[jax.Array, np.ndarray, Image.Image, Path, str],
 def make_image_metadata(
-        image: _ImageSourceType,
-        bg: RGBColor,
-    ) -> ImageMetadata:
+    image: _ImageSourceType,
+    bg: RGBColor,
+) -> ImageMetadata:
     if isinstance(image, jax.Array):
         pass
     elif isinstance(image, Image.Image):
@@ -216,9 +216,9 @@ def make_image_metadata(
 
 
 def make_view(
-        image_path: Union[Path, str],
-        transform_4x4: jax.Array,
-    ) -> ViewMetadata:
+    image_path: Union[Path, str],
+    transform_4x4: jax.Array,
+) -> ViewMetadata:
     image_path = Path(image_path)
     image = jnp.asarray(Image.open(image_path))
     xys, rgbas = get_xyrgbas(image)
@@ -237,10 +237,10 @@ def make_view(
 
 
 def make_nerf_synthetic_scene_metadata(
-        rootdir: Union[Path, str],
-        split: Literal["train", "val", "test"],
-        scale: float,
-    ) -> Tuple[SceneMetadata, List[ViewMetadata]]:
+    rootdir: Union[Path, str],
+    split: Literal["train", "val", "test"],
+    scale: float,
+) -> Tuple[SceneMetadata, List[ViewMetadata]]:
     rootdir = Path(rootdir)
 
     transforms_path = rootdir.joinpath("transforms_{}.json".format(split))
