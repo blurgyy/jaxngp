@@ -170,32 +170,32 @@ def make_activation(act: ActivationType):
 
 
 def make_nerf(
-        bound: float,
+    bound: float,
 
-        # encodings
-        pos_enc: PositionalEncodingType,
-        dir_enc: DirectionalEncodingType,
+    # encodings
+    pos_enc: PositionalEncodingType,
+    dir_enc: DirectionalEncodingType,
 
-        # encoding levels
-        pos_levels: int,
-        dir_levels: int,
+    # encoding levels
+    pos_levels: int,
+    dir_levels: int,
 
-        # layer widths
-        density_Ds: List[int],
-        rgb_Ds: List[int],
+    # layer widths
+    density_Ds: List[int],
+    rgb_Ds: List[int],
 
-        # output dimensions
-        density_out_dim: int,
-        rgb_out_dim: int,
+    # output dimensions
+    density_out_dim: int,
+    rgb_out_dim: int,
 
-        # skip connections
-        density_skip_in_layers: List[int],
-        rgb_skip_in_layers: List[int],
+    # skip connections
+    density_skip_in_layers: List[int],
+    rgb_skip_in_layers: List[int],
 
-        # activations
-        density_act: ActivationType,
-        rgb_act: ActivationType,
-    ) -> NeRF:
+    # activations
+    density_act: ActivationType,
+    rgb_act: ActivationType,
+) -> NeRF:
     if pos_enc == "identity":
         position_encoder = lambda x: x
     elif pos_enc == "frequency":
