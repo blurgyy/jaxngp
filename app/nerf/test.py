@@ -1,4 +1,3 @@
-import logging
 from typing import List
 
 from PIL import Image
@@ -14,10 +13,15 @@ from models.renderers import render_image
 from utils import common, data
 from utils.args import NeRFTestingArgs
 from utils.data import make_nerf_synthetic_scene_metadata
-from utils.types import NeRFBatchConfig, OccupancyDensityGrid, RenderedImage, RigidTransformation
+from utils.types import (
+    NeRFBatchConfig,
+    OccupancyDensityGrid,
+    RenderedImage,
+    RigidTransformation,
+)
 
 
-def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: logging.Logger):
+def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     logs_dir = args.exp_dir.joinpath("logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
     logger = common.setup_logging(

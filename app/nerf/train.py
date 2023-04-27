@@ -16,7 +16,6 @@ from models.renderers import render_image, render_rays, update_ogrid
 from utils import common, data
 from utils.args import NeRFTrainingArgs
 from utils.types import (
-    Logger,
     NeRFBatchConfig,
     NeRFTrainState,
     OccupancyDensityGrid,
@@ -134,7 +133,7 @@ def train_epoch(
     total_samples: int,
     ep_log: int,
     total_epochs: int,
-    logger: Logger,
+    logger: common.Logger,
 ):
     n_processed_rays = 0
     total_loss = 0

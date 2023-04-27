@@ -1,4 +1,6 @@
+from concurrent.futures import Executor
 from concurrent.futures import ThreadPoolExecutor
+import logging
 import logging
 from pathlib import Path
 import random
@@ -22,7 +24,29 @@ import jax.random as jran
 import numpy as np
 import tensorflow as tf
 
-from .types import LogLevel, Logger
+from .types import LogLevel
+
+
+class Logger(logging.Logger):
+    _tb: Optional[tensorboard.SummaryWriter]=None
+    _executor: Optional[Executor]=None
+
+    def __init__(self, name: str, level: Union[int, LogLevel]) -> None:
+        super().__init__(name, level)
+
+    def setup_tensorboard(self, tb: tensorboard.SummaryWriter, executor: Executor) -> None:
+        self._tb = tb
+        self._executor = executor
+
+    def write_scalar(self, tag: str, value: Any, step: int) -> None:
+        if self._tb is not None:
+            self._executor.submit(self._tb.scalar, tag, value, step)
+    def write_image(self, tag: str, image: Any, step: int, max_outputs: int) -> None:
+        if self._tb is not None:
+            self._executor.submit(self._tb.image, tag, image, step, max_outputs)
+    def write_hparams(self, hparams: dict[str, Any]) -> None:
+        if self._tb is not None:
+            self._executor.submit(self._tb.hparams, hparams)
 
 
 _tqdm_format = "SBRIGHT{desc}RESET: HI{percentage:3.0f}%RESET {n_fmt}/{total_fmt} [{elapsed}<HI{remaining}RESET, {rate_fmt}]"
