@@ -1,6 +1,5 @@
 from collections.abc import Callable
 import math
-from typing import Union
 
 from flax.core.scope import FrozenVariableDict
 import jax
@@ -19,13 +18,13 @@ from utils.common import jit_jaxfn_with
 from utils.data import cascades_from_bound
 from utils.types import (
     DensityAndRGB,
-    NeRFBatchConfig,
     NeRFTrainState,
     OccupancyDensityGrid,
     PinholeCamera,
-    RGBColor,
     RayMarchingOptions,
+    RenderingOptions,
     RigidTransformation,
+    SceneOptions,
 )
 
 from ._utils import make_rays_worldspace
@@ -83,8 +82,8 @@ def update_ogrid(
             maxval=half_cell_width,
         )
 
-        new_densities = state.apply_fn(
-            {"params": jax.lax.stop_gradient(state.params)},
+        new_densities = state.nerf_fn(
+            {"params": state.locked_params["nerf"]},
             jax.lax.stop_gradient(coordinates),
             None,
         )
@@ -292,32 +291,38 @@ def march_and_integrate_inference(
 
 
 def render_image(
-    bg: Union[RGBColor, jax.Array],
+    KEY: jran.KeyArray,
     bound: float,
     camera: PinholeCamera,
     transform_cw: RigidTransformation,
     raymarch_options: RayMarchingOptions,
-    batch_config: NeRFBatchConfig,
-    ogrid: OccupancyDensityGrid,
-    param_dict: FrozenVariableDict,
-    nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
+    render_options: RenderingOptions,
+    scene_options: SceneOptions,
+    state: NeRFTrainState,
 ):
     o_world, d_world = make_rays_worldspace(camera=camera, transform_cw=transform_cw)
     t_starts, t_ends = make_near_far_from_bound(bound, o_world, d_world)
     rays_rgb = jnp.zeros((camera.n_pixels, 3), dtype=jnp.float32)
     rays_T = jnp.ones(camera.n_pixels, dtype=jnp.float32)
     rays_depth = jnp.zeros(camera.n_pixels, dtype=jnp.float32)
+    if scene_options.with_bg:
+        bg = state.bg_fn({"params": state.locked_params["bg"]}, o_world, d_world)
+    elif render_options.random_bg:
+        KEY, key = jran.split(KEY, 2)
+        bg = jran.uniform(key, (3,), dtype=jnp.float32, minval=0, maxval=1)
+    else:
+        bg = render_options.bg
     rays_bg = jnp.broadcast_to(jnp.asarray(bg), rays_rgb.shape)
 
     o_world, d_world, t_starts, t_ends, rays_bg, rays_rgb, rays_T, rays_depth, param_dict = map(
         jax.lax.stop_gradient,
-        [o_world, d_world, t_starts, t_ends, rays_bg, rays_rgb, rays_T, rays_depth, param_dict],
+        [o_world, d_world, t_starts, t_ends, rays_bg, rays_rgb, rays_T, rays_depth, {"params": state.locked_params["nerf"]}],
     )
 
-    if batch_config.mean_effective_samples_per_ray > 7:
-        march_rays_cap = max(4, min(batch_config.mean_effective_samples_per_ray // 2 + 1, 8))
+    if state.batch_config.mean_effective_samples_per_ray > 7:
+        march_rays_cap = max(4, min(state.batch_config.mean_effective_samples_per_ray // 2 + 1, 8))
     else:
-        march_rays_cap = min(4, batch_config.mean_effective_samples_per_ray)
+        march_rays_cap = min(4, state.batch_config.mean_effective_samples_per_ray)
     march_rays_cap = int(march_rays_cap)
     n_rays = 65536 // march_rays_cap
 
@@ -342,7 +347,7 @@ def render_image(
                 rays_d=d_world,
                 t_starts=t_starts,
                 t_ends=t_ends,
-                occupancy_bitfield=ogrid.occupancy,
+                occupancy_bitfield=state.ogrid.occupancy,
                 terminated=terminated,
                 indices=indices,
 
@@ -352,13 +357,14 @@ def render_image(
                 rays_depth=rays_depth,
 
                 param_dict=param_dict,
-                nerf_fn=nerf_fn,
+                nerf_fn=state.nerf_fn,
             )
             terminate_cnt += iter_terminate_cnt
         n_rendered_rays += terminate_cnt
 
-    image_array = jnp.clip(rays_rgb * 255, 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W, 3))
-    rays_depth = rays_depth / (bound * 2 + jnp.linalg.norm(transform_cw.translation))
-    depth_array = jnp.clip(rays_depth * 255, 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W))
+    bg_array_f32 = rays_bg.reshape((camera.H, camera.W, 3))
+    image_array_u8 = jnp.clip(rays_rgb * 255, 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W, 3))
+    rays_depth_f32 = rays_depth / (bound * 2 + jnp.linalg.norm(transform_cw.translation))
+    depth_array_u8 = jnp.clip(rays_depth_f32 * 255, 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W))
 
-    return image_array, depth_array
+    return bg_array_f32, image_array_u8, depth_array_u8

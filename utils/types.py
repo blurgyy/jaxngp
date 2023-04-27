@@ -1,7 +1,8 @@
 from pathlib import Path
-from typing import Literal, Tuple
+from typing import Callable, Literal, Tuple
 
 import chex
+from flax import struct
 from flax.struct import dataclass
 from flax.training.train_state import TrainState
 import jax
@@ -10,6 +11,7 @@ import jax.numpy as jnp
 
 PositionalEncodingType = Literal["identity", "frequency", "hashgrid"]
 DirectionalEncodingType = Literal["identity", "sh", "shcuda"]
+EncodingType = Literal[PositionalEncodingType, DirectionalEncodingType]
 ActivationType = Literal[
     "exponential",
     "relu",
@@ -74,6 +76,16 @@ class NeRFBatchConfig:
 class NeRFTrainState(TrainState):
     ogrid: OccupancyDensityGrid
     batch_config: NeRFBatchConfig
+
+    nerf_fn: Callable=struct.field(pytree_node=False)
+    bg_fn: Callable=struct.field(pytree_node=False)
+
+    def __post_init__(self):
+        assert self.apply_fn is None
+
+    @property
+    def locked_params(self):
+        return jax.lax.stop_gradient(self.params)
 
     @property
     def update_ogrid_interval(self):
@@ -151,6 +163,9 @@ class SceneOptions:
 
     # scale camera positions with this scalar
     scale: float
+
+    # whether the scene has a background
+    with_bg: bool
 
 
 @dataclass

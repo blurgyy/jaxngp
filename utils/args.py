@@ -134,7 +134,8 @@ class NeRFTrainingArgs(_NeRFArgs):
     )
     scene: SceneOptions=SceneOptions(
         bound=1.0,
-        scale=0.8,
+        scale=0.6,
+        with_bg=False,
     )
 
     # raymarching/rendering options for validating during training
@@ -179,5 +180,6 @@ class NeRFTestingArgs(_NeRFArgs):
     )
     scene: SceneOptions=SceneOptions(
         bound=1.0,
-        scale=0.8,
+        scale=0.6,
+        with_bg=False,
     )

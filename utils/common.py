@@ -1,4 +1,4 @@
-from concurrent.futures import Executor
+from concurrent.futures import Executor, Future
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import logging
@@ -31,6 +31,8 @@ class Logger(logging.Logger):
     _tb: Optional[tensorboard.SummaryWriter]=None
     _executor: Optional[Executor]=None
 
+    _last_job: Future=None
+
     def __init__(self, name: str, level: Union[int, LogLevel]) -> None:
         super().__init__(name, level)
 
@@ -38,14 +40,21 @@ class Logger(logging.Logger):
         self._tb = tb
         self._executor = executor
 
+    def wait_last_job(self):
+        if self._last_job is not None and not self._last_job.done():
+            return self._last_job.result()
+
     def write_scalar(self, tag: str, value: Any, step: int) -> None:
         if self._tb is not None:
-            self._executor.submit(self._tb.scalar, tag, value, step)
+            self.wait_last_job()
+            self._last_job = self._executor.submit(self._tb.scalar, tag, value, step)
     def write_image(self, tag: str, image: Any, step: int, max_outputs: int) -> None:
         if self._tb is not None:
+            self.wait_last_job()
             self._executor.submit(self._tb.image, tag, image, step, max_outputs)
     def write_hparams(self, hparams: dict[str, Any]) -> None:
         if self._tb is not None:
+            self.wait_last_job()
             self._executor.submit(self._tb.hparams, hparams)
 
 

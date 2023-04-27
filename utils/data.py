@@ -13,7 +13,7 @@ import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
 
-from utils.common import mkValueError, tqdm_format
+from utils.common import jit_jaxfn_with, mkValueError, tqdm_format
 from utils.types import (
     ImageMetadata,
     PinholeCamera,
@@ -31,6 +31,17 @@ def to_unit_cube_2d(xys: jax.Array, W: int, H: int):
     return uvs
 
 
+@jax.jit
+def f32_to_u8(img: jax.Array) -> jax.Array:
+    return jnp.clip(img * 255, 0, 255).astype(jnp.uint8)
+
+
+@jax.jit
+def mono_to_rgb(img: jax.Array) -> jax.Array:
+    return jnp.tile(img[..., None], (1, 1, 3))
+
+
+@jit_jaxfn_with(static_argnames=["H", "W", "vertical", "gap"])
 def side_by_side(
     lhs: jax.Array,
     rhs: jax.Array,
@@ -43,8 +54,10 @@ def side_by_side(
     chex.assert_not_both_none(H, W)
     chex.assert_scalar_non_negative(vertical)
     chex.assert_type([lhs, rhs], jnp.uint8)
-    chex.assert_axis_dimension(lhs, -1, 3)
-    chex.assert_axis_dimension(rhs, -1, 3)
+    if len(lhs.shape) == 2 or lhs.shape[-1] == 1:
+        lhs = mono_to_rgb(lhs)
+    if len(rhs.shape) == 2 or rhs.shape[-1] == 1:
+        rhs = mono_to_rgb(rhs)
     if vertical:
         chex.assert_axis_dimension(lhs, 1, W)
         chex.assert_axis_dimension(rhs, 1, W)
@@ -59,6 +72,7 @@ def side_by_side(
         return jnp.concatenate([lhs, rhs], axis=concat_axis)
 
 
+@jit_jaxfn_with(static_argnames=["width"])
 def add_border(
     img: jax.Array,
     width: int=5,
@@ -77,8 +91,9 @@ def add_border(
     return img
 
 
+@jax.jit
 def linear2db(val: float, maxval: float):
-    return 20 * math.log10(math.sqrt(maxval / val))
+    return 20 * jnp.log10(jnp.sqrt(maxval / val))
 
 
 @jax.jit
@@ -149,6 +164,7 @@ def blend_rgba_image_array(imgarr, bg: RGBColor):
     if isinstance(imgarr, Image.Image):
         imgarr = np.asarray(imgarr)
     chex.assert_shape(imgarr, [..., 4])
+    chex.assert_type(imgarr, bg.dtype)
     rgbs, alpha = imgarr[..., :-1], imgarr[..., -1:]
     bg_color = jnp.asarray(bg)
     bg_color = jnp.broadcast_to(bg_color, rgbs.shape)
@@ -312,6 +328,7 @@ def make_nerf_synthetic_scene_metadata(
     return scene, views
 
 
+@jit_jaxfn_with(static_argnames=["size", "loop", "shuffle"])
 def make_permutation(
     key: jran.KeyArray,
     size: int,
@@ -322,7 +339,6 @@ def make_permutation(
         perm = jran.permutation(key, size * loop)
     else:
         perm = jnp.arange(size * loop)
-
     return perm % size
 
 
