@@ -10,7 +10,7 @@ import numpy as np
 from tqdm import tqdm
 
 from models.nerfs import make_nerf_ngp
-from models.renderers import render_image
+from models.renderers import render_image_inference
 from utils import common, data
 from utils.args import NeRFTestingArgs
 from utils.data import make_nerf_synthetic_scene_metadata
@@ -81,7 +81,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
             bg = jran.uniform(key, (3,), dtype=jnp.float32, minval=0, maxval=1)
         else:
             bg = args.render.bg
-        rgb, depth = render_image(
+        rgb, depth = render_image_inference(
             bg=bg,
             bound=args.scene.bound,
             camera=scene_metadata_test.camera,

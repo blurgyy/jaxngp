@@ -73,50 +73,6 @@ class NeRFBatchConfig:
         return self.n_rays * self.mean_samples_per_ray
 
 
-class NeRFTrainState(TrainState):
-    ogrid: OccupancyDensityGrid
-    batch_config: NeRFBatchConfig
-
-    nerf_fn: Callable=struct.field(pytree_node=False)
-    bg_fn: Callable=struct.field(pytree_node=False)
-
-    def __post_init__(self):
-        assert self.apply_fn is None
-
-    @property
-    def locked_params(self):
-        return jax.lax.stop_gradient(self.params)
-
-    @property
-    def update_ogrid_interval(self):
-        return min(2 ** (int(self.step) // 2048 + 4), 512)
-
-    @property
-    def should_call_update_ogrid(self):
-        return (
-            int(self.step) < 256
-            or (
-                int(self.step) > 0
-                and int(self.step) % self.update_ogrid_interval == 0
-            )
-        )
-
-    @property
-    def should_update_all_ogrid_cells(self):
-        return int(self.step) < 256
-
-    @property
-    def should_update_batch_config(self):
-        return (
-            int(self.step) > 0
-            and int(self.step) % 16 == 0
-        )
-
-    @property
-    def should_write_batch_metrics(self):
-        return self.step % 16 == 0
-
-
 @dataclass
 class PinholeCamera:
     # resolutions
@@ -220,3 +176,64 @@ class RenderedImage:
     bg: jax.Array
     rgb: jax.Array
     depth: jax.Array
+
+
+class NeRFState(TrainState):
+    # WARN:
+    #   do not annotate fields with jax.Array as members with flax.truct.field(pytree_node=False),
+    #   otherwise wierd issues happen, e.g. jax tracer leak, array-to-boolean conversion exception
+    #   while calling a jitted function with no helpful traceback.
+    ogrid: OccupancyDensityGrid
+
+    # WARN:
+    #   annotating batch_config with flax.struct.field(pytree_node=False) halves GPU utilization by
+    #   2x, consequently halving training speed by 2x as well.
+    #   ... why?
+    batch_config: NeRFBatchConfig
+
+    raymarch: RayMarchingOptions=struct.field(pytree_node=False)
+    render: RenderingOptions=struct.field(pytree_node=False)
+    scene: SceneOptions=struct.field(pytree_node=False)
+
+    nerf_fn: Callable=struct.field(pytree_node=False)
+    bg_fn: Callable=struct.field(pytree_node=False)
+
+    @classmethod
+    def create(cls, *args, **kwargs):
+        return super().create(apply_fn=None, *args, **kwargs)
+
+    def __post_init__(self):
+        assert self.apply_fn is None
+
+    @property
+    def locked_params(self):
+        return jax.lax.stop_gradient(self.params)
+
+    @property
+    def update_ogrid_interval(self):
+        return min(2 ** (int(self.step) // 2048 + 4), 512)
+
+    @property
+    def should_call_update_ogrid(self):
+        return (
+            self.step < 256
+            or (
+                self.step > 0
+                and self.step % self.update_ogrid_interval == 0
+            )
+        )
+
+    @property
+    def should_update_all_ogrid_cells(self):
+        return self.step < 256
+
+    @property
+    def should_update_batch_config(self):
+        return (
+            self.step > 0
+            and self.step % 16 == 0
+        )
+
+    @property
+    def should_write_batch_metrics(self):
+        return self.step % 16 == 0

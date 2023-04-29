@@ -18,7 +18,7 @@ from utils.common import jit_jaxfn_with
 from utils.data import cascades_from_bound
 from utils.types import (
     DensityAndRGB,
-    NeRFTrainState,
+    NeRFState,
     OccupancyDensityGrid,
     PinholeCamera,
     RayMarchingOptions,
@@ -30,22 +30,20 @@ from utils.types import (
 from ._utils import make_rays_worldspace
 
 
-@jit_jaxfn_with(static_argnames=["update_all", "bound", "raymarch"])
+@jit_jaxfn_with(static_argnames=["update_all"])
 def update_ogrid(
     KEY: jran.KeyArray,
     update_all: bool,
-    bound: float,
-    raymarch: RayMarchingOptions,
-    state: NeRFTrainState,
-) -> NeRFTrainState:
+    state: NeRFState,
+) -> NeRFState:
     # (1) decay the density value in each grid cell by a factor of 0.95.
     decay = .95
     density_grid = state.ogrid.density * decay
 
     # (2) randomly sample 𝑀 candidate cells, and set their value to the maximum of their current
     # value and the density component of the NeRF model at a random location within the cell.
-    G3 = raymarch.density_grid_res ** 3
-    cascades = cascades_from_bound(bound)
+    G3 = state.raymarch.density_grid_res ** 3
+    cascades = cascades_from_bound(state.scene.bound)
     for cas in range(cascades):
         if update_all:
             # During the first 256 training steps, we sample 𝑀 = 𝐾 · 128^{3} cells uniformly without
@@ -68,9 +66,9 @@ def update_ogrid(
             indices = jnp.concatenate([indices_firsthalf, indices_secondhalf])
 
         coordinates = morton3d_invert(indices).astype(jnp.float32)
-        coordinates = coordinates / (raymarch.density_grid_res - 1) * 2 - 1  # in [-1, 1]
-        mip_bound = min(bound, 2**cas)
-        half_cell_width = mip_bound / raymarch.density_grid_res
+        coordinates = coordinates / (state.raymarch.density_grid_res - 1) * 2 - 1  # in [-1, 1]
+        mip_bound = min(state.scene.bound, 2**cas)
+        half_cell_width = mip_bound / state.raymarch.density_grid_res
         coordinates *= mip_bound - half_cell_width  # in [-mip_bound+half_cell_width, mip_bound-half_cell_width]
         # random point inside grid cells
         KEY, key = jran.split(KEY, 2)
@@ -97,7 +95,7 @@ def update_ogrid(
     # (3) update the occupancy bits by thresholding each cell’s density with 𝑡 = 0.01 · 1024/√3,
     # which corresponds to thresholding the opacity of a minimal ray marching step by 1 − exp(−0.01)
     # ≈ 0.01.
-    density_threshold = .01 * raymarch.diagonal_n_steps / (2 * min(bound, 1) * 3**.5)
+    density_threshold = .01 * state.raymarch.diagonal_n_steps / (2 * min(state.scene.bound, 1) * 3**.5)
     mean_density = jnp.sum(jnp.where(density_grid > 0, density_grid, 0)) / jnp.sum(jnp.where(density_grid > 0, 1, 0))
     density_threshold = jnp.minimum(density_threshold, mean_density)
     # density_threshold = 1e-2
@@ -159,51 +157,47 @@ def make_near_far_from_bound(
     return t_start, t_end
 
 
-@jit_jaxfn_with(static_argnames=["bound", "total_samples", "options", "nerf_fn"])
-def render_rays(
+@jit_jaxfn_with(static_argnames=["total_samples"])
+def render_rays_train(
     KEY: jran.KeyArray,
     o_world: jax.Array,
     d_world: jax.Array,
     bg: jax.Array,
-    bound: float,
     total_samples: int,
-    ogrid: OccupancyDensityGrid,
-    options: RayMarchingOptions,
-    param_dict: FrozenVariableDict,
-    nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
+    state: NeRFState,
 ):
     # make sure d_world is normalized
     d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
     # skip the empty space between camera and scene bbox
     # [n_rays], [n_rays]
     t_starts, t_ends = make_near_far_from_bound(
-        bound=bound,
+        bound=state.scene.bound,
         o=o_world,
         d=d_world
     )
 
-    if options.perturb:
+    if state.raymarch.perturb:
         KEY, key = jran.split(KEY, 2)
         noises = jran.uniform(key, shape=t_starts.shape, dtype=t_starts.dtype, minval=0., maxval=1.)
     else:
         noises = 0.
     measured_batch_size_before_compaction, rays_n_samples, rays_sample_startidx, ray_pts, ray_dirs, dss, z_vals = march_rays(
         total_samples=total_samples,
-        diagonal_n_steps=options.diagonal_n_steps,
-        K=cascades_from_bound(bound),
-        G=options.density_grid_res,
-        bound=bound,
-        stepsize_portion=options.stepsize_portion,
+        diagonal_n_steps=state.raymarch.diagonal_n_steps,
+        K=cascades_from_bound(state.scene.bound),
+        G=state.raymarch.density_grid_res,
+        bound=state.scene.bound,
+        stepsize_portion=state.raymarch.stepsize_portion,
         rays_o=o_world,
         rays_d=d_world,
         t_starts=t_starts.ravel(),
         t_ends=t_ends.ravel(),
         noises=noises,
-        occupancy_bitfield=ogrid.occupancy,
+        occupancy_bitfield=state.ogrid.occupancy,
     )
 
-    densities, rgbs = nerf_fn(
-        param_dict,
+    densities, rgbs = state.nerf_fn(
+        {"params": state.params["nerf"]},
         ray_pts,
         ray_dirs,
     )
@@ -290,28 +284,24 @@ def march_and_integrate_inference(
     return terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth
 
 
-def render_image(
+def render_image_inference(
     KEY: jran.KeyArray,
-    bound: float,
     camera: PinholeCamera,
     transform_cw: RigidTransformation,
-    raymarch_options: RayMarchingOptions,
-    render_options: RenderingOptions,
-    scene_options: SceneOptions,
-    state: NeRFTrainState,
+    state: NeRFState,
 ):
     o_world, d_world = make_rays_worldspace(camera=camera, transform_cw=transform_cw)
-    t_starts, t_ends = make_near_far_from_bound(bound, o_world, d_world)
+    t_starts, t_ends = make_near_far_from_bound(state.scene.bound, o_world, d_world)
     rays_rgb = jnp.zeros((camera.n_pixels, 3), dtype=jnp.float32)
     rays_T = jnp.ones(camera.n_pixels, dtype=jnp.float32)
     rays_depth = jnp.zeros(camera.n_pixels, dtype=jnp.float32)
-    if scene_options.with_bg:
+    if state.scene.with_bg:
         bg = state.bg_fn({"params": state.locked_params["bg"]}, o_world, d_world)
-    elif render_options.random_bg:
+    elif state.render.random_bg:
         KEY, key = jran.split(KEY, 2)
         bg = jran.uniform(key, (3,), dtype=jnp.float32, minval=0, maxval=1)
     else:
-        bg = render_options.bg
+        bg = state.render.bg
     rays_bg = jnp.broadcast_to(jnp.asarray(bg), rays_rgb.shape)
 
     o_world, d_world, t_starts, t_ends, rays_bg, rays_rgb, rays_T, rays_depth, param_dict = map(
@@ -338,9 +328,9 @@ def render_image(
         terminate_cnt = 0
         for _ in range(iters):
             iter_terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth = march_and_integrate_inference(
-                bound=bound,
+                bound=state.scene.bound,
                 march_steps_cap=march_rays_cap,
-                raymarch_options=raymarch_options,
+                raymarch_options=state.raymarch,
 
                 counter=counter,
                 rays_o=o_world,
@@ -364,7 +354,7 @@ def render_image(
 
     bg_array_f32 = rays_bg.reshape((camera.H, camera.W, 3))
     image_array_u8 = jnp.clip(rays_rgb * 255, 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W, 3))
-    rays_depth_f32 = rays_depth / (bound * 2 + jnp.linalg.norm(transform_cw.translation))
+    rays_depth_f32 = rays_depth / (state.scene.bound * 2 + jnp.linalg.norm(transform_cw.translation))
     depth_array_u8 = jnp.clip(rays_depth_f32 * 255, 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W))
 
     return bg_array_f32, image_array_u8, depth_array_u8
