@@ -1,11 +1,11 @@
-from concurrent.futures import Executor, Future
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Executor, Future, ThreadPoolExecutor
 import logging
 import logging
 from pathlib import Path
 import random
 from typing import (
     Any,
+    Dict,
     Hashable,
     Iterable,
     Optional,
@@ -51,11 +51,11 @@ class Logger(logging.Logger):
     def write_image(self, tag: str, image: Any, step: int, max_outputs: int) -> None:
         if self._tb is not None:
             self.wait_last_job()
-            self._executor.submit(self._tb.image, tag, image, step, max_outputs)
-    def write_hparams(self, hparams: dict[str, Any]) -> None:
+            self._last_job = self._executor.submit(self._tb.image, tag, image, step, max_outputs)
+    def write_hparams(self, hparams: Dict[str, Any]) -> None:
         if self._tb is not None:
             self.wait_last_job()
-            self._executor.submit(self._tb.hparams, hparams)
+            self._last_job = self._executor.submit(self._tb.hparams, hparams)
 
 
 _tqdm_format = "SBRIGHT{desc}RESET: HI{percentage:3.0f}%RESET {n_fmt}/{total_fmt} [{elapsed}<HI{remaining}RESET, {rate_fmt}]"
