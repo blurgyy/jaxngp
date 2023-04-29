@@ -92,7 +92,7 @@ def add_border(
 
 
 @jax.jit
-def linear2db(val: float, maxval: float):
+def linear_to_db(val: float, maxval: float):
     return 20 * jnp.log10(jnp.sqrt(maxval / val))
 
 

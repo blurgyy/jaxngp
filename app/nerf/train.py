@@ -159,7 +159,7 @@ def train_epoch(
             running_mean_effective_samp_per_ray * .95 + .05 * metrics["measured_batch_size"] / state.batch_config.n_rays,
         )
 
-        loss_db = data.linear2db(loss_log, maxval=1)
+        loss_db = data.linear_to_db(loss_log, maxval=1)
         pbar.set_description_str(
             desc="Training epoch#{:03d}/{:d} batch_size={}/{} samp./ray={}/{} n_rays={} loss={:.3e}({:.2f}dB)".format(
                 ep_log,
@@ -354,7 +354,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             logger.info("exiting cleanly ...")
             exit()
 
-        loss_db = data.linear2db(loss_log, maxval=1)
+        loss_db = data.linear_to_db(loss_log, maxval=1)
         logger.info("epoch#{:03d}: loss={:.2e}({:.2f}dB)".format(ep_log, loss_log, loss_db))
         logger.write_scalar("epoch/↓loss", loss_log, step=ep_log)
         logger.write_scalar("epoch/↑loss (db)", loss_db, step=ep_log)
