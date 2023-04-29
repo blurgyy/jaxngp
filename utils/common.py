@@ -47,7 +47,8 @@ class Logger(logging.Logger):
     def write_scalar(self, tag: str, value: Any, step: int) -> None:
         if self._tb is not None:
             self.wait_last_job()
-            self._last_job = self._executor.submit(self._tb.scalar, tag, value, step)
+            # NOTE: writing scalars is fast(ish) enough to not need a thread pool
+            self._executor.submit(self._tb.scalar, tag, value, step)
     def write_image(self, tag: str, image: Any, step: int, max_outputs: int) -> None:
         if self._tb is not None:
             self.wait_last_job()
