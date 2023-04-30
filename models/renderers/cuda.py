@@ -293,7 +293,7 @@ def render_image_inference(
     rays_rgb = jnp.zeros((camera.n_pixels, 3), dtype=jnp.float32)
     rays_T = jnp.ones(camera.n_pixels, dtype=jnp.float32)
     rays_depth = jnp.zeros(camera.n_pixels, dtype=jnp.float32)
-    if state.scene.with_bg:
+    if state.use_background_model:
         bg = state.bg_fn({"params": state.locked_params["bg"]}, o_world, d_world)
     elif state.render.random_bg:
         KEY, key = jran.split(KEY, 2)

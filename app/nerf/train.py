@@ -77,7 +77,7 @@ def train_step(
 
     def loss_fn(params, gt_rgba, KEY):
         o_world, d_world = make_rays_worldspace()
-        if state.scene.with_bg:
+        if state.use_background_model:
             # NOTE: use `params` (from loss_fn's inputs) instead of `state.params` (from
             # train_step's inputs), as gradients are conly computed w.r.t. loss_fn's inputs.
             bg = state.bg_fn({"params": params["bg"]}, o_world, d_world)

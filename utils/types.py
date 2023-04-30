@@ -231,6 +231,10 @@ class NeRFState(TrainState):
         assert self.apply_fn is None
 
     @property
+    def use_background_model(self) -> bool:
+        return self.scene.with_bg and self.params.get("bg") is not None
+
+    @property
     def locked_params(self):
         return jax.lax.stop_gradient(self.params)
 
