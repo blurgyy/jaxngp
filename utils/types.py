@@ -16,8 +16,8 @@ ActivationType = Literal[
     "exponential",
     "relu",
     "sigmoid",
-    "truncated_exponential",
     "thresholded_exponential",
+    "truncated_exponential",
     "truncated_thresholded_exponential",
 ]
 
@@ -26,6 +26,26 @@ LogLevel = Literal["DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL"]
 RGBColor = Tuple[float, float, float]
 
 
+def empty_impl(clz):
+    if "__dataclass_fields__" not in clz.__dict__:
+        raise TypeError("class `{}` is not a dataclass".format(clz.__name__))
+
+    fields = clz.__dict__["__dataclass_fields__"]
+
+    def empty_fn(cls, /, **kwargs):
+        """
+        Create an empty instance of the given class, with untransformed fields set to given values.
+        """
+        for field_name, annotation in fields.items():
+            if field_name not in kwargs:
+                kwargs[field_name] = getattr(annotation.type, "empty", lambda: None)()
+        return cls(**kwargs)
+
+    setattr(clz, "empty", classmethod(empty_fn))
+    return clz
+
+
+@empty_impl
 @dataclass
 class OccupancyDensityGrid:
     # float32, full-precision density values
@@ -62,6 +82,7 @@ class OccupancyDensityGrid:
         return cls(density=density, occ_mask=occ_mask, occupancy=occupancy)
 
 
+@empty_impl
 @dataclass
 class NeRFBatchConfig:
     mean_effective_samples_per_ray: int
@@ -87,6 +108,7 @@ class PinholeCamera:
         return self.H * self.W
 
 
+@empty_impl
 @dataclass
 class RayMarchingOptions:
     # for calculating the length of a minimal ray marching step, the NGP paper uses 1024 (appendix
@@ -103,6 +125,7 @@ class RayMarchingOptions:
     density_grid_res: int
 
 
+@empty_impl
 @dataclass
 class RenderingOptions:
     # background color for transparent parts of the image, has no effect if `random_bg` is True
@@ -112,6 +135,7 @@ class RenderingOptions:
     random_bg: bool
 
 
+@empty_impl
 @dataclass
 class SceneOptions:
     # half width of axis-aligned bounding-box, i.e. aabb's width is `bound*2`
@@ -178,6 +202,7 @@ class RenderedImage:
     depth: jax.Array
 
 
+@empty_impl
 class NeRFState(TrainState):
     # WARN:
     #   do not annotate fields with jax.Array as members with flax.truct.field(pytree_node=False),

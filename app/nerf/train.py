@@ -210,7 +210,7 @@ def train_epoch(
 def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
     if args.exp_dir.exists():
         logger.error("specified experiment directory '{}' already exists".format(args.exp_dir))
-        exit(2)
+        exit(1)
     logs_dir = args.exp_dir.joinpath("logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
     logger = common.setup_logging(
@@ -373,6 +373,9 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
         if ep_log % args.train.validate_interval_epochs == 0:
             val_start_time = time.time()
             rendered_images: List[RenderedImage] = []
+            state_eval = state\
+                .replace(raymarch=args.raymarch_eval)\
+                .replace(render=args.render_eval)
             for val_i, val_view in enumerate(tqdm(val_views, desc="validating", bar_format=common.tqdm_format)):
                 logger.debug("validating on {}".format(val_view.file))
                 val_transform = RigidTransformation(
@@ -384,7 +387,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
                     KEY=key,
                     camera=scene_metadata_val.camera,
                     transform_cw=val_transform,
-                    state=state,
+                    state=state_eval,
                 )
                 rendered_images.append(RenderedImage(
                     bg=bg,

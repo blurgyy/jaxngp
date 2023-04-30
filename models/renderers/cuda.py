@@ -22,9 +22,7 @@ from utils.types import (
     OccupancyDensityGrid,
     PinholeCamera,
     RayMarchingOptions,
-    RenderingOptions,
     RigidTransformation,
-    SceneOptions,
 )
 
 from ._utils import make_rays_worldspace

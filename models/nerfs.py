@@ -18,12 +18,11 @@ from utils.types import (
     ActivationType,
     DirectionalEncodingType,
     PositionalEncodingType,
+    empty_impl,
 )
 
 
-class BackgroundModel(nn.Module): ...
-
-
+@empty_impl
 class NeRF(nn.Module):
     bound: float
 
@@ -105,6 +104,10 @@ class CoordinateBasedMLP(nn.Module):
         return x
 
 
+class BackgroundModel(nn.Module): ...
+
+
+@empty_impl
 class SkySphereBg(BackgroundModel):
     """
     A sphere that centers at the origin and encloses a bounded scene and provides all the background

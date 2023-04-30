@@ -156,9 +156,6 @@ class NeRFTestingArgs(_NeRFArgs):
     # if specified, switch to test mode and use this checkpoint
     test_ckpt: Path
 
-    # which test images should be tested on, indices are 0-based
-    test_indices: Tuple[int, ...]
-
     # which split to test on
     test_split: Literal["train", "test", "val"]="test"
 
