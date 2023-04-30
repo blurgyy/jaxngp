@@ -113,7 +113,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
 
     save_dest = args.exp_dir.joinpath(args.test_split)
     save_dest.mkdir(parents=True, exist_ok=True)
-    if "image" in args.save_as:
+    if "video" in args.save_as:
         dest_rgb = save_dest.joinpath("rgb")
         dest_depth = save_dest.joinpath("depth")
 
@@ -125,7 +125,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
             Image.fromarray(np.asarray(img.rgb)).save(dest_rgb.joinpath("{:03d}.png".format(save_i)))
             Image.fromarray(np.asarray(img.depth)).save(dest_depth.joinpath("{:03d}.png".format(save_i)))
 
-    if "video" in args.save_as:
+    if "image" in args.save_as:
         dest_rgb_video = save_dest.joinpath("rgb.mp4")
         dest_depth_video = save_dest.joinpath("depth.mp4")
 
