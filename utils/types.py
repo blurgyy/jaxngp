@@ -239,11 +239,11 @@ class NeRFState(TrainState):
         return jax.lax.stop_gradient(self.params)
 
     @property
-    def update_ogrid_interval(self):
+    def update_ogrid_interval(self) -> int:
         return min(2 ** (int(self.step) // 2048 + 4), 512)
 
     @property
-    def should_call_update_ogrid(self):
+    def should_call_update_ogrid(self) -> bool:
         return (
             self.step < 256
             or (
@@ -253,16 +253,16 @@ class NeRFState(TrainState):
         )
 
     @property
-    def should_update_all_ogrid_cells(self):
+    def should_update_all_ogrid_cells(self) -> bool:
         return self.step < 256
 
     @property
-    def should_update_batch_config(self):
+    def should_update_batch_config(self) -> bool:
         return (
             self.step > 0
             and self.step % 16 == 0
         )
 
     @property
-    def should_write_batch_metrics(self):
+    def should_write_batch_metrics(self) -> bool:
         return self.step % 16 == 0
