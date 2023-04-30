@@ -409,6 +409,15 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
                 range(len(val_views)),
             ))
 
+            logger.debug("calculating psnr")
+            mean_psnr = sum(map(
+                data.psnr,
+                map(data.f32_to_u8, gt_rgbs_f32),
+                map(lambda ri: ri.rgb, rendered_images),
+            )) / len(rendered_images)
+            logger.info("validated {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
+            logger.write_scalar("validation/↑mean psnr", mean_psnr, step=ep_log)
+
             logger.debug("writing images to tensorboard")
             concatenate_fn = lambda gt, rendered_image: data.add_border(functools.reduce(
                 functools.partial(
@@ -429,15 +438,6 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
                 max_outputs=len(rendered_images),
             )
             logger.wait_last_job()
-
-            logger.debug("calculating psnr")
-            mean_psnr = sum(map(
-                data.psnr,
-                map(data.f32_to_u8, gt_rgbs_f32),
-                map(lambda ri: ri.rgb, rendered_images),
-            )) / len(rendered_images)
-            logger.info("validated {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
-            logger.write_scalar("validation/↑mean psnr", mean_psnr, step=ep_log)
 
             del gt_rgbs_f32
             del rendered_images
