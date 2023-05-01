@@ -24,13 +24,13 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         level=args.common.logging.upper(),
         file_level="DEBUG",
     )
-    if not args.test_ckpt.exists():
-        logger.error("specified checkpoint '{}' does not exist".format(args.test_ckpt))
+    if not args.ckpt.exists():
+        logger.error("specified checkpoint '{}' does not exist".format(args.ckpt))
         exit(1)
 
     # load parameters
     state: NeRFState = checkpoints.restore_checkpoint(
-        args.test_ckpt,
+        args.ckpt,
         target=NeRFState.empty(
             raymarch=args.raymarch,
             render=args.render,
@@ -47,7 +47,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
 
     scene_metadata_test, test_views = data.make_nerf_synthetic_scene_metadata(
         rootdir=args.data_root,
-        split=args.test_split,
+        split=args.split,
         scale=state.scene.scale,
     )
 
@@ -91,7 +91,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     )) / len(rendered_images)
     logger.info("tested {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
 
-    save_dest = args.exp_dir.joinpath(args.test_split)
+    save_dest = args.exp_dir.joinpath(args.split)
     save_dest.mkdir(parents=True, exist_ok=True)
     if "video" in args.save_as:
         dest_rgb = save_dest.joinpath("rgb")

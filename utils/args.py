@@ -154,10 +154,10 @@ class NeRFTrainingArgs(_NeRFArgs):
 @dataclass(frozen=True, kw_only=True)
 class NeRFTestingArgs(_NeRFArgs):
     # if specified, switch to test mode and use this checkpoint
-    test_ckpt: Path
+    ckpt: Path
 
     # which split to test on
-    test_split: Literal["train", "test", "val"]="test"
+    split: Literal["train", "test", "val"]="test"
 
     # if specified value contains "video", a video will be saved; if specified value contains
     # "image", rendered images will be saved.  Value can contain both "video" and "image", e.g.,
