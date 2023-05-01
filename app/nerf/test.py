@@ -21,7 +21,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     logger = common.setup_logging(
         "nerf.test",
         file=logs_dir.joinpath("test.log"),
-        level=args.common.logging,
+        level=args.common.logging.upper(),
         file_level="DEBUG",
     )
     if not args.test_ckpt.exists():
