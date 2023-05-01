@@ -107,6 +107,16 @@ class PinholeCamera:
     def n_pixels(self) -> int:
         return self.H * self.W
 
+    def scaled(self, factor: float) -> "PinholeCamera":
+        "same focal length, different resolution"
+        return self\
+            .replace(H=self.H // factor)\
+            .replace(W=self.W // factor)
+
+    def zoomed(self, factor: float) -> "PinholeCamera":
+        "same resolution, different focal length"
+        return self.replace(focal=self.focal * factor)
+
 
 @empty_impl
 @dataclass
