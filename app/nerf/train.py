@@ -402,11 +402,12 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             )
 
             gt_rgbs_f32 = list(map(
-                lambda val_i: data.blend_rgba_image_array(
-                    val_views[val_i].image_rgba,
-                    rendered_images[val_i].bg,
+                lambda val_view, rendered_image: data.blend_rgba_image_array(
+                    val_view.image_rgba,
+                    rendered_image.bg,
                 ),
-                range(len(val_views)),
+                val_views,
+                rendered_images,
             ))
 
             logger.debug("calculating psnr")

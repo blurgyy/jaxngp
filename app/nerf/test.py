@@ -76,11 +76,12 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         logger.warn("keyboard interrupt, tested {} images".format(len(rendered_images)))
 
     gt_rgbs_f32 = map(
-        lambda test_i: data.blend_rgba_image_array(
-            test_views[test_i].image_rgba,
-            rendered_images[test_i].bg,
+        lambda test_view, rendered_image: data.blend_rgba_image_array(
+            test_view.image_rgba,
+            rendered_image.bg,
         ),
-        range(len(rendered_images)),
+        test_views,
+        rendered_images,
     )
     logger.debug("calculating psnr")
     mean_psnr = sum(map(
