@@ -1,5 +1,6 @@
 from collections.abc import Callable
 import math
+from typing import Union
 
 from flax.core.scope import FrozenVariableDict
 import jax
@@ -221,6 +222,7 @@ def render_rays_train(
 
 @jit_jaxfn_with(static_argnames=["bound", "march_steps_cap", "raymarch_options", "nerf_fn"])
 def march_and_integrate_inference(
+    transmittance_threshold: Union[float, jax.Array],
     bound: float,
     march_steps_cap: int,
     raymarch_options: RayMarchingOptions,
@@ -266,6 +268,7 @@ def march_and_integrate_inference(
     )
 
     terminate_cnt, terminated, rays_rgb, rays_T, rays_depth = integrate_rays_inference(
+        transmittance_threshold=transmittance_threshold,
         rays_bg=rays_bg,
         rays_rgb=rays_rgb,
         rays_T=rays_T,
@@ -326,6 +329,7 @@ def render_image_inference(
         terminate_cnt = 0
         for _ in range(iters):
             iter_terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth = march_and_integrate_inference(
+                transmittance_threshold=1e-4,
                 bound=state.scene.bound,
                 march_steps_cap=march_rays_cap,
                 raymarch_options=state.raymarch,

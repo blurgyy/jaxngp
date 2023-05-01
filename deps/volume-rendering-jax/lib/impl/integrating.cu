@@ -235,6 +235,7 @@ __global__ void integrate_rays_inference_kernel(
     , std::uint32_t const n_rays
     , std::uint32_t const march_steps_cap
 
+    , float const * const __restrict__ transmittance_threshold  // [n_total_rays]
     , float const * const __restrict__ rays_bg  // [n_total_rays, 3]
     , float const * const __restrict__ rays_rgb  // [n_total_rays, 3]
     , float const * const __restrict__ rays_T  // [n_total_rays]
@@ -265,12 +266,13 @@ __global__ void integrate_rays_inference_kernel(
         float const * const __restrict__ ray_densities = densities + i * march_steps_cap;
         float const * const __restrict__ ray_rgbs = rgbs + i * march_steps_cap * 3;
 
+        float const T_thresh = transmittance_threshold[ray_idx];
         float ray_T = rays_T[ray_idx];
         float r = rays_rgb[ray_idx * 3 + 0];
         float g = rays_rgb[ray_idx * 3 + 1];
         float b = rays_rgb[ray_idx * 3 + 2];
         float ray_depth = rays_depth[ray_idx];
-        for (std::uint32_t sample_idx = 0; ray_T > 1e-4 && sample_idx < ray_n_samples; ++sample_idx) {
+        for (std::uint32_t sample_idx = 0; ray_T > T_thresh && sample_idx < ray_n_samples; ++sample_idx) {
             float const ds = ray_dss[sample_idx];
             float const density = ray_densities[sample_idx];
             float const alpha = 1.f - __expf(-density * ds);
@@ -282,7 +284,7 @@ __global__ void integrate_rays_inference_kernel(
             ray_T *= (1.f - alpha);
         }
 
-        if (ray_T <= 1e-4) {
+        if (ray_T <= T_thresh) {
             float const denom = 1 - ray_T;
             terminated[i] = true;
             rays_depth_out[i] = ray_depth / denom;
@@ -470,6 +472,7 @@ void integrate_rays_inference_launcher(cudaStream_t stream, void **buffers, char
     std::uint32_t const march_steps_cap = desc.march_steps_cap;
 
     /// arrays
+    float const * const __restrict__ transmittance_threshold = static_cast<float *>(next_buffer());  // [n_total_rays]
     float const * const __restrict__ rays_bg = static_cast<float *>(next_buffer());  // [n_total_rays, 3]
     float const * const __restrict__ rays_rgb = static_cast<float *>(next_buffer());  // [n_total_rays, 3]
     float const * const __restrict__ rays_T = static_cast<float *>(next_buffer());  // [n_total_rays]
@@ -504,6 +507,7 @@ void integrate_rays_inference_launcher(cudaStream_t stream, void **buffers, char
         , n_rays
         , march_steps_cap
 
+        , transmittance_threshold
         , rays_bg
         , rays_rgb
         , rays_T
