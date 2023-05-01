@@ -276,7 +276,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
                 "rgb_mlp": True,
                 "position_encoder": False,
             },
-            "bg": False,
+            "bg": args.scene.with_bg,
         },
     )
 
@@ -390,9 +390,9 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
                     state=state_eval,
                 )
                 rendered_images.append(RenderedImage(
-                    bg=bg,
-                    rgb=rgb,
-                    depth=depth,
+                    bg=data.to_cpu(bg),
+                    rgb=data.to_cpu(rgb),
+                    depth=data.to_cpu(depth),
                 ))
             val_end_time = time.time()
             logger.write_scalar(
@@ -439,5 +439,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             )
             logger.wait_last_job()
 
+            del state_eval
             del gt_rgbs_f32
             del rendered_images
+        del permutation

@@ -25,10 +25,8 @@ from utils.types import (
 Dataset = tf.data.Dataset
 
 
-def to_unit_cube_2d(xys: jax.Array, W: int, H: int):
-    "Normalizes coordinate (x, y) into range [0, 1], where 0<=x<W, 0<=y<H"
-    uvs = xys / jnp.asarray([[W-1, H-1]])
-    return uvs
+def to_cpu(array: jnp.DeviceArray) -> jnp.DeviceArray:
+    return jax.device_put(array, device=jax.devices("cpu")[0])
 
 
 @jax.jit
@@ -39,6 +37,12 @@ def f32_to_u8(img: jax.Array) -> jax.Array:
 @jax.jit
 def mono_to_rgb(img: jax.Array) -> jax.Array:
     return jnp.tile(img[..., None], (1, 1, 3))
+
+
+def to_unit_cube_2d(xys: jax.Array, W: int, H: int):
+    "Normalizes coordinate (x, y) into range [0, 1], where 0<=x<W, 0<=y<H"
+    uvs = xys / jnp.asarray([[W-1, H-1]])
+    return uvs
 
 
 @jit_jaxfn_with(static_argnames=["H", "W", "vertical", "gap"])

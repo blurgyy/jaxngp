@@ -66,6 +66,14 @@ tqdm_format = _tqdm_format \
     .replace("RESET", Style.RESET_ALL)
 
 
+def compose(*fns):
+    def _inner(x):
+        for fn in reversed(fns):
+            x = fn(x)
+        return x
+    return _inner
+
+
 # NOTE:
 #   Jitting a vmapped function seems to give the desired performance boost, while vmapping a jitted
 #   function might not work at all.  Except for the experiments I conducted myself, some related
