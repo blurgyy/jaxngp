@@ -1,7 +1,8 @@
 import dataclasses
-import logging
+import functools
+import gc
 import time
-from typing import List, Tuple
+from typing import Dict, List, Tuple, Union
 
 from flax.training import checkpoints
 import jax
@@ -11,37 +12,32 @@ import optax
 from tqdm import tqdm
 import tyro
 
-from models.nerfs import make_nerf_ngp
-from models.renderers import render_image, render_rays, update_ogrid
+from models.nerfs import make_nerf_ngp, make_skysphere_background_model_ngp
+from models.renderers import render_image_inference, render_rays_train, update_ogrid
 from utils import common, data
 from utils.args import NeRFTrainingArgs
 from utils.types import (
     NeRFBatchConfig,
-    NeRFTrainState,
+    NeRFState,
     OccupancyDensityGrid,
     PinholeCamera,
-    RayMarchingOptions,
     RenderedImage,
-    RenderingOptions,
     RigidTransformation,
     SceneMetadata,
 )
 
 
-@common.jit_jaxfn_with(static_argnames=["bound", "total_samples", "raymarch_options", "render_options"])
+@common.jit_jaxfn_with(static_argnames=["total_samples"])
 def train_step(
     KEY: jran.KeyArray,
-    state: NeRFTrainState,
-    bound: float,
+    state: NeRFState,
     total_samples: int,
     camera: PinholeCamera,
-    raymarch_options: RayMarchingOptions,
-    render_options: RenderingOptions,
     all_xys: jax.Array,
     all_rgbas: jax.Array,
     all_transforms: jax.Array,
     perm: jax.Array,
-):
+) -> Tuple[NeRFState, Dict[str, Union[jax.Array, float]]]:
     # TODO:
     #   merge this and `models.renderers.make_rays_worldspace` as a single function
     def make_rays_worldspace() -> Tuple[jax.Array, jax.Array]:
@@ -81,23 +77,23 @@ def train_step(
 
     def loss_fn(params, gt_rgba, KEY):
         o_world, d_world = make_rays_worldspace()
-        if render_options.random_bg:
+        if state.use_background_model:
+            # NOTE: use `params` (from loss_fn's inputs) instead of `state.params` (from
+            # train_step's inputs), as gradients are conly computed w.r.t. loss_fn's inputs.
+            bg = state.bg_fn({"params": params["bg"]}, o_world, d_world)
+        elif state.render.random_bg:
             KEY, key = jran.split(KEY, 2)
             bg = jran.uniform(key, shape=(o_world.shape[0], 3), dtype=jnp.float32, minval=0, maxval=1)
         else:
-            bg = jnp.asarray(render_options.bg)
+            bg = jnp.asarray(state.render.bg)
         KEY, key = jran.split(KEY, 2)
-        batch_metrics, _, pred_rgbs, _ = render_rays(
+        batch_metrics, _, pred_rgbs, _ = render_rays_train(
             KEY=key,
             o_world=o_world,
             d_world=d_world,
             bg=bg,
-            bound=bound,
             total_samples=total_samples,
-            ogrid=state.ogrid,
-            options=raymarch_options,
-            param_dict={"params": params},
-            nerf_fn=state.apply_fn,
+            state=state.replace(params=params),
         )
         gt_rgbs = data.blend_rgba_image_array(imgarr=gt_rgba, bg=bg)
         # from NVlabs/instant-ngp/commit/d6c7241de9be5be1b6d85fe43e446d2eb042511b
@@ -123,11 +119,8 @@ def train_step(
 
 def train_epoch(
     KEY: jran.KeyArray,
-    bound: float,
+    state: NeRFState,
     scene_metadata: SceneMetadata,
-    raymarch_options: RayMarchingOptions,
-    render_options: RenderingOptions,
-    state: NeRFTrainState,
     permutation: jax.Array,
     n_batches: int,
     total_samples: int,
@@ -151,11 +144,8 @@ def train_epoch(
         state, metrics = train_step(
             KEY=key,
             state=state,
-            bound=bound,
             total_samples=total_samples,
             camera=scene_metadata.camera,
-            raymarch_options=raymarch_options,
-            render_options=render_options,
             all_xys=scene_metadata.all_xys,
             all_rgbas=scene_metadata.all_rgbas,
             all_transforms=scene_metadata.all_transforms,
@@ -169,7 +159,7 @@ def train_epoch(
             running_mean_effective_samp_per_ray * .95 + .05 * metrics["measured_batch_size"] / state.batch_config.n_rays,
         )
 
-        loss_db = data.linear2db(loss_log, maxval=1)
+        loss_db = data.linear_to_db(loss_log, maxval=1)
         pbar.set_description_str(
             desc="Training epoch#{:03d}/{:d} batch_size={}/{} samp./ray={}/{} n_rays={} loss={:.3e}({:.2f}dB)".format(
                 ep_log,
@@ -189,9 +179,7 @@ def train_epoch(
             KEY, key = jran.split(KEY, 2)
             state = update_ogrid(
                 KEY=key,
-                update_all=state.should_update_all_ogrid_cells,
-                bound=bound,
-                raymarch=raymarch_options,
+                update_all=bool(state.should_update_all_ogrid_cells),
                 state=state,
             )
 
@@ -208,21 +196,21 @@ def train_epoch(
             )
 
         if state.should_write_batch_metrics:
-            logger.write_scalar("batch/loss", loss_log, state.step)
-            logger.write_scalar("batch/loss (db)", loss_db, state.step)
+            logger.write_scalar("batch/↓loss", loss_log, state.step)
+            logger.write_scalar("batch/↑loss (db)", loss_db, state.step)
             logger.write_scalar("batch/effective batch size (not compacted)", metrics["measured_batch_size_before_compaction"], state.step)
-            logger.write_scalar("batch/effective batch size (compacted)", metrics["measured_batch_size"], state.step)
-            logger.write_scalar("rendering/effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
-            logger.write_scalar("rendering/marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
-            logger.write_scalar("rendering/number of rays", state.batch_config.n_rays, state.step)
+            logger.write_scalar("batch/↑effective batch size (compacted)", metrics["measured_batch_size"], state.step)
+            logger.write_scalar("rendering/↓effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
+            logger.write_scalar("rendering/↓marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
+            logger.write_scalar("rendering/↑number of rays", state.batch_config.n_rays, state.step)
 
     return total_loss / n_processed_rays, state
 
 
-def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
+def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
     if args.exp_dir.exists():
         logger.error("specified experiment directory '{}' already exists".format(args.exp_dir))
-        exit(2)
+        exit(1)
     logs_dir = args.exp_dir.joinpath("logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
     logger = common.setup_logging(
@@ -239,14 +227,22 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
     dtype = getattr(jnp, "float{}".format(args.common.prec))
 
     # model parameters
-    model, init_input = (
+    nerf_model, init_input = (
         make_nerf_ngp(bound=args.scene.bound),
         (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
     )
     KEY, key = jran.split(KEY, 2)
-    variables = model.init(key, *init_input)
+    nerf_variables = nerf_model.init(key, *init_input)
     if args.common.summary:
-        print(model.tabulate(key, *init_input))
+        print(nerf_model.tabulate(key, *init_input))
+
+    if args.scene.with_bg:
+        bg_model, init_input = (
+            make_skysphere_background_model_ngp(bound=args.scene.bound),
+            (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
+        )
+        KEY, key = jran.split(KEY, 2)
+        bg_variables = bg_model.init(key, *init_input)
 
     lr_sch = optax.exponential_decay(
         init_value=args.train.lr,
@@ -275,20 +271,17 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
         # paper:
         #   ... to the neural network weights, but not to the hash table entries.
         mask={
-            "density_mlp": True,
-            "rgb_mlp": True,
-            "position_encoder": False,
+            "nerf": {
+                "density_mlp": True,
+                "rgb_mlp": True,
+                "position_encoder": False,
+            },
+            "bg": args.scene.with_bg,
         },
     )
 
     # training state
-    state = NeRFTrainState.create(
-        apply_fn=model.apply,
-        # unfreeze the frozen dict so that below weight_decay mask can apply, see:
-        #   <https://github.com/deepmind/optax/issues/160>
-        #   <https://github.com/google/flax/issues/1223>
-        params=variables["params"].unfreeze(),
-        tx=optimizer,
+    state = NeRFState.create(
         ogrid=OccupancyDensityGrid.create(
             cascades=data.cascades_from_bound(args.scene.bound),
             grid_resolution=args.raymarch.density_grid_res,
@@ -298,6 +291,19 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
             mean_samples_per_ray=args.raymarch.diagonal_n_steps,
             n_rays=args.train.bs // args.raymarch.diagonal_n_steps,
         ),
+        raymarch=args.raymarch,
+        render=args.render,
+        scene=args.scene,
+        # unfreeze the frozen dict so that the weight_decay mask can apply, see:
+        #   <https://github.com/deepmind/optax/issues/160>
+        #   <https://github.com/google/flax/issues/1223>
+        nerf_fn=nerf_model.apply,
+        bg_fn=bg_model.apply if args.scene.with_bg else None,
+        params={
+            "nerf": nerf_variables["params"].unfreeze(),
+            "bg": bg_variables["params"].unfreeze() if args.scene.with_bg else None,
+        },
+        tx=optimizer,
     )
 
     # data
@@ -316,24 +322,23 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
     logger.info("starting training")
     # training loop
     for ep in range(args.train.n_epochs):
+        gc.collect()
+
         ep_log = ep + 1
         KEY, key = jran.split(KEY, 2)
         permutation = data.make_permutation(
             key,
             size=scene_metadata_train.all_xys.shape[0],
             loop=args.train.data_loop,
-            shuffle=True
+            shuffle=True,
         )
 
         try:
             KEY, key = jran.split(KEY, 2)
             loss_log, state = train_epoch(
                 KEY=key,
-                bound=args.scene.bound,
-                scene_metadata=scene_metadata_train,
-                raymarch_options=args.raymarch,
-                render_options=args.render,
                 state=state,
+                scene_metadata=scene_metadata_train,
                 permutation=permutation,
                 n_batches=args.train.n_batches,
                 total_samples=args.train.bs,
@@ -349,10 +354,10 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
             logger.info("exiting cleanly ...")
             exit()
 
-        loss_db = data.linear2db(loss_log, maxval=1)
+        loss_db = data.linear_to_db(loss_log, maxval=1)
         logger.info("epoch#{:03d}: loss={:.2e}({:.2f}dB)".format(ep_log, loss_log, loss_db))
-        logger.write_scalar("epoch/loss", loss_log, step=ep_log)
-        logger.write_scalar("epoch/loss (db)", loss_db, step=ep_log)
+        logger.write_scalar("epoch/↓loss", loss_log, step=ep_log)
+        logger.write_scalar("epoch/↑loss (db)", loss_db, step=ep_log)
 
         logger.info("saving training state ... ")
         ckpt_name = checkpoints.save_checkpoint(
@@ -368,63 +373,73 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: logging.Logger):
         if ep_log % args.train.validate_interval_epochs == 0:
             val_start_time = time.time()
             rendered_images: List[RenderedImage] = []
+            state_eval = state\
+                .replace(raymarch=args.raymarch_eval)\
+                .replace(render=args.render_eval)
             for val_i, val_view in enumerate(tqdm(val_views, desc="validating", bar_format=common.tqdm_format)):
                 logger.debug("validating on {}".format(val_view.file))
                 val_transform = RigidTransformation(
                     rotation=scene_metadata_val.all_transforms[val_i, :9].reshape(3, 3),
                     translation=scene_metadata_val.all_transforms[val_i, -3:].reshape(3),
                 )
-                if args.render_eval.random_bg:
-                    KEY, key = jran.split(KEY, 2)
-                    bg = jran.uniform(key, (3,), dtype=jnp.float32, minval=0, maxval=1)
-                else:
-                    bg = args.render.bg
-                rgb, depth = render_image(
-                    bg=bg,
-                    bound=args.scene.bound,
+                KEY, key = jran.split(KEY, 2)
+                bg, rgb, depth = render_image_inference(
+                    KEY=key,
                     camera=scene_metadata_val.camera,
                     transform_cw=val_transform,
-                    raymarch_options=args.raymarch_eval,
-                    batch_config=state.batch_config,
-                    ogrid=state.ogrid,
-                    param_dict={"params": state.params},
-                    nerf_fn=state.apply_fn,
+                    state=state_eval,
                 )
                 rendered_images.append(RenderedImage(
-                    bg=bg,
-                    rgb=rgb,
-                    depth=depth,
+                    bg=data.to_cpu(bg),
+                    rgb=data.to_cpu(rgb),
+                    depth=data.to_cpu(depth),
                 ))
             val_end_time = time.time()
             logger.write_scalar(
-                tag="validation/rendering time (ms) per image",
+                tag="validation/↓rendering time (ms) per image",
                 value=(val_end_time - val_start_time) / len(rendered_images) * 1000,
                 step=ep_log,
             )
 
+            gt_rgbs_f32 = list(map(
+                lambda val_view, rendered_image: data.blend_rgba_image_array(
+                    val_view.image_rgba,
+                    rendered_image.bg,
+                ),
+                val_views,
+                rendered_images,
+            ))
+
+            logger.debug("calculating psnr")
+            mean_psnr = sum(map(
+                data.psnr,
+                map(data.f32_to_u8, gt_rgbs_f32),
+                map(lambda ri: ri.rgb, rendered_images),
+            )) / len(rendered_images)
+            logger.info("validated {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
+            logger.write_scalar("validation/↑mean psnr", mean_psnr, step=ep_log)
+
             logger.debug("writing images to tensorboard")
+            concatenate_fn = lambda gt, rendered_image: data.add_border(functools.reduce(
+                functools.partial(
+                    data.side_by_side,
+                    H=scene_metadata_val.camera.H,
+                    W=scene_metadata_val.camera.W,
+                ),
+                [gt, rendered_image.rgb, rendered_image.depth],
+            ))
             logger.write_image(
-                tag="validation/rgb",
-                image=list(map(lambda ri: ri.rgb, rendered_images)),
-                step=ep_log,
-                max_outputs=len(rendered_images),
-            )
-            logger.write_image(
-                tag="validation/depth",
-                image=list(map(lambda ri: ri.depth, rendered_images)),
+                tag="validation/[gt|rendered|depth]",
+                image=list(map(
+                    concatenate_fn,
+                    map(data.f32_to_u8, gt_rgbs_f32),
+                    rendered_images,
+                )),
                 step=ep_log,
                 max_outputs=len(rendered_images),
             )
 
-            gt_rgbs = map(
-                lambda val_i: data.blend_rgba_image_array(val_views[val_i].image_rgba, rendered_images[val_i].bg),
-                range(len(val_views)),
-            )
-            logger.debug("calculating psnr")
-            mean_psnr = sum(map(
-                data.psnr,
-                map(lambda gt_rgb: jnp.clip(gt_rgb * 255, 0, 255).astype(jnp.uint8), gt_rgbs),
-                map(lambda ri: ri.rgb, rendered_images),
-            )) / len(rendered_images)
-            logger.info("validated {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
-            logger.write_scalar("validation/mean psnr", mean_psnr, step=ep_log)
+            del state_eval
+            del gt_rgbs_f32
+            del rendered_images
+        del permutation

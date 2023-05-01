@@ -1,7 +1,8 @@
 from pathlib import Path
-from typing import Literal, Tuple
+from typing import Callable, Literal, Tuple
 
 import chex
+from flax import struct
 from flax.struct import dataclass
 from flax.training.train_state import TrainState
 import jax
@@ -10,12 +11,13 @@ import jax.numpy as jnp
 
 PositionalEncodingType = Literal["identity", "frequency", "hashgrid"]
 DirectionalEncodingType = Literal["identity", "sh", "shcuda"]
+EncodingType = Literal[PositionalEncodingType, DirectionalEncodingType]
 ActivationType = Literal[
     "exponential",
     "relu",
     "sigmoid",
-    "truncated_exponential",
     "thresholded_exponential",
+    "truncated_exponential",
     "truncated_thresholded_exponential",
 ]
 
@@ -24,6 +26,26 @@ LogLevel = Literal["DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL"]
 RGBColor = Tuple[float, float, float]
 
 
+def empty_impl(clz):
+    if "__dataclass_fields__" not in clz.__dict__:
+        raise TypeError("class `{}` is not a dataclass".format(clz.__name__))
+
+    fields = clz.__dict__["__dataclass_fields__"]
+
+    def empty_fn(cls, /, **kwargs):
+        """
+        Create an empty instance of the given class, with untransformed fields set to given values.
+        """
+        for field_name, annotation in fields.items():
+            if field_name not in kwargs:
+                kwargs[field_name] = getattr(annotation.type, "empty", lambda: None)()
+        return cls(**kwargs)
+
+    setattr(clz, "empty", classmethod(empty_fn))
+    return clz
+
+
+@empty_impl
 @dataclass
 class OccupancyDensityGrid:
     # float32, full-precision density values
@@ -60,6 +82,7 @@ class OccupancyDensityGrid:
         return cls(density=density, occ_mask=occ_mask, occupancy=occupancy)
 
 
+@empty_impl
 @dataclass
 class NeRFBatchConfig:
     mean_effective_samples_per_ray: int
@@ -69,40 +92,6 @@ class NeRFBatchConfig:
     @property
     def estimated_batch_size(self):
         return self.n_rays * self.mean_samples_per_ray
-
-
-class NeRFTrainState(TrainState):
-    ogrid: OccupancyDensityGrid
-    batch_config: NeRFBatchConfig
-
-    @property
-    def update_ogrid_interval(self):
-        return min(2 ** (int(self.step) // 2048 + 4), 512)
-
-    @property
-    def should_call_update_ogrid(self):
-        return (
-            int(self.step) < 256
-            or (
-                int(self.step) > 0
-                and int(self.step) % self.update_ogrid_interval == 0
-            )
-        )
-
-    @property
-    def should_update_all_ogrid_cells(self):
-        return int(self.step) < 256
-
-    @property
-    def should_update_batch_config(self):
-        return (
-            int(self.step) > 0
-            and int(self.step) % 16 == 0
-        )
-
-    @property
-    def should_write_batch_metrics(self):
-        return self.step % 16 == 0
 
 
 @dataclass
@@ -119,6 +108,7 @@ class PinholeCamera:
         return self.H * self.W
 
 
+@empty_impl
 @dataclass
 class RayMarchingOptions:
     # for calculating the length of a minimal ray marching step, the NGP paper uses 1024 (appendix
@@ -135,6 +125,7 @@ class RayMarchingOptions:
     density_grid_res: int
 
 
+@empty_impl
 @dataclass
 class RenderingOptions:
     # background color for transparent parts of the image, has no effect if `random_bg` is True
@@ -144,6 +135,7 @@ class RenderingOptions:
     random_bg: bool
 
 
+@empty_impl
 @dataclass
 class SceneOptions:
     # half width of axis-aligned bounding-box, i.e. aabb's width is `bound*2`
@@ -151,6 +143,9 @@ class SceneOptions:
 
     # scale camera positions with this scalar
     scale: float
+
+    # whether the scene has a background
+    with_bg: bool
 
 
 @dataclass
@@ -205,3 +200,69 @@ class RenderedImage:
     bg: jax.Array
     rgb: jax.Array
     depth: jax.Array
+
+
+@empty_impl
+class NeRFState(TrainState):
+    # WARN:
+    #   do not annotate fields with jax.Array as members with flax.truct.field(pytree_node=False),
+    #   otherwise wierd issues happen, e.g. jax tracer leak, array-to-boolean conversion exception
+    #   while calling a jitted function with no helpful traceback.
+    ogrid: OccupancyDensityGrid
+
+    # WARN:
+    #   annotating batch_config with flax.struct.field(pytree_node=False) halves GPU utilization by
+    #   2x, consequently halving training speed by 2x as well.
+    #   ... why?
+    batch_config: NeRFBatchConfig
+
+    raymarch: RayMarchingOptions=struct.field(pytree_node=False)
+    render: RenderingOptions=struct.field(pytree_node=False)
+    scene: SceneOptions=struct.field(pytree_node=False)
+
+    nerf_fn: Callable=struct.field(pytree_node=False)
+    bg_fn: Callable=struct.field(pytree_node=False)
+
+    @classmethod
+    def create(cls, *args, **kwargs):
+        return super().create(apply_fn=None, *args, **kwargs)
+
+    def __post_init__(self):
+        assert self.apply_fn is None
+
+    @property
+    def use_background_model(self) -> bool:
+        return self.scene.with_bg and self.params.get("bg") is not None
+
+    @property
+    def locked_params(self):
+        return jax.lax.stop_gradient(self.params)
+
+    @property
+    def update_ogrid_interval(self) -> int:
+        return min(2 ** (int(self.step) // 2048 + 4), 512)
+
+    @property
+    def should_call_update_ogrid(self) -> bool:
+        return (
+            self.step < 256
+            or (
+                self.step > 0
+                and self.step % self.update_ogrid_interval == 0
+            )
+        )
+
+    @property
+    def should_update_all_ogrid_cells(self) -> bool:
+        return self.step < 256
+
+    @property
+    def should_update_batch_config(self) -> bool:
+        return (
+            self.step > 0
+            and self.step % 16 == 0
+        )
+
+    @property
+    def should_write_batch_metrics(self) -> bool:
+        return self.step % 16 == 0

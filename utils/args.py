@@ -134,7 +134,8 @@ class NeRFTrainingArgs(_NeRFArgs):
     )
     scene: SceneOptions=SceneOptions(
         bound=1.0,
-        scale=0.8,
+        scale=0.6,
+        with_bg=False,
     )
 
     # raymarching/rendering options for validating during training
@@ -154,9 +155,6 @@ class NeRFTrainingArgs(_NeRFArgs):
 class NeRFTestingArgs(_NeRFArgs):
     # if specified, switch to test mode and use this checkpoint
     test_ckpt: Path
-
-    # which test images should be tested on, indices are 0-based
-    test_indices: Tuple[int, ...]
 
     # which split to test on
     test_split: Literal["train", "test", "val"]="test"
@@ -179,5 +177,6 @@ class NeRFTestingArgs(_NeRFArgs):
     )
     scene: SceneOptions=SceneOptions(
         bound=1.0,
-        scale=0.8,
+        scale=0.6,
+        with_bg=False,
     )
