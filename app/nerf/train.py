@@ -438,7 +438,6 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
                 step=ep_log,
                 max_outputs=len(rendered_images),
             )
-            logger.wait_last_job()
 
             del state_eval
             del gt_rgbs_f32
