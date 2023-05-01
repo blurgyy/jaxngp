@@ -9,10 +9,10 @@ from utils.types import LogLevel, RayMarchingOptions, RenderingOptions, SceneOpt
 class CommonArgs:
     # log level
     logging: LogLevel = "INFO"
-    # float precision
-    prec: int = 32
+
     # random seed
     seed: int = 1_000_000_007
+
     # display model information after model init
     summary: bool=False
 
@@ -60,9 +60,7 @@ class TrainingArgs:
 
 @dataclass(frozen=True, kw_only=True)
 class ImageFitArgs:
-    common: CommonArgs=CommonArgs(
-        prec=32,
-    )
+    common: CommonArgs=CommonArgs()
     train: TrainingArgs=TrainingArgs(
         # paper:
         #   We observed fastest convergence with a learning rate of 10^{-4} for signed distance

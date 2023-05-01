@@ -224,12 +224,10 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
     logger.write_hparams(dataclasses.asdict(args))
     logger.info("configurations saved to '{}'".format(args.exp_dir.joinpath("config.yaml")))
 
-    dtype = getattr(jnp, "float{}".format(args.common.prec))
-
     # model parameters
     nerf_model, init_input = (
         make_nerf_ngp(bound=args.scene.bound),
-        (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
+        (jnp.zeros((1, 3), dtype=jnp.float32), jnp.zeros((1, 3), dtype=jnp.float32))
     )
     KEY, key = jran.split(KEY, 2)
     nerf_variables = nerf_model.init(key, *init_input)
@@ -239,7 +237,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
     if args.scene.with_bg:
         bg_model, init_input = (
             make_skysphere_background_model_ngp(bound=args.scene.bound),
-            (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
+            (jnp.zeros((1, 3), dtype=jnp.float32), jnp.zeros((1, 3), dtype=jnp.float32))
         )
         KEY, key = jran.split(KEY, 2)
         bg_variables = bg_model.init(key, *init_input)
