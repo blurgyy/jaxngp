@@ -1,5 +1,4 @@
 from typing import List
-from typing_extensions import assert_never
 
 from PIL import Image
 from flax.training import checkpoints
@@ -120,8 +119,5 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
             save_dest.joinpath("depth.mp4"),
             map(lambda img: img.depth, rendered_images),
         )
-
-    else:
-        assert_never()
 
     return mean_psnr
