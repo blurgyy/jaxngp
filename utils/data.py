@@ -17,10 +17,12 @@ from tqdm import tqdm
 from utils.common import jit_jaxfn_with, mkValueError, tqdm_format
 from utils.types import (
     ImageMetadata,
+    NeRFSyntheticTransformJson,
     PinholeCamera,
     RGBColor,
     RigidTransformation,
     SceneMetadata,
+    TransformJson,
     ViewMetadata,
 )
 Dataset = tf.data.Dataset
@@ -297,26 +299,49 @@ def make_nerf_synthetic_scene_metadata(
 
     transforms_path = rootdir.joinpath("transforms_{}.json".format(split))
     transforms = json.load(open(transforms_path))
+    transforms = (
+        NeRFSyntheticTransformJson(**transforms)
+        if transforms.get("camera_angle_x") is not None
+        else TransformJson(**transforms)
+    )
 
     views = list(
         map(
             lambda frame: make_view(
-                    image_path=rootdir.joinpath(frame["file_path"] + ".png"),
-                    transform_4x4=jnp.asarray(frame["transform_matrix"]),
+                    image_path=rootdir.joinpath(frame.file_path + ".png"),
+                    transform_4x4=jnp.asarray(frame.transform_matrix),
                 ),
-            tqdm(transforms["frames"], desc="loading views (split={})".format(split), bar_format=tqdm_format)
+            tqdm(transforms.frames, desc="loading views (split={})".format(split), bar_format=tqdm_format)
         )
     )
 
     # shared camera model
-    W, H = views[0].W, views[0].H
-    fovx = transforms["camera_angle_x"]
-    focal = float(.5 * W / np.tan(fovx / 2))
-    camera = PinholeCamera(
-        W=W,
-        H=H,
-        focal=focal,
-    )
+    if isinstance(transforms, NeRFSyntheticTransformJson):
+        W, H = views[0].W, views[0].H
+        fovx = transforms.camera_angle_x
+        focal = float(.5 * W / np.tan(fovx / 2))
+        camera = PinholeCamera(
+            W=W,
+            H=H,
+            fx=focal,
+            fy=focal,
+            cx=W / 2,
+            cy=H / 2,
+        )
+    elif isinstance(transforms, TransformJson):
+        camera = PinholeCamera(
+            W=transforms.width,
+            H=transforms.height,
+            fx=transforms.fx,
+            fy=transforms.fy,
+            cx=transforms.cx,
+            cy=transforms.cy,
+        )
+    else:
+        raise TypeError("unexpected type for transforms: {}, expected one of {}".format(
+            type(transforms),
+            [NeRFSyntheticTransformJson, TransformJson],
+        ))
 
     # flatten
     # int,[n_pixels, 2]

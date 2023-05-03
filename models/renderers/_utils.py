@@ -23,18 +23,16 @@ def make_rays_worldspace(
         o_world [H*W, 3]: ray origins, in world-space
         d_world [H*W, 3]: ray directions, in world-space
     """
-    H, W = camera.H, camera.W
-    n_pixels = H * W
     # [H*W, 1]
-    d_cam_idcs = jnp.arange(n_pixels).reshape(-1, 1)
+    d_cam_idcs = jnp.arange(camera.n_pixels).reshape(-1, 1)
     # [H*W, 1]
     d_cam_xs = jnp.mod(d_cam_idcs, camera.W)
-    d_cam_xs = ((d_cam_xs + 0.5) - camera.W/2)
+    d_cam_xs = ((d_cam_xs + 0.5) - camera.cx) / camera.fx
     # [H*W, 1]
     d_cam_ys = jnp.floor_divide(d_cam_idcs, camera.W)
-    d_cam_ys = -((d_cam_ys + 0.5) - camera.H/2)  # NOTE: y axis indexes from bottom to top, so negate it
+    d_cam_ys = -((d_cam_ys + 0.5) - camera.cy) / camera.fy  # NOTE: y axis indexes from bottom to top, so negate it
     # [H*W, 1]
-    d_cam_zs = -camera.focal * jnp.ones_like(d_cam_idcs)
+    d_cam_zs = -jnp.ones_like(d_cam_idcs)
     # [H*W, 3]
     d_cam = jnp.concatenate([d_cam_xs, d_cam_ys, d_cam_zs], axis=-1)
     d_cam /= jnp.linalg.norm(d_cam, axis=-1, keepdims=True) + 1e-15

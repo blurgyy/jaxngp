@@ -47,12 +47,12 @@ def train_step(
         xyzs = jnp.concatenate([xys, jnp.ones((xys.shape[0], 1))], axis=-1)
         # [N, 1]
         d_cam_xs = xyzs[:, 0:1]
-        d_cam_xs = ((d_cam_xs + 0.5) - camera.W/2)
+        d_cam_xs = ((d_cam_xs + 0.5) - camera.cx) / camera.fx
         # [N, 1]
         d_cam_ys = xyzs[:, 1:2]
-        d_cam_ys = -((d_cam_ys + 0.5) - camera.H/2)
+        d_cam_ys = -((d_cam_ys + 0.5) - camera.cy) / camera.fy
         # [N, 1]
-        d_cam_zs = -camera.focal * xyzs[:, 2:3]
+        d_cam_zs = -xyzs[:, 2:3]
         # [N, 3]
         d_cam = jnp.concatenate([d_cam_xs, d_cam_ys, d_cam_zs], axis=-1)
         d_cam /= jnp.linalg.norm(d_cam, axis=-1, keepdims=True) + 1e-15

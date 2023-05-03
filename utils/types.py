@@ -1,5 +1,7 @@
+import dataclasses
+import json
 from pathlib import Path
-from typing import Callable, Literal, Tuple
+from typing import Callable, Literal, Sequence, Tuple, Union
 
 import chex
 from flax import struct
@@ -7,6 +9,7 @@ from flax.struct import dataclass
 from flax.training.train_state import TrainState
 import jax
 import jax.numpy as jnp
+import pydantic
 
 
 ColmapMatcherType = Literal["Exhaustive", "Sequential"]
@@ -25,6 +28,9 @@ ActivationType = Literal[
 DensityAndRGB = Tuple[jax.Array, jax.Array]
 LogLevel = Literal["DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL"]
 RGBColor = Tuple[float, float, float]
+RGBColorU8 = Tuple[int, int, int]
+FourFloats = Tuple[float, float, float, float]
+Matrix4x4 = Tuple[FourFloats, FourFloats, FourFloats, FourFloats]
 
 
 def empty_impl(clz):
@@ -102,21 +108,16 @@ class PinholeCamera:
     H: int
 
     # focal length
-    focal: float
+    fx: float
+    fy: float
+
+    # principal point
+    cx: float
+    cy: float
 
     @property
     def n_pixels(self) -> int:
         return self.H * self.W
-
-    def scaled(self, factor: float) -> "PinholeCamera":
-        "same focal length, different resolution"
-        return self\
-            .replace(H=self.H // factor)\
-            .replace(W=self.W // factor)
-
-    def zoomed(self, factor: float) -> "PinholeCamera":
-        "same resolution, different focal length"
-        return self.replace(focal=self.focal * factor)
 
 
 @empty_impl
@@ -178,6 +179,57 @@ class ImageMetadata:
     xys: jax.Array  # int,[H*W, 2]: original integer coordinates in range [0, W] for x and [0, H] for y
     uvs: jax.Array  # float,[H*W, 2]: normalized coordinates in range [0, 1]
     rgbs: jax.Array  # float,[H*W, 3]: normalized rgb values in range [0, 1]
+
+
+@pydantic.dataclasses.dataclass
+class TransformJsonFrame:
+    file_path: str
+    transform_matrix: Matrix4x4
+
+    # unused, kept for compatibility with the original nerf_synthetic dataset
+    rotation: float=0.0
+
+    # unused, for compatibility with instant-ngp
+    sharpness: float=0.0
+
+
+@pydantic.dataclasses.dataclass
+class TransformJsonBase:
+    frames: Sequence[TransformJsonFrame]
+
+    def as_json(self, /, indent: int=2) -> str:
+        return json.dumps(dataclasses.asdict(self), indent=indent)
+
+    @classmethod
+    def from_json(cls, jsonstr: str) -> "TransformJsonBase":
+        return cls(**json.loads(jsonstr))
+
+    def save(self, path: Union[str, Path]) -> None:
+        path = Path(path)
+        path.write_text(self.as_json())
+
+    @classmethod
+    def load(cls, path: Union[str, Path]):
+        path = Path(path)
+        return cls.from_json(path.read_text())
+
+
+@pydantic.dataclasses.dataclass
+class NeRFSyntheticTransformJson(TransformJsonBase):
+    camera_angle_x: float
+
+
+@pydantic.dataclasses.dataclass
+class TransformJson(TransformJsonBase):
+    fx: float
+    fy: float
+    cx: float
+    cy: float
+
+    width: int
+    height: int
+
+    frames: Sequence[TransformJsonFrame]
 
 
 @dataclass
