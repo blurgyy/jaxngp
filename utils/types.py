@@ -9,6 +9,7 @@ import jax
 import jax.numpy as jnp
 
 
+ColmapMatcherType = Literal["Exhaustive", "Sequential"]
 PositionalEncodingType = Literal["identity", "frequency", "hashgrid"]
 DirectionalEncodingType = Literal["identity", "sh", "shcuda"]
 EncodingType = Literal[PositionalEncodingType, DirectionalEncodingType]

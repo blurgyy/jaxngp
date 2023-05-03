@@ -107,6 +107,8 @@
           ipdb
           colorama
           imageio
+          ffmpeg-python
+          pydantic
 
           pkgs.dearpygui
           pkgs.pycolmap
@@ -123,6 +125,7 @@
         name = "cuda";
         buildInputs = [
           cudaPkgs.colmap
+          cudaPkgs.ffmpeg
           (cudaPkgs.${py}.withPackages (pp: mkPythonDeps {
               inherit pp;
               extraPackages = with pp; [
@@ -151,6 +154,7 @@
         name = "cpu";
         buildInputs = [
           cpuPkgs.colmap
+          cpuPkgs.ffmpeg
           (cpuPkgs.${py}.withPackages (pp: mkPythonDeps {
               inherit pp;
               extraPackages = [];

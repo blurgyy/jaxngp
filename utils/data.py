@@ -5,6 +5,7 @@ from typing import List, Literal, Sequence, Tuple, Union
 
 from PIL import Image
 import chex
+import ffmpeg
 import imageio
 import jax
 import jax.numpy as jnp
@@ -37,6 +38,27 @@ def f32_to_u8(img: jax.Array) -> jax.Array:
 @jax.jit
 def mono_to_rgb(img: jax.Array) -> jax.Array:
     return jnp.tile(img[..., None], (1, 1, 3))
+
+
+def video_to_images(
+    video_in: Path,
+    images_dir: Path,
+    fmt: str="%03d.png",
+    fps: int=3,
+):
+    video_in, images_dir = Path(video_in), Path(images_dir)
+    images_dir.mkdir(parents=True, exist_ok=True)
+    (ffmpeg.input(video_in)
+        .output(
+            images_dir.joinpath(fmt).as_posix(),
+            r=fps,
+            pix_fmt="rgb24",  # colmap only supports 8-bit color depth
+        )
+        .run(
+            capture_stdout=False,
+            capture_stderr=False,
+        )
+    )
 
 
 def to_unit_cube_2d(xys: jax.Array, W: int, H: int):
