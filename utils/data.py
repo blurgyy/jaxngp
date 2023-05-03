@@ -252,6 +252,12 @@ def create_dataset_from_single_camera_image_collection(
         text_model_dir=text_model_dir,
     )
 
+    write_transforms_json(
+        dataset_root_dir=dataset_root_dir,
+        images_dir=undistorted_images_dir.joinpath("images"),
+        text_model_dir=text_model_dir,
+    )
+
 
 def create_dataset_from_video(
     video_path: Path,
