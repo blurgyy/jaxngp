@@ -12,8 +12,15 @@ import numpy as np
 import tyro
 
 from utils.common import setup_logging
-from utils.data import add_border, blend_rgba_image_array, psnr, side_by_side
-from utils.types import RGBColor
+from utils.data import (
+    add_border,
+    blend_rgba_image_array,
+    create_dataset_from_single_camera_image_collection,
+    create_dataset_from_video,
+    psnr,
+    side_by_side,
+)
+from utils.types import ColmapMatcherType, RGBColor
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -38,6 +45,21 @@ class Metrics:
     bg: RGBColor=(1.0, 1.0, 1.0)
 
 
+@dataclass(frozen=True, kw_only=True)
+class CreateDataset:
+    # video or directory of image collection
+    src: tyro.conf.Positional[Path]
+
+    # where to write the images and transforms_{train,val,test}.json
+    root_dir: Path
+
+    # `Sequntial` for continuous frames, `Exhaustive` for all possible pairs
+    matcher: ColmapMatcherType
+
+    # how many frames to extract per second, only used when src is a video
+    fps: int=3
+
+
 Args = Union[
     Annotated[
         Concatenate,
@@ -53,11 +75,18 @@ Args = Union[
             prefix_name=False,
         ),
     ],
+    Annotated[
+        CreateDataset,
+        tyro.conf.subcommand(
+            name="create",
+            prefix_name=False,
+        ),
+    ],
 ]
 
 
 def main(args: Args):
-    logger = setup_logging("utils", "INFO")
+    logger = setup_logging("utils", level="DEBUG")
     if isinstance(args, Concatenate):
         if args.out.is_dir():
             logger.error("output path '{}' is a directory".format(args.out))
@@ -101,6 +130,20 @@ def main(args: Args):
         for impath, img in zip(args.image_paths, images):
             if args.psnr:
                 logger.info("psnr={} ({})".format(psnr(gt_image, img), impath))
+
+    elif isinstance(args, CreateDataset):
+        if args.src.is_dir():
+            create_dataset_from_single_camera_image_collection(
+                raw_images_dir=args.src,
+                dataset_root_dir=args.root_dir,
+                matcher=args.matcher,
+            )
+        else:
+            create_dataset_from_video(
+                video_path=args.src,
+                dataset_root_dir=args.root_dir,
+                fps=args.fps,
+            )
 
     else:
         assert_never("tyro already ensures subcommand passed here are valid, this line should never be executed")
