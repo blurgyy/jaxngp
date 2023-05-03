@@ -45,7 +45,7 @@ def to_unit_cube_2d(xys: jax.Array, W: int, H: int):
     return uvs
 
 
-@jit_jaxfn_with(static_argnames=["H", "W", "vertical", "gap"])
+@jit_jaxfn_with(static_argnames=["H", "W", "vertical", "gap", "gap_color"])
 def side_by_side(
     lhs: jax.Array,
     rhs: jax.Array,
@@ -53,7 +53,7 @@ def side_by_side(
     W: int=None,
     vertical: bool=False,
     gap: int=5,
-    gap_color: jax.Array=jnp.asarray([0xab, 0xcd, 0xef], dtype=jnp.uint8),
+    gap_color: RGBColorU8=(0xab, 0xcd, 0xef),
 ) -> jax.Array:
     chex.assert_not_both_none(H, W)
     chex.assert_scalar_non_negative(vertical)
@@ -70,23 +70,24 @@ def side_by_side(
         chex.assert_axis_dimension(rhs, 0, H)
     concat_axis = 0 if vertical else 1
     if gap > 0:
+        gap_color = jnp.asarray(gap_color, dtype=jnp.uint8)
         gap = jnp.broadcast_to(gap_color, (gap, W, 3) if vertical else (H, gap, 3))
         return jnp.concatenate([lhs, gap, rhs], axis=concat_axis)
     else:
         return jnp.concatenate([lhs, rhs], axis=concat_axis)
 
 
-@jit_jaxfn_with(static_argnames=["width"])
+@jit_jaxfn_with(static_argnames=["width", "color"])
 def add_border(
     img: jax.Array,
     width: int=5,
-    color: jax.Array=jnp.asarray([0xfe, 0xdc, 0xba], dtype=jnp.uint8),
+    color: RGBColorU8=(0xfe, 0xdc, 0xba)
 ) -> jax.Array:
     chex.assert_rank(img, 3)
     chex.assert_axis_dimension(img, -1, 3)
     chex.assert_scalar_non_negative(width)
     chex.assert_type(img, jnp.uint8)
-    chex.assert_type(color, jnp.uint8)
+    color = jnp.asarray(color, dtype=jnp.uint8)
     H, W = img.shape[:2]
     leftright = jnp.broadcast_to(color, (H, width, 3))
     img = jnp.concatenate([leftright, img, leftright], axis=1)
