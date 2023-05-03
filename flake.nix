@@ -103,12 +103,14 @@
           keras
           tqdm
           icecream
-          pkgs.dearpygui
-          pkgs.tyro
           pillow
           ipdb
           colorama
           imageio
+
+          pkgs.dearpygui
+          pkgs.pycolmap
+          pkgs.tyro
 
           jaxlib-bin
           jax
