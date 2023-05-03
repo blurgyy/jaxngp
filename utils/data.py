@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import math
 from pathlib import Path
@@ -11,21 +12,23 @@ import jax
 import jax.numpy as jnp
 import jax.random as jran
 import numpy as np
-import tensorflow as tf
 from tqdm import tqdm
 
-from utils.common import jit_jaxfn_with, mkValueError, tqdm_format
-from utils.types import (
+from . import sfm
+from .common import jit_jaxfn_with, mkValueError, tqdm_format
+from .types import (
+    ColmapMatcherType,
     ImageMetadata,
     NeRFSyntheticTransformJson,
     PinholeCamera,
     RGBColor,
+    RGBColorU8,
     RigidTransformation,
     SceneMetadata,
     TransformJson,
+    TransformJsonFrame,
     ViewMetadata,
 )
-Dataset = tf.data.Dataset
 
 
 def to_cpu(array: jnp.DeviceArray) -> jnp.DeviceArray:
@@ -60,6 +63,212 @@ def video_to_images(
             capture_stdout=False,
             capture_stderr=False,
         )
+    )
+
+
+def qvec2rotmat(qvec):
+    "copied from NVLabs/instant-ngp/scripts/colmap2nerf.py"
+    return np.asarray([
+        [
+            1 - 2 * qvec[2]**2 - 2 * qvec[3]**2,
+            2 * qvec[1] * qvec[2] - 2 * qvec[0] * qvec[3],
+            2 * qvec[3] * qvec[1] + 2 * qvec[0] * qvec[2]
+        ], [
+            2 * qvec[1] * qvec[2] + 2 * qvec[0] * qvec[3],
+            1 - 2 * qvec[1]**2 - 2 * qvec[3]**2,
+            2 * qvec[2] * qvec[3] - 2 * qvec[0] * qvec[1]
+        ], [
+            2 * qvec[3] * qvec[1] - 2 * qvec[0] * qvec[2],
+            2 * qvec[2] * qvec[3] + 2 * qvec[0] * qvec[1],
+            1 - 2 * qvec[1]**2 - 2 * qvec[2]**2
+        ]
+    ])
+def rotmat(a, b):
+    "copied from NVLabs/instant-ngp/scripts/colmap2nerf.py"
+    a, b = a / np.linalg.norm(a), b / np.linalg.norm(b)
+    v = np.cross(a, b)
+    c = np.dot(a, b)
+    # handle exception for the opposite direction input
+    if c < -1 + 1e-10:
+        return rotmat(a + np.random.uniform(-1e-2, 1e-2, 3), b)
+    s = np.linalg.norm(v)
+    kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    return np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2 + 1e-10))
+def closest_point_2_lines(oa, da, ob, db): 
+    """
+    (copied from NVLabs/instant-ngp/scripts/colmap2nerf.py)
+    returns point closest to both rays of form o+t*d, and a weight factor that goes to 0 if the lines are parallel
+    """
+    da = da / np.linalg.norm(da)
+    db = db / np.linalg.norm(db)
+    c = np.cross(da, db)
+    denom = np.linalg.norm(c)**2
+    t = ob - oa
+    ta = np.linalg.det([t, db, c]) / (denom + 1e-10)
+    tb = np.linalg.det([t, da, c]) / (denom + 1e-10)
+    if ta > 0:
+        ta = 0
+    if tb > 0:
+        tb = 0
+    return (oa+ta*da+ob+tb*db) * 0.5, denom
+
+
+def write_transforms_json(
+    dataset_root_dir: Path,
+    images_dir: Path,
+    text_model_dir: Path,
+):
+    "adapted from NVLabs/instant-ngp/scripts/colmap2nerf.py"
+    dataset_root_dir, images_dir, text_model_dir = (
+        Path(dataset_root_dir),
+        Path(images_dir),
+        Path(text_model_dir),
+    )
+    rel_prefix = images_dir.relative_to(dataset_root_dir)
+
+    camera = PinholeCamera.from_colmap_txt(text_model_dir.joinpath("cameras.txt"))
+
+    images_txt = text_model_dir.joinpath("images.txt")
+    images_lines = list(filter(lambda line: line[0] != "#", open(images_txt).readlines()))[::2]
+    up = np.zeros(3)
+    bottom_row = np.asarray((0, 0, 0, 1.0)).reshape(1, 4)
+    frames: List[TransformJsonFrame] = []
+    for line in images_lines:
+        # IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME
+        _, qw, qx, qy, qz, tx, ty, tz, _, name = line.strip().split()
+        R = qvec2rotmat(tuple(map(float, (qw, qx, qy, qz))))
+        T = np.asarray(tuple(map(float, (tx, ty, tz)))).reshape(3, 1)
+        m = np.concatenate([R, T], axis=-1)
+        m = np.concatenate([m, bottom_row], axis=0)
+        c2w = np.linalg.inv(m)
+
+        c2w[0:3,2] *= -1 # flip the y and z axis
+        c2w[0:3,1] *= -1
+        c2w = c2w[[1,0,2,3],:]
+        c2w[2,:] *= -1 # flip whole world upside down
+        up += c2w[0:3,1]
+
+        frames.append(TransformJsonFrame(
+            file_path=rel_prefix.joinpath(name).as_posix(),
+            transform_matrix=c2w.tolist(),
+        ))
+
+    # reorient the scene to be easier to work with
+    up = up / np.linalg.norm(up)
+    print("up vector was", up)
+    R = rotmat(up,[0,0,1]) # rotate up vector to [0,0,1]
+    R = np.pad(R,[0,1])
+    R[-1, -1] = 1
+
+    for i, f in enumerate(frames):
+        frames[i] = dataclasses.replace(f, transform_matrix=np.matmul(R, f.transform_matrix_numpy).tolist())
+
+    # find a central point they are all looking at
+    totw = 0.0
+    totp = np.array([0.0, 0.0, 0.0])
+    for f in frames:
+        mf = f.transform_matrix_numpy[0:3,:]
+        for g in frames:
+            mg = g.transform_matrix_numpy[0:3,:]
+            p, w = closest_point_2_lines(mf[:,3], mf[:,2], mg[:,3], mg[:,2])
+            if w > 1e-5:
+                totp += p*w
+                totw += w
+    if totw > 0.0:
+        totp /= totw
+    # the cameras are looking at totp
+    print("the cameras are looking at", totp)
+    for i, f in enumerate(frames):
+        new_m = f.transform_matrix_numpy
+        new_m[0:3,3] -= totp
+        frames[i] = dataclasses.replace(f, transform_matrix=new_m.tolist())
+
+    avglen = 0.
+    for f in frames:
+        avglen += np.linalg.norm(f.transform_matrix_numpy[0:3,3])
+    avglen /= len(frames)
+    print("avg camera distance from origin", avglen)
+    for i, f in enumerate(frames):
+        # scale to "nerf sized"
+        new_m = f.transform_matrix_numpy
+        new_m[0:3, 3] *= 4.0 / avglen
+        frames[i] = dataclasses.replace(f, transform_matrix=new_m.tolist())
+
+    all_transform_json = TransformJson(
+        frames=frames,
+        fx=camera.fx,
+        fy=camera.fy,
+        cx=camera.cx,
+        cy=camera.cy,
+        width=camera.W,
+        height=camera.H,
+    )
+    train_tj = dataclasses.replace(all_transform_json, frames=frames[:len(frames) // 2])
+    val_tj = dataclasses.replace(all_transform_json, frames=frames[len(frames) // 2:len(frames) // 2 + len(frames) // 4])
+    test_tj = dataclasses.replace(all_transform_json, frames=frames[len(frames) // 2 + len(frames) // 4:])
+    train_tj.save(dataset_root_dir.joinpath("transforms_train.json"))
+    val_tj.save(dataset_root_dir.joinpath("transforms_val.json"))
+    test_tj.save(dataset_root_dir.joinpath("transforms_test.json"))
+    return all_transform_json
+
+
+def create_dataset_from_single_camera_image_collection(
+    raw_images_dir: Path,
+    dataset_root_dir: Path,
+    matcher: ColmapMatcherType,
+):
+    raw_images_dir, dataset_root_dir = Path(raw_images_dir), Path(dataset_root_dir)
+    dataset_root_dir.mkdir(parents=True, exist_ok=True)
+
+    artifacts_dir = dataset_root_dir.joinpath("artifacts")
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    db_path = artifacts_dir.joinpath("colmap.db")
+    sparse_reconstruction_dir = artifacts_dir.joinpath("sparse")
+    undistorted_images_dir = dataset_root_dir.joinpath("images-undistorted")
+    text_model_dir = artifacts_dir.joinpath("text")
+
+    sfm.extract_features(images_dir=raw_images_dir, db_path=db_path)
+
+    sfm.match_features(matcher=matcher, db_path=db_path)
+
+    maps = sfm.sparse_reconstruction(
+        images_dir=raw_images_dir,
+        sparse_reconstruction_dir=sparse_reconstruction_dir,
+        db_path=db_path,
+    )
+    if len(maps) == 0:
+        raise RuntimeError("mapping with colmap failed")
+    elif len(maps) > 1:
+        raise RuntimeError("colmap reconstructed more than 1 maps")
+
+    sfm.undistort(
+        images_dir=raw_images_dir,
+        sparse_reconstruction_dir=sparse_reconstruction_dir.joinpath("0"),
+        undistorted_images_dir=undistorted_images_dir,
+    )
+
+    sfm.export_text_format_model(
+        undistorted_sparse_reconstruction_dir=undistorted_images_dir.joinpath("sparse"),
+        text_model_dir=text_model_dir,
+    )
+
+
+def create_dataset_from_video(
+    video_path: Path,
+    dataset_root_dir: Path,
+    fps: int=3,
+):
+    video_path, dataset_root_dir = Path(video_path), Path(dataset_root_dir)
+    raw_images_dir = dataset_root_dir.joinpath("images-raw")
+    video_to_images(
+        video_in=video_path,
+        images_dir=raw_images_dir,
+        fps=fps,
+    )
+    create_dataset_from_single_camera_image_collection(
+        raw_images_dir=raw_images_dir,
+        dataset_root_dir=dataset_root_dir,
+        matcher="Sequential",
     )
 
 
@@ -218,7 +427,7 @@ def get_xyrgbas(imgarr: jax.Array) -> Tuple[jax.Array, jax.Array]:
     if C == 3:
         # images without an alpha channel is equivalent to themselves with an all-opaque alpha
         # channel
-        rgbas = jnp.concatenate([flattened, jnp.ones_like(flattened[:, :1])])
+        rgbas = jnp.concatenate([flattened, jnp.ones_like(flattened[:, :1])], axis=-1)
         return xys, rgbas
     elif C == 4:
         rgbas = flattened
@@ -272,9 +481,14 @@ def make_image_metadata(
 def make_view(
     image_path: Union[Path, str],
     transform_4x4: jax.Array,
+    scale: float
 ) -> ViewMetadata:
     image_path = Path(image_path)
-    image = jnp.asarray(Image.open(image_path))
+    image = Image.open(image_path)
+    # scale the image according to `scale`, which should be a value between 0.0 and 1.0
+    assert 0.0 <= scale <= 1.0
+    image = image.resize((int(image.width * scale), int(image.height * scale)))
+    image = jnp.asarray(image)
     xys, rgbas = get_xyrgbas(image)
     H, W = image.shape[:2]
     return ViewMetadata(
@@ -290,10 +504,11 @@ def make_view(
     )
 
 
-def make_nerf_synthetic_scene_metadata(
+def make_scene_metadata(
     rootdir: Union[Path, str],
     split: Literal["train", "val", "test"],
-    scale: float,
+    world_scale: float,
+    image_scale: float,
 ) -> Tuple[SceneMetadata, List[ViewMetadata]]:
     rootdir = Path(rootdir)
 
@@ -305,12 +520,26 @@ def make_nerf_synthetic_scene_metadata(
         else TransformJson(**transforms)
     )
 
+    def try_image_extensions(basedir: Path, file_path: str, extensions: List[str]) -> Path:
+        if "" not in extensions:
+            extensions = [""] + list(extensions)
+        for ext in extensions:
+            if len(ext) > 0 and ext[0] != ".":
+                ext = "." + ext
+            p = basedir.joinpath(file_path + ext)
+            if p.exists():
+                return p
+        raise FileNotFoundError(
+            "could not find a file at {} with path {} and extensions {}".format(basedir, file_path, extensions)
+        )
+
     views = list(
         map(
             lambda frame: make_view(
-                    image_path=rootdir.joinpath(frame.file_path + ".png"),
-                    transform_4x4=jnp.asarray(frame.transform_matrix),
-                ),
+                image_path=try_image_extensions(rootdir, frame.file_path, [".png", "jpg", "jpeg"]),
+                transform_4x4=jnp.asarray(frame.transform_matrix),
+                scale=image_scale,
+            ),
             tqdm(transforms.frames, desc="loading views (split={})".format(split), bar_format=tqdm_format)
         )
     )
@@ -321,21 +550,21 @@ def make_nerf_synthetic_scene_metadata(
         fovx = transforms.camera_angle_x
         focal = float(.5 * W / np.tan(fovx / 2))
         camera = PinholeCamera(
-            W=W,
-            H=H,
-            fx=focal,
-            fy=focal,
-            cx=W / 2,
-            cy=H / 2,
+            W=int(W * image_scale),
+            H=int(H * image_scale),
+            fx=focal * image_scale,
+            fy=focal * image_scale,
+            cx=W / 2 * image_scale,
+            cy=H / 2 * image_scale,
         )
     elif isinstance(transforms, TransformJson):
         camera = PinholeCamera(
-            W=transforms.width,
-            H=transforms.height,
-            fx=transforms.fx,
-            fy=transforms.fy,
-            cx=transforms.cx,
-            cy=transforms.cy,
+            W=int(transforms.width * image_scale),
+            H=int(transforms.height * image_scale),
+            fx=transforms.fx * image_scale,
+            fy=transforms.fy * image_scale,
+            cx=transforms.cx * image_scale,
+            cy=transforms.cy * image_scale,
         )
     else:
         raise TypeError("unexpected type for transforms: {}, expected one of {}".format(
@@ -366,7 +595,7 @@ def make_nerf_synthetic_scene_metadata(
         list(map(lambda view: view.transform.translation.reshape(-1, 3), views)),
         axis=0,
     )
-    all_Ts *= scale
+    all_Ts *= world_scale
     # float,[n_views, 3+9+3]
     all_transforms = jnp.concatenate([all_Rs, all_Ts], axis=-1)
 
@@ -395,10 +624,10 @@ def make_permutation(
 
 
 def main():
-    scene, views = make_nerf_synthetic_scene_metadata(
+    scene, views = make_scene_metadata(
         rootdir="data/nerf/nerf_synthetic/lego",
         split="train",
-        scale=.8,
+        world_scale=.6,
     )
     print(scene.all_xys.shape)
     print(scene.all_rgbas.shape)

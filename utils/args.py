@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional, Tuple
+from typing import Literal, Optional
 
 from utils.types import LogLevel, RayMarchingOptions, RenderingOptions, SceneOptions
 
@@ -132,7 +132,8 @@ class NeRFTrainingArgs(_NeRFArgs):
     )
     scene: SceneOptions=SceneOptions(
         bound=1.0,
-        scale=0.6,
+        world_scale=0.6,
+        image_scale=1.0,
         with_bg=False,
     )
 
@@ -175,6 +176,7 @@ class NeRFTestingArgs(_NeRFArgs):
     )
     scene: SceneOptions=SceneOptions(
         bound=1.0,
-        scale=0.6,
+        world_scale=0.6,
+        image_scale=1.0,
         with_bg=False,
     )

@@ -9,6 +9,7 @@ from flax.struct import dataclass
 from flax.training.train_state import TrainState
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pydantic
 
 
@@ -119,6 +120,26 @@ class PinholeCamera:
     def n_pixels(self) -> int:
         return self.H * self.W
 
+    @classmethod
+    def from_colmap_txt(cls, txt_path: Union[str, Path]) -> "PinholeCamera":
+        """
+        Example usage:
+            cam = PinholeCamera.from_colmap_txt("path/to/txt")
+        """
+        with open(txt_path, "r") as f:
+            lines = f.readlines()
+        # CAMERA_ID, MODEL, WIDTH, HEIGHT, PARAMS[]
+        _, camera_model, width, height, fx, fy, cx, cy = lines[-1].strip().split()
+        assert camera_model == "PINHOLE", "invalid camera model, expected PINHOLE, got {}".format(camera_model)
+        return cls(
+            W=int(width),
+            H=int(height),
+            fx=float(fx),
+            fy=float(fy),
+            cx=float(cx),
+            cy=float(cy),
+        )
+
 
 @empty_impl
 @dataclass
@@ -148,13 +169,16 @@ class RenderingOptions:
 
 
 @empty_impl
-@dataclass
+@pydantic.dataclasses.dataclass(frozen=True)
 class SceneOptions:
     # half width of axis-aligned bounding-box, i.e. aabb's width is `bound*2`
     bound: float
 
     # scale camera positions with this scalar
-    scale: float
+    world_scale: float
+
+    # scale input images in case they are too large
+    image_scale: float
 
     # whether the scene has a background
     with_bg: bool
@@ -181,7 +205,7 @@ class ImageMetadata:
     rgbs: jax.Array  # float,[H*W, 3]: normalized rgb values in range [0, 1]
 
 
-@pydantic.dataclasses.dataclass
+@pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonFrame:
     file_path: str
     transform_matrix: Matrix4x4
@@ -192,8 +216,12 @@ class TransformJsonFrame:
     # unused, for compatibility with instant-ngp
     sharpness: float=0.0
 
+    @property
+    def transform_matrix_numpy(self) -> np.ndarray:
+        return np.asarray(self.transform_matrix)
 
-@pydantic.dataclasses.dataclass
+
+@pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonBase:
     frames: Sequence[TransformJsonFrame]
 
@@ -214,12 +242,12 @@ class TransformJsonBase:
         return cls.from_json(path.read_text())
 
 
-@pydantic.dataclasses.dataclass
+@pydantic.dataclasses.dataclass(frozen=True)
 class NeRFSyntheticTransformJson(TransformJsonBase):
     camera_angle_x: float
 
 
-@pydantic.dataclasses.dataclass
+@pydantic.dataclasses.dataclass(frozen=True)
 class TransformJson(TransformJsonBase):
     fx: float
     fy: float

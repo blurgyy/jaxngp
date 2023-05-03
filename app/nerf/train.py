@@ -305,16 +305,18 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
     )
 
     # data
-    scene_metadata_train, _ = data.make_nerf_synthetic_scene_metadata(
+    scene_metadata_train, _ = data.make_scene_metadata(
         rootdir=args.data_root,
         split="train",
-        scale=args.scene.scale,
+        world_scale=args.scene.world_scale,
+        image_scale=args.scene.image_scale,
     )
 
-    scene_metadata_val, val_views = data.make_nerf_synthetic_scene_metadata(
+    scene_metadata_val, val_views = data.make_scene_metadata(
         rootdir=args.data_root,
         split="val",
-        scale=args.scene.scale,
+        world_scale=args.scene.world_scale,
+        image_scale=args.scene.image_scale,
     )
 
     logger.info("starting training")
