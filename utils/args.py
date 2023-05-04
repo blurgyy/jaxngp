@@ -167,7 +167,10 @@ class NeRFTestingArgs(_NeRFArgs):
         bg=(0.0, 0.0, 0.0),  # black
         random_bg=False,
     )
-<<<<<<< HEAD
+    scene: SceneOptions=SceneOptions(
+        bound=1.0,
+        scale=0.8,
+    )
     
 
 
@@ -176,13 +179,8 @@ class GuiWindowArgs():
     W:int=100 
     H:int=100
     common: CommonArgs=CommonArgs()
-<<<<<<< HEAD
-=======
     scene: SceneOptions=SceneOptions(
         bound=1.0,
         scale=0.8,
     )
->>>>>>> 5c6544b... args(nerf): group scene scale and bound
-=======
-    
->>>>>>> ce83299... framework
+
