@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import dataclasses
 import json
 import math
@@ -19,14 +20,14 @@ from .common import jit_jaxfn_with, mkValueError, tqdm_format
 from .types import (
     ColmapMatcherType,
     ImageMetadata,
-    TransformJsonNeRFSynthetic,
     PinholeCamera,
     RGBColor,
     RGBColorU8,
     RigidTransformation,
     SceneMetadata,
-    TransformJsonNGP,
     TransformJsonFrame,
+    TransformJsonNGP,
+    TransformJsonNeRFSynthetic,
     ViewMetadata,
 )
 
@@ -492,32 +493,6 @@ def make_image_metadata(
     )
 
 
-def make_view(
-    image_path: Union[Path, str],
-    transform_4x4: jax.Array,
-    scale: float
-) -> ViewMetadata:
-    image_path = Path(image_path)
-    image = Image.open(image_path)
-    # scale the image according to `scale`, which should be a value between 0.0 and 1.0
-    assert 0.0 <= scale <= 1.0
-    image = image.resize((int(image.width * scale), int(image.height * scale)))
-    image = jnp.asarray(image)
-    xys, rgbas = get_xyrgbas(image)
-    H, W = image.shape[:2]
-    return ViewMetadata(
-        H=H,
-        W=W,
-        xys=xys,
-        rgbas=rgbas,
-        transform=RigidTransformation(
-            rotation=transform_4x4[:3, :3],
-            translation=transform_4x4[:3, 3],
-        ),
-        file=image_path.absolute(),
-    )
-
-
 def make_scene_metadata(
     rootdir: Union[Path, str],
     split: Literal["train", "val", "test"],
@@ -549,14 +524,20 @@ def make_scene_metadata(
 
     views = list(
         map(
-            lambda frame: make_view(
-                image_path=try_image_extensions(rootdir, frame.file_path, [".png", "jpg", "jpeg"]),
-                transform_4x4=jnp.asarray(frame.transform_matrix),
+            lambda frame: ViewMetadata(
                 scale=image_scale,
+                transform=RigidTransformation(
+                    rotation=frame.transform_matrix_numpy[:3, :3],
+                    translation=frame.transform_matrix_numpy[:3, 3],
+                ),
+                file=try_image_extensions(rootdir, frame.file_path, [".png", "jpg", "jpeg"]),
             ),
-            tqdm(transforms.frames, desc="loading views (split={})".format(split), bar_format=tqdm_format)
+            transforms.frames,
         )
     )
+
+    if len(views) == 0:
+        raise ValueError("loaded zero views from {}".format(transforms_path))
 
     # shared camera model
     if isinstance(transforms, TransformJsonNeRFSynthetic):
@@ -588,14 +569,18 @@ def make_scene_metadata(
 
     # flatten
     # int,[n_pixels, 2]
-    all_xys = jnp.concatenate(
-        list(map(lambda view: view.xys, views)),
-        axis=0,
-    )
+    all_xys = jnp.tile(views[0].xys, [len(views), 1])
 
     # float,[n_pixels, 4]
     all_rgbas = jnp.concatenate(
-        list(map(lambda view: view.rgbas, views)),
+        # executor.map() might return the values out-of-order, but that's ok because we assume all
+        # images have the same shape
+        list(tqdm(
+            ThreadPoolExecutor().map(lambda view: view.rgbas, views),
+            total=len(views),
+            desc="pre-loading views (split={})".format(split),
+            bar_format=tqdm_format),
+        ),
         axis=0,
     )
 

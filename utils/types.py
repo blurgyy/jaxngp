@@ -2,6 +2,7 @@ import dataclasses
 import json
 from pathlib import Path
 from typing import Callable, Literal, Sequence, Tuple, Union
+from PIL import Image
 
 import chex
 from flax import struct
@@ -231,6 +232,10 @@ class TransformJsonFrame:
     def transform_matrix_numpy(self) -> np.ndarray:
         return np.asarray(self.transform_matrix)
 
+    @property
+    def transform_matrix_jax_array(self) -> jax.Array:
+        return jnp.asarray(self.transform_matrix)
+
 
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonBase:
@@ -278,16 +283,50 @@ class TransformJsonNGP(TransformJsonBase):
 
 @dataclass
 class ViewMetadata:
-    H: int
-    W: int
-    xys: jax.Array  # int,[H*W, 2]: original integer coordinates in range [0, W] for x and [0, H] for y
-    rgbas: jax.Array  # float,[H*W, 4]: normalized rgb values in range [0, 1]
+    scale: float
     transform: RigidTransformation
     file: Path
 
+    def __post_init__(self):
+        assert 0 <= self.scale <= 1, "scale must be in range [0, 1], got {}".format(self.scale)
+
+    @property
+    def image_pil(self) -> Image.Image:
+        image = Image.open(self.file)
+        image = image.resize((int(image.width * self.scale), int(image.height * self.scale)), resample=Image.LANCZOS)
+        return image
+
     @property
     def image_rgba(self) -> jax.Array:
-        return self.rgbas.reshape(self.H, self.W, 4)
+        image = jnp.asarray(self.image_pil).astype(jnp.float32) / 255.0
+        if image.shape[-1] == 1:
+            image = jnp.concatenate([image] * 3 + [jnp.ones_like(image[..., :1])], axis=-1)
+        elif image.shape[-1] == 3:
+            image = jnp.concatenate([image, jnp.ones_like(image[..., :1])], axis=-1)
+        chex.assert_axis_dimension(image, -1, 4)
+        return image
+
+    @property
+    def H(self) -> int:
+        return self.image_pil.height
+
+    @property
+    def W(self) -> int:
+        return self.image_pil.width
+
+    # int, [H*W, 2]: original integer coordinates in range [0, W] for x and [0, H] for y
+    @property
+    def xys(self) -> jax.Array:
+        x, y = jnp.meshgrid(jnp.arange(self.W), jnp.arange(self.H))
+        x, y = x.reshape(-1, 1), y.reshape(-1, 1)
+        return jnp.concatenate([x, y], axis=-1)
+
+    # float, [H*W, 4]: normalized rgba values in range [0, 1]
+    @property
+    def rgbas(self) -> jax.Array:
+        flattened = self.image_rgba.reshape(self.H * self.W, -1)
+        chex.assert_axis_dimension(flattened, -1, 4)
+        return flattened
 
 
 # TODO:
