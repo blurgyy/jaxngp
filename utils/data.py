@@ -549,8 +549,8 @@ def make_scene_metadata(
             H=H,
             fx=focal * image_scale,
             fy=focal * image_scale,
-            cx=W / 2 * image_scale,
-            cy=H / 2 * image_scale,
+            cx=W / 2,
+            cy=H / 2,
         )
     elif isinstance(transforms, TransformJsonNGP):
         camera = PinholeCamera(
