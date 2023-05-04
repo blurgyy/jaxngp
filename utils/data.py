@@ -540,13 +540,13 @@ def make_scene_metadata(
         raise ValueError("loaded zero views from {}".format(transforms_path))
 
     # shared camera model
+    W, H = views[0].W, views[0].H
     if isinstance(transforms, TransformJsonNeRFSynthetic):
-        W, H = views[0].W, views[0].H
         fovx = transforms.camera_angle_x
         focal = float(.5 * W / np.tan(fovx / 2))
         camera = PinholeCamera(
-            W=int(W * image_scale),
-            H=int(H * image_scale),
+            W=W,
+            H=H,
             fx=focal * image_scale,
             fy=focal * image_scale,
             cx=W / 2 * image_scale,
@@ -554,8 +554,8 @@ def make_scene_metadata(
         )
     elif isinstance(transforms, TransformJsonNGP):
         camera = PinholeCamera(
-            W=int(transforms.w * image_scale),
-            H=int(transforms.h * image_scale),
+            W=W,
+            H=H,
             fx=transforms.fl_x * image_scale,
             fy=transforms.fl_y * image_scale,
             cx=transforms.cx * image_scale,
