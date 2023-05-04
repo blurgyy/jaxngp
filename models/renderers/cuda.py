@@ -253,8 +253,9 @@ def march_and_integrate_inference(
         indices=indices,
     )
 
+    xyzdirs = jax.lax.stop_gradient(xyzdirs)
     densities, rgbs = state.nerf_fn(
-        {"params": state.params["nerf"]},
+        {"params": state.locked_params["nerf"]},
         xyzdirs[..., :3],
         xyzdirs[..., 3:],
     )
