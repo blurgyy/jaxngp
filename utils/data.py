@@ -117,6 +117,8 @@ def write_transforms_json(
     dataset_root_dir: Path,
     images_dir: Path,
     text_model_dir: Path,
+    # given that the cameras' average distance to the origin is 4.0, what would the scene's bound be?
+    bound: float,
 ):
     "adapted from NVLabs/instant-ngp/scripts/colmap2nerf.py"
     dataset_root_dir, images_dir, text_model_dir = (
@@ -155,7 +157,7 @@ def write_transforms_json(
 
     # reorient the scene to be easier to work with
     up = up / np.linalg.norm(up)
-    print("up vector was", up)
+    print("up vector:", up, "->", [0, 0, 1])
     R = rotmat(up,[0,0,1]) # rotate up vector to [0,0,1]
     R = np.pad(R,[0,1])
     R[-1, -1] = 1
@@ -177,7 +179,7 @@ def write_transforms_json(
     if totw > 0.0:
         totp /= totw
     # the cameras are looking at totp
-    print("the cameras are looking at", totp)
+    print("the cameras are looking at:", totp, "->", [0, 0, 0])
     for i, f in enumerate(frames):
         new_m = f.transform_matrix_numpy
         new_m[0:3,3] -= totp
@@ -187,13 +189,14 @@ def write_transforms_json(
     for f in frames:
         avglen += np.linalg.norm(f.transform_matrix_numpy[0:3,3])
     avglen /= len(frames)
-    print("avg camera distance from origin", avglen)
+    print("average camera distance from origin:", avglen, "->", 4.0)
     for i, f in enumerate(frames):
         # scale to "nerf sized"
         new_m = f.transform_matrix_numpy
         new_m[0:3, 3] *= 4.0 / avglen
         frames[i] = dataclasses.replace(f, transform_matrix=new_m.tolist())
 
+    print("scale of scene's bouding box:", bound * 2)
     all_transform_json = TransformJsonNGP(
         frames=frames,
         fl_x=camera.fx,
@@ -202,6 +205,7 @@ def write_transforms_json(
         cy=camera.cy,
         w=camera.W,
         h=camera.H,
+        aabb_scale=bound * 2,
     )
     train_tj = dataclasses.replace(all_transform_json, frames=frames[:len(frames) // 2])
     val_tj = dataclasses.replace(all_transform_json, frames=frames[len(frames) // 2:len(frames) // 2 + len(frames) // 4])
@@ -216,6 +220,7 @@ def create_dataset_from_single_camera_image_collection(
     raw_images_dir: Path,
     dataset_root_dir: Path,
     matcher: ColmapMatcherType,
+    bound: float,
 ):
     raw_images_dir, dataset_root_dir = Path(raw_images_dir), Path(dataset_root_dir)
     dataset_root_dir.mkdir(parents=True, exist_ok=True)
@@ -256,12 +261,14 @@ def create_dataset_from_single_camera_image_collection(
         dataset_root_dir=dataset_root_dir,
         images_dir=undistorted_images_dir.joinpath("images"),
         text_model_dir=text_model_dir,
+        bound=bound,
     )
 
 
 def create_dataset_from_video(
     video_path: Path,
     dataset_root_dir: Path,
+    bound: float,
     fps: int=3,
 ):
     video_path, dataset_root_dir = Path(video_path), Path(dataset_root_dir)
@@ -275,6 +282,7 @@ def create_dataset_from_video(
         raw_images_dir=raw_images_dir,
         dataset_root_dir=dataset_root_dir,
         matcher="Sequential",
+        bound=bound,
     )
 
 

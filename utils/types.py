@@ -224,7 +224,7 @@ class TransformJsonFrame:
     # unused, kept for compatibility with the original nerf_synthetic dataset
     rotation: float=0.0
 
-    # unused, for compatibility with instant-ngp
+    # unused, kept for compatibility with instant-ngp
     sharpness: float=1e5
 
     @property
@@ -235,6 +235,10 @@ class TransformJsonFrame:
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonBase:
     frames: Sequence[TransformJsonFrame]
+
+    # unused, kept for compatibility with instant-ngp
+    # the width of the scene's bounding box, the scene's `bound` parameter is half of this value,
+    # i.e. the bounding box is [-bound, bound] in all three dimensions, where bound is aabb_scale/2.
     aabb_scale: float=dataclasses.field(default_factory=lambda: 1.0, kw_only=True)
 
     def as_json(self, /, indent: int=2) -> str:
