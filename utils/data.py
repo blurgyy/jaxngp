@@ -19,13 +19,13 @@ from .common import jit_jaxfn_with, mkValueError, tqdm_format
 from .types import (
     ColmapMatcherType,
     ImageMetadata,
-    NeRFSyntheticTransformJson,
+    TransformJsonNeRFSynthetic,
     PinholeCamera,
     RGBColor,
     RGBColorU8,
     RigidTransformation,
     SceneMetadata,
-    TransformJson,
+    TransformJsonNGP,
     TransformJsonFrame,
     ViewMetadata,
 )
@@ -194,14 +194,14 @@ def write_transforms_json(
         new_m[0:3, 3] *= 4.0 / avglen
         frames[i] = dataclasses.replace(f, transform_matrix=new_m.tolist())
 
-    all_transform_json = TransformJson(
+    all_transform_json = TransformJsonNGP(
         frames=frames,
-        fx=camera.fx,
-        fy=camera.fy,
+        fl_x=camera.fx,
+        fl_y=camera.fy,
         cx=camera.cx,
         cy=camera.cy,
-        width=camera.W,
-        height=camera.H,
+        w=camera.W,
+        h=camera.H,
     )
     train_tj = dataclasses.replace(all_transform_json, frames=frames[:len(frames) // 2])
     val_tj = dataclasses.replace(all_transform_json, frames=frames[len(frames) // 2:len(frames) // 2 + len(frames) // 4])
@@ -521,9 +521,9 @@ def make_scene_metadata(
     transforms_path = rootdir.joinpath("transforms_{}.json".format(split))
     transforms = json.load(open(transforms_path))
     transforms = (
-        NeRFSyntheticTransformJson(**transforms)
+        TransformJsonNeRFSynthetic(**transforms)
         if transforms.get("camera_angle_x") is not None
-        else TransformJson(**transforms)
+        else TransformJsonNGP(**transforms)
     )
 
     def try_image_extensions(basedir: Path, file_path: str, extensions: List[str]) -> Path:
@@ -551,7 +551,7 @@ def make_scene_metadata(
     )
 
     # shared camera model
-    if isinstance(transforms, NeRFSyntheticTransformJson):
+    if isinstance(transforms, TransformJsonNeRFSynthetic):
         W, H = views[0].W, views[0].H
         fovx = transforms.camera_angle_x
         focal = float(.5 * W / np.tan(fovx / 2))
@@ -563,19 +563,19 @@ def make_scene_metadata(
             cx=W / 2 * image_scale,
             cy=H / 2 * image_scale,
         )
-    elif isinstance(transforms, TransformJson):
+    elif isinstance(transforms, TransformJsonNGP):
         camera = PinholeCamera(
-            W=int(transforms.width * image_scale),
-            H=int(transforms.height * image_scale),
-            fx=transforms.fx * image_scale,
-            fy=transforms.fy * image_scale,
+            W=int(transforms.w * image_scale),
+            H=int(transforms.h * image_scale),
+            fx=transforms.fl_x * image_scale,
+            fy=transforms.fl_y * image_scale,
             cx=transforms.cx * image_scale,
             cy=transforms.cy * image_scale,
         )
     else:
         raise TypeError("unexpected type for transforms: {}, expected one of {}".format(
             type(transforms),
-            [NeRFSyntheticTransformJson, TransformJson],
+            [TransformJsonNeRFSynthetic, TransformJsonNGP],
         ))
 
     # flatten

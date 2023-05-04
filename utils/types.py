@@ -225,7 +225,7 @@ class TransformJsonFrame:
     rotation: float=0.0
 
     # unused, for compatibility with instant-ngp
-    sharpness: float=0.0
+    sharpness: float=1e5
 
     @property
     def transform_matrix_numpy(self) -> np.ndarray:
@@ -235,6 +235,7 @@ class TransformJsonFrame:
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonBase:
     frames: Sequence[TransformJsonFrame]
+    aabb_scale: float=dataclasses.field(default_factory=lambda: 1.0, kw_only=True)
 
     def as_json(self, /, indent: int=2) -> str:
         return json.dumps(dataclasses.asdict(self), indent=indent)
@@ -254,19 +255,19 @@ class TransformJsonBase:
 
 
 @pydantic.dataclasses.dataclass(frozen=True)
-class NeRFSyntheticTransformJson(TransformJsonBase):
+class TransformJsonNeRFSynthetic(TransformJsonBase):
     camera_angle_x: float
 
 
 @pydantic.dataclasses.dataclass(frozen=True)
-class TransformJson(TransformJsonBase):
-    fx: float
-    fy: float
+class TransformJsonNGP(TransformJsonBase):
+    fl_x: float
+    fl_y: float
     cx: float
     cy: float
 
-    width: int
-    height: int
+    w: int
+    h: int
 
     frames: Sequence[TransformJsonFrame]
 
