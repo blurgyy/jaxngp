@@ -1,5 +1,7 @@
+import dataclasses
+import json
 from pathlib import Path
-from typing import Callable, Literal, Tuple
+from typing import Callable, Literal, Sequence, Tuple, Union
 
 import chex
 from flax import struct
@@ -7,8 +9,11 @@ from flax.struct import dataclass
 from flax.training.train_state import TrainState
 import jax
 import jax.numpy as jnp
+import numpy as np
+import pydantic
 
 
+ColmapMatcherType = Literal["Exhaustive", "Sequential"]
 PositionalEncodingType = Literal["identity", "frequency", "hashgrid"]
 DirectionalEncodingType = Literal["identity", "sh", "shcuda"]
 EncodingType = Literal[PositionalEncodingType, DirectionalEncodingType]
@@ -24,6 +29,9 @@ ActivationType = Literal[
 DensityAndRGB = Tuple[jax.Array, jax.Array]
 LogLevel = Literal["DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL"]
 RGBColor = Tuple[float, float, float]
+RGBColorU8 = Tuple[int, int, int]
+FourFloats = Tuple[float, float, float, float]
+Matrix4x4 = Tuple[FourFloats, FourFloats, FourFloats, FourFloats]
 
 
 def empty_impl(clz):
@@ -101,21 +109,36 @@ class PinholeCamera:
     H: int
 
     # focal length
-    focal: float
+    fx: float
+    fy: float
+
+    # principal point
+    cx: float
+    cy: float
 
     @property
     def n_pixels(self) -> int:
         return self.H * self.W
 
-    def scaled(self, factor: float) -> "PinholeCamera":
-        "same focal length, different resolution"
-        return self\
-            .replace(H=self.H // factor)\
-            .replace(W=self.W // factor)
-
-    def zoomed(self, factor: float) -> "PinholeCamera":
-        "same resolution, different focal length"
-        return self.replace(focal=self.focal * factor)
+    @classmethod
+    def from_colmap_txt(cls, txt_path: Union[str, Path]) -> "PinholeCamera":
+        """
+        Example usage:
+            cam = PinholeCamera.from_colmap_txt("path/to/txt")
+        """
+        with open(txt_path, "r") as f:
+            lines = f.readlines()
+        # CAMERA_ID, MODEL, WIDTH, HEIGHT, PARAMS[]
+        _, camera_model, width, height, fx, fy, cx, cy = lines[-1].strip().split()
+        assert camera_model == "PINHOLE", "invalid camera model, expected PINHOLE, got {}".format(camera_model)
+        return cls(
+            W=int(width),
+            H=int(height),
+            fx=float(fx),
+            fy=float(fy),
+            cx=float(cx),
+            cy=float(cy),
+        )
 
 
 @empty_impl
@@ -143,13 +166,16 @@ class RenderingOptions:
 
 
 @empty_impl
-@dataclass
+@pydantic.dataclasses.dataclass(frozen=True)
 class SceneOptions:
     # half width of axis-aligned bounding-box, i.e. aabb's width is `bound*2`
     bound: float
 
     # scale camera positions with this scalar
-    scale: float
+    world_scale: float
+
+    # scale input images in case they are too large
+    image_scale: float
 
     # whether the scene has a background
     with_bg: bool
@@ -188,6 +214,66 @@ class ImageMetadata:
     xys: jax.Array  # int,[H*W, 2]: original integer coordinates in range [0, W] for x and [0, H] for y
     uvs: jax.Array  # float,[H*W, 2]: normalized coordinates in range [0, 1]
     rgbs: jax.Array  # float,[H*W, 3]: normalized rgb values in range [0, 1]
+
+
+@pydantic.dataclasses.dataclass(frozen=True)
+class TransformJsonFrame:
+    file_path: str
+    transform_matrix: Matrix4x4
+
+    # unused, kept for compatibility with the original nerf_synthetic dataset
+    rotation: float=0.0
+
+    # unused, kept for compatibility with instant-ngp
+    sharpness: float=1e5
+
+    @property
+    def transform_matrix_numpy(self) -> np.ndarray:
+        return np.asarray(self.transform_matrix)
+
+
+@pydantic.dataclasses.dataclass(frozen=True)
+class TransformJsonBase:
+    frames: Sequence[TransformJsonFrame]
+
+    # unused, kept for compatibility with instant-ngp
+    # the width of the scene's bounding box, the scene's `bound` parameter is half of this value,
+    # i.e. the bounding box is [-bound, bound] in all three dimensions, where bound is aabb_scale/2.
+    aabb_scale: float=dataclasses.field(default_factory=lambda: 1.0, kw_only=True)
+
+    def as_json(self, /, indent: int=2) -> str:
+        return json.dumps(dataclasses.asdict(self), indent=indent)
+
+    @classmethod
+    def from_json(cls, jsonstr: str) -> "TransformJsonBase":
+        return cls(**json.loads(jsonstr))
+
+    def save(self, path: Union[str, Path]) -> None:
+        path = Path(path)
+        path.write_text(self.as_json())
+
+    @classmethod
+    def load(cls, path: Union[str, Path]):
+        path = Path(path)
+        return cls.from_json(path.read_text())
+
+
+@pydantic.dataclasses.dataclass(frozen=True)
+class TransformJsonNeRFSynthetic(TransformJsonBase):
+    camera_angle_x: float
+
+
+@pydantic.dataclasses.dataclass(frozen=True)
+class TransformJsonNGP(TransformJsonBase):
+    fl_x: float
+    fl_y: float
+    cx: float
+    cy: float
+
+    w: int
+    h: int
+
+    frames: Sequence[TransformJsonFrame]
 
 
 @dataclass

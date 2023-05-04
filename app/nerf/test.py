@@ -44,10 +44,11 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     # REF: <https://github.com/google/flax/discussions/1199#discussioncomment-635132>
     state = jax.device_put(state)
 
-    scene_metadata_test, test_views = data.make_nerf_synthetic_scene_metadata(
+    scene_metadata_test, test_views = data.make_scene_metadata(
         rootdir=args.data_root,
         split=args.split,
-        scale=state.scene.scale,
+        world_scale=state.scene.world_scale,
+        image_scale=state.scene.image_scale,
     )
 
     rendered_images: List[RenderedImage] = []

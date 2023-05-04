@@ -19,6 +19,26 @@
         },
         "version": "v1.9.0"
     },
+    "pycolmap": {
+        "cargoLocks": null,
+        "date": null,
+        "extract": null,
+        "name": "pycolmap",
+        "passthru": null,
+        "pinned": false,
+        "src": {
+            "deepClone": false,
+            "fetchSubmodules": true,
+            "leaveDotGit": false,
+            "name": null,
+            "owner": "colmap",
+            "repo": "pycolmap",
+            "rev": "v0.3.0",
+            "sha256": "sha256-t1rV34jyivXHY2Ji0dAotRYxs7LhNHk/7HQm9bqs97M=",
+            "type": "github"
+        },
+        "version": "v0.3.0"
+    },
     "pyimgui": {
         "cargoLocks": null,
         "date": null,

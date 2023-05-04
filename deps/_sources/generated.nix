@@ -12,6 +12,17 @@
       sha256 = "sha256-5/LUuA4zDbpLTDUW3z/lRde6B1mEqnRzW72CCrGftZc=";
     });
   };
+  pycolmap = {
+    pname = "pycolmap";
+    version = "v0.3.0";
+    src = fetchFromGitHub ({
+      owner = "colmap";
+      repo = "pycolmap";
+      rev = "v0.3.0";
+      fetchSubmodules = true;
+      sha256 = "sha256-t1rV34jyivXHY2Ji0dAotRYxs7LhNHk/7HQm9bqs97M=";
+    });
+  };
   pyimgui = {
     pname = "pyimgui";
     version = "2.0.0";
