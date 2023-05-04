@@ -373,9 +373,9 @@ def make_skysphere_background_model(
 def make_skysphere_background_model_ngp(bound: float) -> SkySphereBg:
     return make_skysphere_background_model(
         radius=bound*4,
-        pos_levels=6,
+        pos_levels=2,
         dir_levels=4,
-        Ds=[64, 64],
+        Ds=[32, 32],
         skip_in_layers=[],
         act="sigmoid",
     )

@@ -123,7 +123,6 @@ class NeRFTrainingArgs(_NeRFArgs):
     raymarch: RayMarchingOptions=RayMarchingOptions(
         diagonal_n_steps=1<<10,
         perturb=True,
-        stepsize_portion=0,
         density_grid_res=128,
     )
     render: RenderingOptions=RenderingOptions(
@@ -141,7 +140,6 @@ class NeRFTrainingArgs(_NeRFArgs):
     raymarch_eval: RayMarchingOptions=RayMarchingOptions(
         diagonal_n_steps=1<<10,
         perturb=False,
-        stepsize_portion=0,
         density_grid_res=128,
     )
     render_eval: RenderingOptions=RenderingOptions(
@@ -167,7 +165,6 @@ class NeRFTestingArgs(_NeRFArgs):
     raymarch: RayMarchingOptions=RayMarchingOptions(
         diagonal_n_steps=1<<10,
         perturb=False,
-        stepsize_portion=0,
         density_grid_res=128,
     )
     render: RenderingOptions=RenderingOptions(

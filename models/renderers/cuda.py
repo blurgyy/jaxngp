@@ -24,6 +24,7 @@ from utils.types import (
     PinholeCamera,
     RayMarchingOptions,
     RigidTransformation,
+    SceneOptions,
 )
 
 from ._utils import make_rays_worldspace
@@ -186,7 +187,7 @@ def render_rays_train(
         K=cascades_from_bound(state.scene.bound),
         G=state.raymarch.density_grid_res,
         bound=state.scene.bound,
-        stepsize_portion=state.raymarch.stepsize_portion,
+        stepsize_portion=state.scene.stepsize_portion,
         rays_o=o_world,
         rays_d=d_world,
         t_starts=t_starts.ravel(),
@@ -220,12 +221,11 @@ def render_rays_train(
     return batch_metrics, opacities, final_rgbs, depths
 
 
-@jit_jaxfn_with(static_argnames=["bound", "march_steps_cap", "raymarch_options", "nerf_fn"])
+@jit_jaxfn_with(static_argnames=["march_steps_cap"])
 def march_and_integrate_inference(
     transmittance_threshold: Union[float, jax.Array],
-    bound: float,
     march_steps_cap: int,
-    raymarch_options: RayMarchingOptions,
+    state: NeRFState,
 
     counter: jax.Array,
     rays_o: jax.Array,
@@ -240,17 +240,14 @@ def march_and_integrate_inference(
     rays_rgb: jax.Array,
     rays_T: jax.Array,
     rays_depth: jax.Array,
-
-    param_dict: FrozenVariableDict,
-    nerf_fn: Callable[[FrozenVariableDict, jax.Array, jax.Array], DensityAndRGB],
 ):
     counter, indices, n_samples, t_starts, xyzdirs, dss, z_vals = march_rays_inference(
-        diagonal_n_steps=raymarch_options.diagonal_n_steps,
-        K=cascades_from_bound(bound),
-        G=raymarch_options.density_grid_res,
+        diagonal_n_steps=state.raymarch.diagonal_n_steps,
+        K=cascades_from_bound(state.scene.bound),
+        G=state.raymarch.density_grid_res,
         march_steps_cap=march_steps_cap,
-        bound=bound,
-        stepsize_portion=raymarch_options.stepsize_portion,
+        bound=state.scene.bound,
+        stepsize_portion=state.scene.stepsize_portion,
         rays_o=rays_o,
         rays_d=rays_d,
         t_starts=t_starts,
@@ -261,8 +258,8 @@ def march_and_integrate_inference(
         indices=indices,
     )
 
-    densities, rgbs = nerf_fn(
-        param_dict,
+    densities, rgbs = state.nerf_fn(
+        {"params": state.params["nerf"]},
         xyzdirs[..., :3],
         xyzdirs[..., 3:],
     )
@@ -330,9 +327,8 @@ def render_image_inference(
         for _ in range(iters):
             iter_terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth = march_and_integrate_inference(
                 transmittance_threshold=1e-4,
-                bound=state.scene.bound,
                 march_steps_cap=march_rays_cap,
-                raymarch_options=state.raymarch,
+                state=state,
 
                 counter=counter,
                 rays_o=o_world,
@@ -347,9 +343,6 @@ def render_image_inference(
                 rays_rgb=rays_rgb,
                 rays_T=rays_T,
                 rays_depth=rays_depth,
-
-                param_dict=param_dict,
-                nerf_fn=state.nerf_fn,
             )
             terminate_cnt += iter_terminate_cnt
         n_rendered_rays += terminate_cnt

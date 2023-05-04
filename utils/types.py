@@ -151,9 +151,6 @@ class RayMarchingOptions:
     # whether to fluctuate the first sample along the ray with a tiny perturbation
     perturb: bool
 
-    # this is the same thing as `dt_gamma` in ashawkey/torch-ngp
-    stepsize_portion: float
-
     # resolution for the auxiliary density/occupancy grid, the NGP paper uses 128 (appendix E.2)
     density_grid_res: int
 
@@ -182,6 +179,20 @@ class SceneOptions:
 
     # whether the scene has a background
     with_bg: bool
+
+    # this is the same thing as `dt_gamma` in ashawkey/torch-ngp
+    @property
+    def stepsize_portion(self) -> float:
+        if self.bound > 64:
+            return 3e-2
+        elif self.bound > 16:
+            return 1e-2
+        elif self.bound > 4:
+            return 4e-3
+        elif self.bound > 1:
+            return 2e-3
+        else:
+            return 0
 
 
 @dataclass
