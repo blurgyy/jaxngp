@@ -73,6 +73,7 @@ Args = Union[
         tyro.conf.subcommand(
             name="cat",
             prefix_name=False,
+            description="concatenate images horizontally or vertically",
         ),
     ],
     Annotated[
@@ -80,6 +81,7 @@ Args = Union[
         tyro.conf.subcommand(
             name="metrics",
             prefix_name=False,
+            description="compute metrics between images",
         ),
     ],
     Annotated[
@@ -87,6 +89,7 @@ Args = Union[
         tyro.conf.subcommand(
             name="create",
             prefix_name=False,
+            description="create a instant-ngp format dataset from a video or a directory of images",
         ),
     ],
 ]
