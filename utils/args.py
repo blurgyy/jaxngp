@@ -116,7 +116,7 @@ class NeRFTrainingArgs(_NeRFArgs):
         n_epochs=50,
         n_batches=2**10,
         data_loop=1,
-        validate_interval_steps=5<<10,
+        validate_interval_steps=10<<10,
     )
 
     # raymarching/rendering options during training
