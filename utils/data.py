@@ -38,7 +38,7 @@ def to_cpu(array: jnp.DeviceArray) -> jnp.DeviceArray:
 
 @jax.jit
 def f32_to_u8(img: jax.Array) -> jax.Array:
-    return jnp.clip(img * 255, 0, 255).astype(jnp.uint8)
+    return jnp.clip(jnp.round(img * 255), 0, 255).astype(jnp.uint8)
 
 
 @jax.jit
@@ -376,7 +376,7 @@ def set_pixels(imgarr: jax.Array, xys: jax.Array, selected: jax.Array, preds: ja
     else:
         interm = imgarr.ravel()
     idcs = xys[selected, 1] * W + xys[selected, 0]
-    interm = interm.at[idcs].set(jnp.clip(preds * 255, 0, 255).astype(jnp.uint8))
+    interm = interm.at[idcs].set(jnp.clip(jnp.round(preds * 255), 0, 255).astype(jnp.uint8))
     if len(imgarr.shape) == 3:
         return interm.reshape(H, W, -1)
     else:
@@ -424,7 +424,7 @@ def blend_rgba_image_array(imgarr, bg: RGBColor):
     if imgarr.dtype == jnp.uint8:
         rgbs, alpha = rgbs.astype(float) / 255, alpha.astype(float) / 255
         rgbs = rgbs * alpha + bg_color * (1 - alpha)
-        rgbs = (rgbs * 255).astype(jnp.uint8)
+        rgbs = jnp.clip(jnp.round(rgbs * 255), 0, 255).astype(jnp.uint8)
     else:
         rgbs = rgbs * alpha + bg_color * (1 - alpha)
     return rgbs

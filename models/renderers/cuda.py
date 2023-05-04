@@ -343,8 +343,8 @@ def render_image_inference(
         n_rendered_rays += terminate_cnt
 
     bg_array_f32 = rays_bg.reshape((camera.H, camera.W, 3))
-    image_array_u8 = jnp.clip(rays_rgb * 255, 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W, 3))
+    image_array_u8 = jnp.clip(jnp.round(rays_rgb * 255), 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W, 3))
     rays_depth_f32 = rays_depth / (state.scene.bound * 2 + jnp.linalg.norm(transform_cw.translation))
-    depth_array_u8 = jnp.clip(rays_depth_f32 * 255, 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W))
+    depth_array_u8 = jnp.clip(jnp.round(rays_depth_f32 * 255), 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W))
 
     return bg_array_f32, image_array_u8, depth_array_u8

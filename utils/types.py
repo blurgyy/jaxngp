@@ -298,7 +298,7 @@ class ViewMetadata:
 
     @property
     def image_rgba(self) -> jax.Array:
-        image = jnp.asarray(self.image_pil).astype(jnp.float32) / 255.0
+        image = jnp.asarray(self.image_pil).astype(jnp.float32) / 255
         if image.shape[-1] == 1:
             image = jnp.concatenate([image] * 3 + [jnp.ones_like(image[..., :1])], axis=-1)
         elif image.shape[-1] == 3:
