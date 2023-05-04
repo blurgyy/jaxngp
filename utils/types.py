@@ -169,9 +169,6 @@ class RenderingOptions:
 @empty_impl
 @pydantic.dataclasses.dataclass(frozen=True)
 class SceneOptions:
-    # half width of axis-aligned bounding-box, i.e. aabb's width is `bound*2`
-    bound: float
-
     # scale camera positions with this scalar
     world_scale: float
 
@@ -180,20 +177,6 @@ class SceneOptions:
 
     # whether the scene has a background
     with_bg: bool
-
-    # this is the same thing as `dt_gamma` in ashawkey/torch-ngp
-    @property
-    def stepsize_portion(self) -> float:
-        if self.bound > 64:
-            return 3e-2
-        elif self.bound > 16:
-            return 1e-2
-        elif self.bound > 4:
-            return 4e-3
-        elif self.bound > 1:
-            return 2e-3
-        else:
-            return 0
 
 
 @dataclass
@@ -241,9 +224,9 @@ class TransformJsonFrame:
 class TransformJsonBase:
     frames: Sequence[TransformJsonFrame]
 
-    # unused, kept for compatibility with instant-ngp
-    # the width of the scene's bounding box, the scene's `bound` parameter is half of this value,
-    # i.e. the bounding box is [-bound, bound] in all three dimensions, where bound is aabb_scale/2.
+    # scene's bound, the name `aabb_scale` is for compatibility with instant-ngp (note that
+    # instant-ngp requires this value to be a power of 2, other than that a value that can work with
+    # instant-ngp will work with this code base as well).
     aabb_scale: float=dataclasses.field(default_factory=lambda: 1.0, kw_only=True)
 
     def as_json(self, /, indent: int=2) -> str:
@@ -329,16 +312,41 @@ class ViewMetadata:
         return flattened
 
 
-# TODO:
-#   Make this `camera`'s H, W configurable and resize loaded images accordingly (specified H,W
-#   must have same aspect ratio as the loaded images).
-#   For now it's just read from the dataset.
 @dataclass
-class SceneMetadata:
-    camera: PinholeCamera  # the camera model used to render this scene
-    all_xys: jax.Array  # int,[n_pixels, 2], flattened xy coordinates from loaded images
-    all_rgbas: jax.Array  # float,[n_pixels, 4], flattened rgb values from loaded images
-    all_transforms: jax.Array  # float,[n_views, 9+3] each row comprises of R(flattened,9), T(3), from loaded images
+class SceneMeta:
+    # half width of axis-aligned bounding-box, i.e. aabb's width is `bound*2`
+    bound: float
+
+    # the camera model used to render this scene
+    camera: PinholeCamera
+
+    # this is the same thing as `dt_gamma` in ashawkey/torch-ngp
+    @property
+    def stepsize_portion(self) -> float:
+        if self.bound > 64:
+            return 5e-3
+        elif self.bound > 16:
+            return 4e-3
+        elif self.bound > 4:
+            return 3e-3
+        elif self.bound > 1:
+            return 2e-3
+        else:
+            return 0
+
+
+@dataclass
+class SceneData:
+    meta: SceneMeta
+
+    # int,[n_pixels, 2], flattened xy coordinates from loaded images
+    all_xys: jax.Array
+
+    # float,[n_pixels, 4], flattened rgb values from loaded images
+    all_rgbas: jax.Array
+
+    # float,[n_views, 9+3] each row comprises of R(flattened,9), T(3), from loaded images
+    all_transforms: jax.Array
 
 
 @dataclass
@@ -364,7 +372,8 @@ class NeRFState(TrainState):
 
     raymarch: RayMarchingOptions=struct.field(pytree_node=False)
     render: RenderingOptions=struct.field(pytree_node=False)
-    scene: SceneOptions=struct.field(pytree_node=False)
+    scene_options: SceneOptions=struct.field(pytree_node=False)
+    scene_meta: SceneMeta=struct.field(pytree_node=False)
 
     nerf_fn: Callable=struct.field(pytree_node=False)
     bg_fn: Callable=struct.field(pytree_node=False)
@@ -378,7 +387,7 @@ class NeRFState(TrainState):
 
     @property
     def use_background_model(self) -> bool:
-        return self.scene.with_bg and self.params.get("bg") is not None
+        return self.scene_options.with_bg and self.params.get("bg") is not None
 
     @property
     def locked_params(self):

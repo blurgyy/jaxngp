@@ -22,7 +22,7 @@ from utils.types import (
     OccupancyDensityGrid,
     RenderedImage,
     RigidTransformation,
-    SceneMetadata,
+    SceneData,
 )
 
 from ._utils import train_step
@@ -31,7 +31,7 @@ from ._utils import train_step
 def train_epoch(
     KEY: jran.KeyArray,
     state: NeRFState,
-    scene_metadata: SceneMetadata,
+    scene: SceneData,
     permutation: jax.Array,
     n_batches: int,
     total_samples: int,
@@ -56,10 +56,10 @@ def train_epoch(
             KEY=key,
             state=state,
             total_samples=total_samples,
-            camera=scene_metadata.camera,
-            all_xys=scene_metadata.all_xys,
-            all_rgbas=scene_metadata.all_rgbas,
-            all_transforms=scene_metadata.all_transforms,
+            camera=scene.meta.camera,
+            all_xys=scene.all_xys,
+            all_rgbas=scene.all_rgbas,
+            all_transforms=scene.all_transforms,
             perm=perm,
         )
         n_processed_rays += state.batch_config.n_rays
@@ -135,9 +135,27 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
     logger.write_hparams(dataclasses.asdict(args))
     logger.info("configurations saved to '{}'".format(args.exp_dir.joinpath("config.yaml")))
 
+    # data
+    scene_train, _ = data.load_scene(
+        rootdir=args.data_root,
+        split="train",
+        world_scale=args.scene.world_scale,
+        image_scale=args.scene.image_scale,
+    )
+
+    scene_val, val_views = data.load_scene(
+        rootdir=args.data_root,
+        split="val",
+        world_scale=args.scene.world_scale,
+        image_scale=args.scene.image_scale,
+    )
+
+    assert scene_train.meta == scene_val.meta
+    scene_meta = scene_train.meta
+
     # model parameters
     nerf_model, init_input = (
-        make_nerf_ngp(bound=args.scene.bound),
+        make_nerf_ngp(bound=scene_meta.bound),
         (jnp.zeros((1, 3), dtype=jnp.float32), jnp.zeros((1, 3), dtype=jnp.float32))
     )
     KEY, key = jran.split(KEY, 2)
@@ -147,7 +165,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
 
     if args.scene.with_bg:
         bg_model, init_input = (
-            make_skysphere_background_model_ngp(bound=args.scene.bound),
+            make_skysphere_background_model_ngp(bound=scene_meta.bound),
             (jnp.zeros((1, 3), dtype=jnp.float32), jnp.zeros((1, 3), dtype=jnp.float32))
         )
         KEY, key = jran.split(KEY, 2)
@@ -192,7 +210,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
     # training state
     state = NeRFState.create(
         ogrid=OccupancyDensityGrid.create(
-            cascades=data.cascades_from_bound(args.scene.bound),
+            cascades=data.cascades_from_bound(scene_meta.bound),
             grid_resolution=args.raymarch.density_grid_res,
         ),
         batch_config=NeRFBatchConfig(
@@ -202,7 +220,8 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
         ),
         raymarch=args.raymarch,
         render=args.render,
-        scene=args.scene,
+        scene_options=args.scene,
+        scene_meta=scene_meta,
         # unfreeze the frozen dict so that the weight_decay mask can apply, see:
         #   <https://github.com/deepmind/optax/issues/160>
         #   <https://github.com/google/flax/issues/1223>
@@ -215,21 +234,6 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
         tx=optimizer,
     )
 
-    # data
-    scene_metadata_train, _ = data.make_scene_metadata(
-        rootdir=args.data_root,
-        split="train",
-        world_scale=args.scene.world_scale,
-        image_scale=args.scene.image_scale,
-    )
-
-    scene_metadata_val, val_views = data.make_scene_metadata(
-        rootdir=args.data_root,
-        split="val",
-        world_scale=args.scene.world_scale,
-        image_scale=args.scene.image_scale,
-    )
-
     logger.info("starting training")
     # training loop
     for ep in range(args.train.n_epochs):
@@ -239,7 +243,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
         KEY, key = jran.split(KEY, 2)
         permutation = data.make_permutation(
             key,
-            size=scene_metadata_train.all_xys.shape[0],
+            size=scene_train.all_xys.shape[0],
             loop=args.train.data_loop,
             shuffle=True,
         )
@@ -249,7 +253,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             loss_log, state = train_epoch(
                 KEY=key,
                 state=state,
-                scene_metadata=scene_metadata_train,
+                scene=scene_train,
                 permutation=permutation,
                 n_batches=args.train.n_batches,
                 total_samples=args.train.bs,
@@ -290,13 +294,12 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             for val_i, val_view in enumerate(tqdm(val_views, desc="validating", bar_format=common.tqdm_format)):
                 logger.debug("validating on {}".format(val_view.file))
                 val_transform = RigidTransformation(
-                    rotation=scene_metadata_val.all_transforms[val_i, :9].reshape(3, 3),
-                    translation=scene_metadata_val.all_transforms[val_i, -3:].reshape(3),
+                    rotation=scene_val.all_transforms[val_i, :9].reshape(3, 3),
+                    translation=scene_val.all_transforms[val_i, -3:].reshape(3),
                 )
                 KEY, key = jran.split(KEY, 2)
                 bg, rgb, depth = render_image_inference(
                     KEY=key,
-                    camera=scene_metadata_val.camera,
                     transform_cw=val_transform,
                     state=state_eval,
                 )
@@ -334,8 +337,8 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             concatenate_fn = lambda gt, rendered_image: data.add_border(functools.reduce(
                 functools.partial(
                     data.side_by_side,
-                    H=scene_metadata_val.camera.H,
-                    W=scene_metadata_val.camera.W,
+                    H=scene_meta.camera.H,
+                    W=scene_meta.camera.W,
                 ),
                 [gt, rendered_image.rgb, rendered_image.depth],
             ))

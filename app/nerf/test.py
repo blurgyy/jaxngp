@@ -27,15 +27,23 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         logger.error("specified checkpoint '{}' does not exist".format(args.ckpt))
         exit(1)
 
+    scene_data, test_views = data.load_scene(
+        rootdir=args.data_root,
+        split=args.split,
+        world_scale=args.scene.world_scale,
+        image_scale=args.scene.image_scale,
+    )
+
     # load parameters
     state: NeRFState = checkpoints.restore_checkpoint(
         args.ckpt,
         target=NeRFState.empty(
             raymarch=args.raymarch,
             render=args.render,
-            scene=args.scene,
-            nerf_fn=make_nerf_ngp(bound=args.scene.bound).apply,
-            bg_fn=make_skysphere_background_model_ngp(bound=args.scene.bound).apply if args.scene.with_bg else None,
+            scene_options=args.scene,
+            scene_meta=scene_data.meta,
+            nerf_fn=make_nerf_ngp(bound=scene_data.meta.bound).apply,
+            bg_fn=make_skysphere_background_model_ngp(bound=scene_data.meta.bound).apply if args.scene.with_bg else None,
         ),
     )
     # WARN:
@@ -44,26 +52,18 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     # REF: <https://github.com/google/flax/discussions/1199#discussioncomment-635132>
     state = jax.device_put(state)
 
-    scene_metadata_test, test_views = data.make_scene_metadata(
-        rootdir=args.data_root,
-        split=args.split,
-        world_scale=state.scene.world_scale,
-        image_scale=state.scene.image_scale,
-    )
-
     rendered_images: List[RenderedImage] = []
     try:
         logger.info("starting testing (totally {} image(s) to test)".format(len(test_views)))
         for test_i, test_view in enumerate(tqdm(test_views, desc="testing", bar_format=common.tqdm_format)):
             logger.debug("testing on {}".format(test_view))
             transform = RigidTransformation(
-                rotation=scene_metadata_test.all_transforms[test_i, :9].reshape(3, 3),
-                translation=scene_metadata_test.all_transforms[test_i, -3:].reshape(3),
+                rotation=scene_data.all_transforms[test_i, :9].reshape(3, 3),
+                translation=scene_data.all_transforms[test_i, -3:].reshape(3),
             )
             KEY, key = jran.split(KEY, 2)
             bg, rgb, depth = render_image_inference(
                 KEY=key,
-                camera=scene_metadata_test.camera,
                 transform_cw=transform,
                 state=state,
             )

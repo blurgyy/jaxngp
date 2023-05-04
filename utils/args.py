@@ -126,7 +126,6 @@ class NeRFTrainingArgs(_NeRFArgs):
         random_bg=True,
     )
     scene: SceneOptions=SceneOptions(
-        bound=1.0,
         world_scale=0.6,
         image_scale=1.0,
         with_bg=False,
@@ -168,7 +167,6 @@ class NeRFTestingArgs(_NeRFArgs):
         random_bg=False,
     )
     scene: SceneOptions=SceneOptions(
-        bound=1.0,
         world_scale=0.6,
         image_scale=1.0,
         with_bg=False,

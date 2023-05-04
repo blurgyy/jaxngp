@@ -24,7 +24,9 @@ from .types import (
     RGBColor,
     RGBColorU8,
     RigidTransformation,
-    SceneMetadata,
+    SceneData,
+    SceneMeta,
+    SceneMeta,
     TransformJsonFrame,
     TransformJsonNGP,
     TransformJsonNeRFSynthetic,
@@ -197,7 +199,7 @@ def write_transforms_json(
         new_m[0:3, 3] *= 4.0 / avglen
         frames[i] = dataclasses.replace(f, transform_matrix=new_m.tolist())
 
-    print("scale of scene's bouding box:", bound * 2)
+    print("scene bound (i.e. half width of scene's aabb):", bound * 2)
     all_transform_json = TransformJsonNGP(
         frames=frames,
         fl_x=camera.fx,
@@ -206,7 +208,7 @@ def write_transforms_json(
         cy=camera.cy,
         w=camera.W,
         h=camera.H,
-        aabb_scale=bound * 2,
+        aabb_scale=bound,
     )
     train_tj = dataclasses.replace(all_transform_json, frames=frames[:len(frames) // 2])
     val_tj = dataclasses.replace(all_transform_json, frames=frames[len(frames) // 2:len(frames) // 2 + len(frames) // 4])
@@ -493,12 +495,13 @@ def make_image_metadata(
     )
 
 
-def make_scene_metadata(
+def load_scene(
     rootdir: Union[Path, str],
     split: Literal["train", "val", "test"],
     world_scale: float,
     image_scale: float,
-) -> Tuple[SceneMetadata, List[ViewMetadata]]:
+    load_views: bool=True,
+) -> SceneMeta | Tuple[SceneData, List[ViewMetadata]]:
     rootdir = Path(rootdir)
 
     transforms_path = rootdir.joinpath("transforms_{}.json".format(split))
@@ -522,6 +525,44 @@ def make_scene_metadata(
             "could not find a file at {} with path {} and extensions {}".format(basedir, file_path, extensions)
         )
 
+    # shared camera model
+    W, H = int(transforms.w * image_scale), int(transforms.h * image_scale)
+    if isinstance(transforms, TransformJsonNeRFSynthetic):
+        fovx = transforms.camera_angle_x
+        focal = float(.5 * W / np.tan(fovx / 2))
+        camera = PinholeCamera(
+            W=W,
+            H=H,
+            fx=focal * image_scale,
+            fy=focal * image_scale,
+            cx=W / 2,
+            cy=H / 2,
+        )
+
+    elif isinstance(transforms, TransformJsonNGP):
+        camera = PinholeCamera(
+            W=W,
+            H=H,
+            fx=transforms.fl_x * image_scale,
+            fy=transforms.fl_y * image_scale,
+            cx=transforms.cx * image_scale,
+            cy=transforms.cy * image_scale,
+        )
+
+    else:
+        raise TypeError("unexpected type for transforms: {}, expected one of {}".format(
+            type(transforms),
+            [TransformJsonNeRFSynthetic, TransformJsonNGP],
+        ))
+
+    scene_meta = SceneMeta(
+        bound=transforms.aabb_scale * world_scale,
+        camera=camera,
+    )
+
+    if not load_views:
+        return scene_meta
+
     views = list(
         map(
             lambda frame: ViewMetadata(
@@ -538,34 +579,6 @@ def make_scene_metadata(
 
     if len(views) == 0:
         raise ValueError("loaded zero views from {}".format(transforms_path))
-
-    # shared camera model
-    W, H = views[0].W, views[0].H
-    if isinstance(transforms, TransformJsonNeRFSynthetic):
-        fovx = transforms.camera_angle_x
-        focal = float(.5 * W / np.tan(fovx / 2))
-        camera = PinholeCamera(
-            W=W,
-            H=H,
-            fx=focal * image_scale,
-            fy=focal * image_scale,
-            cx=W / 2,
-            cy=H / 2,
-        )
-    elif isinstance(transforms, TransformJsonNGP):
-        camera = PinholeCamera(
-            W=W,
-            H=H,
-            fx=transforms.fl_x * image_scale,
-            fy=transforms.fl_y * image_scale,
-            cx=transforms.cx * image_scale,
-            cy=transforms.cy * image_scale,
-        )
-    else:
-        raise TypeError("unexpected type for transforms: {}, expected one of {}".format(
-            type(transforms),
-            [TransformJsonNeRFSynthetic, TransformJsonNGP],
-        ))
 
     # flatten
     # int,[n_pixels, 2]
@@ -598,14 +611,14 @@ def make_scene_metadata(
     # float,[n_views, 3+9+3]
     all_transforms = jnp.concatenate([all_Rs, all_Ts], axis=-1)
 
-    scene = SceneMetadata(
-        camera=camera,
+    scene_data = SceneData(
+        meta=scene_meta,
         all_xys=all_xys,
         all_rgbas=all_rgbas,
         all_transforms=all_transforms,
     )
 
-    return scene, views
+    return scene_data, views
 
 
 @jit_jaxfn_with(static_argnames=["size", "loop", "shuffle"])
@@ -623,7 +636,7 @@ def make_permutation(
 
 
 def main():
-    scene, views = make_scene_metadata(
+    scene, views = load_scene(
         rootdir="data/nerf/nerf_synthetic/lego",
         split="train",
         world_scale=.6,

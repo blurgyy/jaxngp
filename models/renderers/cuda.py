@@ -18,7 +18,6 @@ from utils.data import cascades_from_bound
 from utils.types import (
     NeRFState,
     OccupancyDensityGrid,
-    PinholeCamera,
     RigidTransformation,
 )
 
@@ -38,7 +37,7 @@ def update_ogrid(
     # (2) randomly sample 𝑀 candidate cells, and set their value to the maximum of their current
     # value and the density component of the NeRF model at a random location within the cell.
     G3 = state.raymarch.density_grid_res ** 3
-    cascades = cascades_from_bound(state.scene.bound)
+    cascades = cascades_from_bound(state.scene_meta.bound)
     for cas in range(cascades):
         if update_all:
             # During the first 256 training steps, we sample 𝑀 = 𝐾 · 128^{3} cells uniformly without
@@ -62,7 +61,7 @@ def update_ogrid(
 
         coordinates = morton3d_invert(indices).astype(jnp.float32)
         coordinates = coordinates / (state.raymarch.density_grid_res - 1) * 2 - 1  # in [-1, 1]
-        mip_bound = min(state.scene.bound, 2**cas)
+        mip_bound = min(state.scene_meta.bound, 2**cas)
         half_cell_width = mip_bound / state.raymarch.density_grid_res
         coordinates *= mip_bound - half_cell_width  # in [-mip_bound+half_cell_width, mip_bound-half_cell_width]
         # random point inside grid cells
@@ -90,7 +89,7 @@ def update_ogrid(
     # (3) update the occupancy bits by thresholding each cell’s density with 𝑡 = 0.01 · 1024/√3,
     # which corresponds to thresholding the opacity of a minimal ray marching step by 1 − exp(−0.01)
     # ≈ 0.01.
-    density_threshold = .01 * state.raymarch.diagonal_n_steps / (2 * min(state.scene.bound, 1) * 3**.5)
+    density_threshold = .01 * state.raymarch.diagonal_n_steps / (2 * min(state.scene_meta.bound, 1) * 3**.5)
     mean_density = jnp.sum(jnp.where(density_grid > 0, density_grid, 0)) / jnp.sum(jnp.where(density_grid > 0, 1, 0))
     density_threshold = jnp.minimum(density_threshold, mean_density)
     # density_threshold = 1e-2
@@ -166,7 +165,7 @@ def render_rays_train(
     # skip the empty space between camera and scene bbox
     # [n_rays], [n_rays]
     t_starts, t_ends = make_near_far_from_bound(
-        bound=state.scene.bound,
+        bound=state.scene_meta.bound,
         o=o_world,
         d=d_world
     )
@@ -179,10 +178,10 @@ def render_rays_train(
     measured_batch_size_before_compaction, rays_n_samples, rays_sample_startidx, ray_pts, ray_dirs, dss, z_vals = march_rays(
         total_samples=total_samples,
         diagonal_n_steps=state.raymarch.diagonal_n_steps,
-        K=cascades_from_bound(state.scene.bound),
+        K=cascades_from_bound(state.scene_meta.bound),
         G=state.raymarch.density_grid_res,
-        bound=state.scene.bound,
-        stepsize_portion=state.scene.stepsize_portion,
+        bound=state.scene_meta.bound,
+        stepsize_portion=state.scene_meta.stepsize_portion,
         rays_o=o_world,
         rays_d=d_world,
         t_starts=t_starts.ravel(),
@@ -238,11 +237,11 @@ def march_and_integrate_inference(
 ):
     counter, indices, n_samples, t_starts, xyzdirs, dss, z_vals = march_rays_inference(
         diagonal_n_steps=state.raymarch.diagonal_n_steps,
-        K=cascades_from_bound(state.scene.bound),
+        K=cascades_from_bound(state.scene_meta.bound),
         G=state.raymarch.density_grid_res,
         march_steps_cap=march_steps_cap,
-        bound=state.scene.bound,
-        stepsize_portion=state.scene.stepsize_portion,
+        bound=state.scene_meta.bound,
+        stepsize_portion=state.scene_meta.stepsize_portion,
         rays_o=rays_o,
         rays_d=rays_d,
         t_starts=t_starts,
@@ -280,15 +279,14 @@ def march_and_integrate_inference(
 
 def render_image_inference(
     KEY: jran.KeyArray,
-    camera: PinholeCamera,
     transform_cw: RigidTransformation,
     state: NeRFState,
 ):
-    o_world, d_world = make_rays_worldspace(camera=camera, transform_cw=transform_cw)
-    t_starts, t_ends = make_near_far_from_bound(state.scene.bound, o_world, d_world)
-    rays_rgb = jnp.zeros((camera.n_pixels, 3), dtype=jnp.float32)
-    rays_T = jnp.ones(camera.n_pixels, dtype=jnp.float32)
-    rays_depth = jnp.zeros(camera.n_pixels, dtype=jnp.float32)
+    o_world, d_world = make_rays_worldspace(camera=state.scene_meta.camera, transform_cw=transform_cw)
+    t_starts, t_ends = make_near_far_from_bound(state.scene_meta.bound, o_world, d_world)
+    rays_rgb = jnp.zeros((state.scene_meta.camera.n_pixels, 3), dtype=jnp.float32)
+    rays_T = jnp.ones(state.scene_meta.camera.n_pixels, dtype=jnp.float32)
+    rays_depth = jnp.zeros(state.scene_meta.camera.n_pixels, dtype=jnp.float32)
     if state.use_background_model:
         bg = state.bg_fn({"params": state.locked_params["bg"]}, o_world, d_world)
     elif state.render.random_bg:
@@ -298,9 +296,9 @@ def render_image_inference(
         bg = state.render.bg
     rays_bg = jnp.broadcast_to(jnp.asarray(bg), rays_rgb.shape)
 
-    o_world, d_world, t_starts, t_ends, rays_bg, rays_rgb, rays_T, rays_depth, param_dict = map(
+    o_world, d_world, t_starts, t_ends, rays_bg, rays_rgb, rays_T, rays_depth = map(
         jax.lax.stop_gradient,
-        [o_world, d_world, t_starts, t_ends, rays_bg, rays_rgb, rays_T, rays_depth, {"params": state.locked_params["nerf"]}],
+        [o_world, d_world, t_starts, t_ends, rays_bg, rays_rgb, rays_T, rays_depth],
     )
 
     if state.batch_config.mean_effective_samples_per_ray > 7:
@@ -315,8 +313,8 @@ def render_image_inference(
     indices = jnp.zeros(n_rays, dtype=jnp.uint32)
     n_rendered_rays = 0
 
-    while n_rendered_rays < camera.n_pixels:
-        iters = max(1, (camera.n_pixels - n_rendered_rays) // n_rays)
+    while n_rendered_rays < state.scene_meta.camera.n_pixels:
+        iters = max(1, (state.scene_meta.camera.n_pixels - n_rendered_rays) // n_rays)
         iters = 2 ** int(math.log2(iters))
 
         terminate_cnt = 0
@@ -343,9 +341,9 @@ def render_image_inference(
             terminate_cnt += iter_terminate_cnt
         n_rendered_rays += terminate_cnt
 
-    bg_array_f32 = rays_bg.reshape((camera.H, camera.W, 3))
-    image_array_u8 = jnp.clip(jnp.round(rays_rgb * 255), 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W, 3))
-    rays_depth_f32 = rays_depth / (state.scene.bound * 2 + jnp.linalg.norm(transform_cw.translation))
-    depth_array_u8 = jnp.clip(jnp.round(rays_depth_f32 * 255), 0, 255).astype(jnp.uint8).reshape((camera.H, camera.W))
+    bg_array_f32 = rays_bg.reshape((state.scene_meta.camera.H, state.scene_meta.camera.W, 3))
+    image_array_u8 = jnp.clip(jnp.round(rays_rgb * 255), 0, 255).astype(jnp.uint8).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W, 3))
+    rays_depth_f32 = rays_depth / (state.scene_meta.bound * 2 + jnp.linalg.norm(transform_cw.translation))
+    depth_array_u8 = jnp.clip(jnp.round(rays_depth_f32 * 255), 0, 255).astype(jnp.uint8).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W))
 
     return bg_array_f32, image_array_u8, depth_array_u8
