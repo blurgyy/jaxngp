@@ -281,7 +281,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
         )
         logger.info("training state of epoch {} saved to: {}".format(ep_log, ckpt_name))
 
-        if ep_log % args.train.validate_interval_epochs == 0:
+        if ep_log % args.train.validate_every == 0:
             val_start_time = time.time()
             rendered_images: List[RenderedImage] = []
             state_eval = state\
