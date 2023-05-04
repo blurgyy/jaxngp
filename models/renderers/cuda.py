@@ -1,8 +1,6 @@
-from collections.abc import Callable
 import math
 from typing import Union
 
-from flax.core.scope import FrozenVariableDict
 import jax
 import jax.numpy as jnp
 import jax.random as jran
@@ -18,13 +16,10 @@ from volrendjax import (
 from utils.common import jit_jaxfn_with
 from utils.data import cascades_from_bound
 from utils.types import (
-    DensityAndRGB,
     NeRFState,
     OccupancyDensityGrid,
     PinholeCamera,
-    RayMarchingOptions,
     RigidTransformation,
-    SceneOptions,
 )
 
 from ._utils import make_rays_worldspace
