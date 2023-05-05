@@ -136,21 +136,24 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
     logger.info("configurations saved to '{}'".format(args.exp_dir.joinpath("config.yaml")))
 
     # data
+    logger.info("loading training frames")
     scene_train, _ = data.load_scene(
-        rootdir=args.data_root,
-        split="train",
+        srcs=args.frames_train,
         world_scale=args.scene.world_scale,
         image_scale=args.scene.image_scale,
     )
 
-    scene_val, val_views = data.load_scene(
-        rootdir=args.data_root,
-        split="val",
-        world_scale=args.scene.world_scale,
-        image_scale=args.scene.image_scale,
-    )
+    if len(args.frames_val) > 0:
+        logger.info("loading validation frames")
+        scene_val, val_views = data.load_scene(
+            srcs=args.frames_val,
+            world_scale=args.scene.world_scale,
+            image_scale=args.scene.image_scale,
+        )
+        assert scene_train.meta == scene_val.meta
+    else:
+        logger.warn("got empty validation set, this run will not do validation")
 
-    assert scene_train.meta == scene_val.meta
     scene_meta = scene_train.meta
 
     # model parameters
@@ -286,6 +289,10 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
         logger.info("training state of epoch {} saved to: {}".format(ep_log, ckpt_name))
 
         if ep_log % args.train.validate_every == 0:
+            if len(args.frames_val) == 0:
+                logger.warn("empty validation set, skipping validation")
+                continue
+
             val_start_time = time.time()
             rendered_images: List[RenderedImage] = []
             state_eval = state\

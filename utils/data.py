@@ -1,5 +1,7 @@
+import collections
 from concurrent.futures import ThreadPoolExecutor
 import dataclasses
+import functools
 import json
 import math
 from pathlib import Path
@@ -495,25 +497,73 @@ def make_image_metadata(
     )
 
 
+def merge_transforms(transforms: Sequence[TransformJsonNGP | TransformJsonNeRFSynthetic]) -> TransformJsonNGP | TransformJsonNeRFSynthetic:
+    return functools.reduce(
+        lambda lhs, rhs: lhs.merge(rhs),
+        transforms,
+    )
+
+
+def load_transform_json_recursive(src: Path | str) -> TransformJsonNGP | TransformJsonNeRFSynthetic | None:
+    """
+    returns a single transforms object with the `file_path` in its `frames` attribute converted to
+    absolute paths
+    """
+    src = Path(src)
+
+    if src.is_dir():
+        all_transforms = tuple(filter(
+            lambda xform: xform is not None,
+            map(load_transform_json_recursive, src.iterdir()),
+        ))
+        if len(all_transforms) == 0:
+            return None
+
+        # merge transforms found from descendants if any
+        transforms = merge_transforms(all_transforms)
+
+    elif src.suffix == ".json":  # skip other files for speed
+        try:
+            transforms = json.load(open(src))
+        except:
+            # unreadable, or not a json
+            return None
+        try:
+            transforms = (
+                TransformJsonNeRFSynthetic(**transforms)
+                if transforms.get("camera_angle_x") is not None
+                else TransformJsonNGP(**transforms)
+            )
+            transforms = transforms.make_absolute(src.parent)
+        except TypeError:
+            # not a valid transform.json
+            return None
+
+    else:
+        return None
+
+    return transforms
+
+
 def load_scene(
-    rootdir: Path | str,
-    split: Literal["train", "val", "test"],
+    srcs: Sequence[Path | str],
     world_scale: float,
     image_scale: float,
     load_views: bool=True,
 ) -> SceneMeta | Tuple[SceneData, List[ViewMetadata]]:
-    rootdir = Path(rootdir)
-
-    transforms_path = rootdir.joinpath("transforms_{}.json".format(split))
-    transforms = json.load(open(transforms_path))
-    transforms = (
-        TransformJsonNeRFSynthetic(**transforms)
-        if transforms.get("camera_angle_x") is not None
-        else TransformJsonNGP(**transforms)
+    assert isinstance(srcs, collections.abc.Sequence) and not isinstance(srcs, str), (
+        "load_scene accepts a sequence of paths as srcs to load, did you mean '{}'?".format([srcs])
     )
+    srcs = map(Path, srcs)
+
+    transforms = merge_transforms(map(load_transform_json_recursive, srcs))
+
+    if transforms is None:
+        raise FileNotFoundError("could not find any valid transforms in {}".format(srcs))
+    if len(transforms.frames) == 0:
+        raise ValueError("could not find any frame in {}".format(srcs))
 
     def try_image_extensions(
-        basedir: Path,
         file_path: str,
         extensions: List[str]=["png", "jpg", "jpeg"],
     ) -> Path:
@@ -522,19 +572,16 @@ def load_scene(
         for ext in extensions:
             if len(ext) > 0 and ext[0] != ".":
                 ext = "." + ext
-            p = basedir.joinpath(file_path + ext)
+            p = Path(file_path + ext)
             if p.exists():
                 return p
         raise FileNotFoundError(
-            "could not find a file at {} with path {} and extensions {}".format(basedir, file_path, extensions)
+            "could not find a file at {} with any extension of {}".format(file_path, extensions)
         )
-
-    if len(transforms.frames) == 0:
-        raise ValueError("could not find any frame in {}".format(transforms_path))
 
     # shared camera model
     if isinstance(transforms, TransformJsonNeRFSynthetic):
-        _img = Image.open(try_image_extensions(rootdir, transforms.frames[0].file_path))
+        _img = Image.open(try_image_extensions(transforms.frames[0].file_path))
         W, H = int(_img.width * image_scale), int(_img.height * image_scale)
         fovx = transforms.camera_angle_x
         focal = float(.5 * W / np.tan(fovx / 2))
@@ -579,7 +626,7 @@ def load_scene(
                     rotation=frame.transform_matrix_numpy[:3, :3],
                     translation=frame.transform_matrix_numpy[:3, 3],
                 ),
-                file=try_image_extensions(rootdir, frame.file_path),
+                file=try_image_extensions(frame.file_path),
             ),
             transforms.frames,
         )
@@ -596,7 +643,7 @@ def load_scene(
         list(tqdm(
             ThreadPoolExecutor().map(lambda view: view.rgbas, views),
             total=len(views),
-            desc="pre-loading views (split={})".format(split),
+            desc="pre-loading views",
             bar_format=tqdm_format),
         ),
         axis=0,

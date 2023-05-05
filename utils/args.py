@@ -1,6 +1,9 @@
 from dataclasses import dataclass
+import dataclasses
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Tuple
+
+import tyro
 
 from utils.types import LogLevel, RayMarchingOptions, RenderingOptions, SceneOptions
 
@@ -82,10 +85,7 @@ class ImageFitArgs:
 
 
 @dataclass(frozen=True, kw_only=True)
-class _NeRFArgs:
-    # a nerf-synthetic format directory
-    data_root: Path
-
+class NeRFArgsBase:
     # experiment artifacts are saved under this directory
     exp_dir: Path
 
@@ -97,9 +97,15 @@ class _NeRFArgs:
 
 
 @dataclass(frozen=True, kw_only=True)
-class NeRFTrainingArgs(_NeRFArgs):
+class NeRFTrainingArgs(NeRFArgsBase):
+    # directories or transform.json files containing data for training
+    frames_train: tyro.conf.Positional[Tuple[Path, ...]]
+
+    # directories or transform.json files containing data for validation
+    frames_val: Tuple[Path, ...]=()
+
     # if specified, continue training from this checkpoint
-    train_ckpt: Path | None=None
+    ckpt: Path | None=None
 
     # training hyper parameters
     train: TrainingArgs=TrainingArgs(
@@ -144,8 +150,10 @@ class NeRFTrainingArgs(_NeRFArgs):
 
 
 @dataclass(frozen=True, kw_only=True)
-class NeRFTestingArgs(_NeRFArgs):
-    # if specified, switch to test mode and use this checkpoint
+class NeRFTestingArgs(NeRFArgsBase):
+    frames: tyro.conf.Positional[Tuple[Path, ...]]
+
+    # use checkpoint from this path (can be a directory) for testing
     ckpt: Path
 
     # which split to test on

@@ -27,9 +27,9 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         logger.error("specified checkpoint '{}' does not exist".format(args.ckpt))
         exit(1)
 
+    logger.info("loading testing frames")
     scene_data, test_views = data.load_scene(
-        rootdir=args.data_root,
-        split=args.split,
+        srcs=args.frames,
         world_scale=args.scene.world_scale,
         image_scale=args.scene.image_scale,
     )

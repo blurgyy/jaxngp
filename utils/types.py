@@ -1,7 +1,7 @@
 import dataclasses
 import json
 from pathlib import Path
-from typing import Callable, Literal, Sequence, Tuple
+from typing import Callable, Literal, Tuple
 from PIL import Image
 
 import chex
@@ -14,7 +14,6 @@ import numpy as np
 import pydantic
 
 
-ColmapMatcherType = Literal["Exhaustive", "Sequential"]
 PositionalEncodingType = Literal["identity", "frequency", "hashgrid"]
 DirectionalEncodingType = Literal["identity", "sh", "shcuda"]
 EncodingType = Literal[PositionalEncodingType, DirectionalEncodingType]
@@ -27,8 +26,10 @@ ActivationType = Literal[
     "truncated_thresholded_exponential",
 ]
 
-DensityAndRGB = Tuple[jax.Array, jax.Array]
+ColmapMatcherType = Literal["Exhaustive", "Sequential"]
 LogLevel = Literal["DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL"]
+
+DensityAndRGB = Tuple[jax.Array, jax.Array]
 RGBColor = Tuple[float, float, float]
 RGBColorU8 = Tuple[int, int, int]
 FourFloats = Tuple[float, float, float, float]
@@ -222,12 +223,47 @@ class TransformJsonFrame:
 
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonBase:
-    frames: Sequence[TransformJsonFrame]
+    frames: Tuple[TransformJsonFrame, ...]
 
     # scene's bound, the name `aabb_scale` is for compatibility with instant-ngp (note that
     # instant-ngp requires this value to be a power of 2, other than that a value that can work with
     # instant-ngp will work with this code base as well).
     aabb_scale: float=dataclasses.field(default_factory=lambda: 1.5, kw_only=True)
+
+    def merge(self, rhs: "TransformJsonBase") -> "TransformJsonBase":
+        if rhs is None:
+            return self
+        # sanity checks, transforms to be merged should have same camera intrinsics
+        assert isinstance(rhs, type(self))
+        assert all(
+            getattr(rhs, attr_name) == getattr(self, attr_name)
+            for attr_name in (
+                field
+                for field in self.__dataclass_fields__
+                if field != "frames"
+            )
+        )
+        return dataclasses.replace(
+            self,
+            frames=self.frames + rhs.frames,
+        )
+
+    def make_absolute(self, parent_dir: Path | str) -> "TransformJsonBase":
+        parent_dir = Path(parent_dir)
+        return dataclasses.replace(
+            self,
+            frames=tuple(map(
+                lambda f: dataclasses.replace(
+                    f,
+                    file_path=(
+                        f.file_path
+                        if Path(f.file_path).is_absolute()
+                        else parent_dir.joinpath(f.file_path).absolute().as_posix()
+                    ),
+                ),
+                self.frames,
+            )),
+        )
 
     def as_json(self, /, indent: int=2) -> str:
         return json.dumps(dataclasses.asdict(self), indent=indent)
@@ -260,8 +296,6 @@ class TransformJsonNGP(TransformJsonBase):
 
     w: int
     h: int
-
-    frames: Sequence[TransformJsonFrame]
 
 
 @dataclass
