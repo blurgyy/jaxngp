@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from utils.types import LogLevel, RayMarchingOptions, RenderingOptions, SceneOptions
 
@@ -22,7 +22,7 @@ class TrainingArgs:
     # learning rate
     lr: float
 
-    momentum: Optional[float]
+    momentum: float | None
 
     # batch size
     bs: int
@@ -45,10 +45,10 @@ class TrainingArgs:
 
     # how many epochs should a new checkpoint to be kept (in addition to keeping the last `keep`
     # checkpoints)
-    keep_every: Optional[int]=None
+    keep_every: int | None=None
 
     @property
-    def keep_every_n_steps(self) -> Optional[int]:
+    def keep_every_n_steps(self) -> int | None:
         if self.keep_every is None:
             return None
         else:
@@ -99,7 +99,7 @@ class _NeRFArgs:
 @dataclass(frozen=True, kw_only=True)
 class NeRFTrainingArgs(_NeRFArgs):
     # if specified, continue training from this checkpoint
-    train_ckpt: Optional[Path]=None
+    train_ckpt: Path | None=None
 
     # training hyper parameters
     train: TrainingArgs=TrainingArgs(

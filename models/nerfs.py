@@ -1,5 +1,5 @@
 import functools
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Tuple
 
 import flax.linen as nn
 import jax
@@ -36,7 +36,7 @@ class NeRF(nn.Module):
     rgb_activation: Callable
 
     @nn.compact
-    def __call__(self, xyz: jax.Array, dir: Optional[jax.Array]) -> Tuple[jax.Array, jax.Array]:
+    def __call__(self, xyz: jax.Array, dir: jax.Array | None) -> Tuple[jax.Array, jax.Array]:
         """
         Inputs:
             xyz [..., 3]: coordinates in $\R^3$.

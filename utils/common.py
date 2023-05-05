@@ -3,16 +3,7 @@ import logging
 import logging
 from pathlib import Path
 import random
-from typing import (
-    Any,
-    Dict,
-    Hashable,
-    Iterable,
-    Optional,
-    Optional,
-    Sequence,
-    get_args,
-)
+from typing import Any, Dict, Hashable, Iterable, Sequence, get_args
 
 import colorama
 from colorama import Back, Fore, Style
@@ -27,8 +18,8 @@ from .types import LogLevel
 
 
 class Logger(logging.Logger):
-    _tb: Optional[tensorboard.SummaryWriter]=None
-    _executor: Optional[Executor]=None
+    _tb: tensorboard.SummaryWriter | None=None
+    _executor: Executor | None=None
 
     _last_job: Future=None
 
@@ -84,9 +75,9 @@ def vmap_jaxfn_with(
         # kwargs copied from `jax.vmap` source
         in_axes: int | Sequence[Any]=0,
         out_axes: Any = 0,
-        axis_name: Optional[Hashable] = None,
-        axis_size: Optional[int] = None,
-        spmd_axis_name: Optional[Hashable] = None,
+        axis_name: Hashable | None = None,
+        axis_size: int | None = None,
+        spmd_axis_name: Hashable | None = None,
     ):
     return lambda fn: jax.vmap(
             fn,
@@ -108,12 +99,12 @@ def jit_jaxfn_with(
         # kwargs copied from `jax.jit` source
         static_argnums: int | Iterable[int] | None = None,
         static_argnames: str | Iterable[str] | None = None,
-        device: Optional[xc.Device] = None,
-        backend: Optional[str] = None,
+        device: xc.Device | None = None,
+        backend: str | None = None,
         donate_argnums: int | Iterable[int] = (),
         inline: bool = False,
         keep_unused: bool = False,
-        abstracted_axes: Optional[Any] = None,
+        abstracted_axes: Any | None = None,
     ):
     return lambda fn: jax.jit(
             fn,
@@ -131,7 +122,7 @@ def jit_jaxfn_with(
 def setup_logging(
     name: str,
     /,
-    file: Optional[str | Path]=None,
+    file: str | Path | None=None,
     with_tensorboard: bool=False,
     level: LogLevel="INFO",
     file_level: LogLevel="DEBUG",
