@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import dataclasses
 from pathlib import Path
 from typing import Literal, Tuple
 
@@ -132,7 +131,7 @@ class NeRFTrainingArgs(NeRFArgsBase):
         random_bg=True,
     )
     scene: SceneOptions=SceneOptions(
-        world_scale=0.6,
+        world_scale=1.0,
         image_scale=1.0,
         with_bg=False,
     )
@@ -175,7 +174,7 @@ class NeRFTestingArgs(NeRFArgsBase):
         random_bg=False,
     )
     scene: SceneOptions=SceneOptions(
-        world_scale=0.6,
+        world_scale=1.0,
         image_scale=1.0,
         with_bg=False,
     )
