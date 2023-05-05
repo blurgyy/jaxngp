@@ -1,9 +1,10 @@
 import dataclasses
 import json
+import math
 from pathlib import Path
 from typing import Callable, Literal, Tuple
-from PIL import Image
 
+from PIL import Image
 import chex
 from flax import struct
 from flax.struct import dataclass
@@ -374,6 +375,10 @@ class SceneMeta:
     camera: PinholeCamera
 
     frames: Tuple[TransformJsonFrame, ...]=struct.field(pytree_node=False)
+
+    @property
+    def cascades(self) -> int:
+        return max(1, int(1 + math.ceil(math.log2(self.bound))))
 
     @property
     def n_pixels(self) -> float:

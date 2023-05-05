@@ -367,10 +367,6 @@ def write_video(dest: Path, images: Sequence, *, fps: int=24, loop: int=3):
         video_writer.append_data(np.asarray(im))
 
 
-def cascades_from_bound(bound: float) -> int:
-    return max(1, int(1 + math.ceil(math.log2(bound))))
-
-
 @jax.jit
 def set_pixels(imgarr: jax.Array, xys: jax.Array, selected: jax.Array, preds: jax.Array) -> jax.Array:
     H, W = imgarr.shape[:2]

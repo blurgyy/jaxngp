@@ -203,7 +203,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
     # training state
     state = NeRFState.create(
         ogrid=OccupancyDensityGrid.create(
-            cascades=data.cascades_from_bound(scene_meta.bound),
+            cascades=scene_meta.cascades,
             grid_resolution=args.raymarch.density_grid_res,
         ),
         batch_config=NeRFBatchConfig(

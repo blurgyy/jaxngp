@@ -13,7 +13,6 @@ from volrendjax import (
 )
 
 from utils.common import jit_jaxfn_with
-from utils.data import cascades_from_bound
 from utils.types import (
     NeRFState,
     OccupancyDensityGrid,
@@ -36,8 +35,7 @@ def update_ogrid(
     # (2) randomly sample 𝑀 candidate cells, and set their value to the maximum of their current
     # value and the density component of the NeRF model at a random location within the cell.
     G3 = state.raymarch.density_grid_res ** 3
-    cascades = cascades_from_bound(state.scene_meta.bound)
-    for cas in range(cascades):
+    for cas in range(state.scene_meta.cascades):
         if update_all:
             # During the first 256 training steps, we sample 𝑀 = 𝐾 · 128^{3} cells uniformly without
             # repetition.
@@ -177,7 +175,7 @@ def render_rays_train(
     measured_batch_size_before_compaction, rays_n_samples, rays_sample_startidx, ray_pts, ray_dirs, dss, z_vals = march_rays(
         total_samples=total_samples,
         diagonal_n_steps=state.raymarch.diagonal_n_steps,
-        K=cascades_from_bound(state.scene_meta.bound),
+        K=state.scene_meta.cascades,
         G=state.raymarch.density_grid_res,
         bound=state.scene_meta.bound,
         stepsize_portion=state.scene_meta.stepsize_portion,
@@ -236,7 +234,7 @@ def march_and_integrate_inference(
 ):
     counter, indices, n_samples, t_starts, xyzdirs, dss, z_vals = march_rays_inference(
         diagonal_n_steps=state.raymarch.diagonal_n_steps,
-        K=cascades_from_bound(state.scene_meta.bound),
+        K=state.scene_meta.cascades,
         G=state.raymarch.density_grid_res,
         march_steps_cap=march_steps_cap,
         bound=state.scene_meta.bound,
