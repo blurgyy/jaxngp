@@ -170,7 +170,7 @@ class RenderingOptions:
 @empty_impl
 @pydantic.dataclasses.dataclass(frozen=True)
 class SceneOptions:
-    # scale camera positions with this scalar
+    # scale both the scene's camera positions and bounding box with this factor
     world_scale: float
 
     # scale input images in case they are too large
@@ -220,6 +220,14 @@ class TransformJsonFrame:
     def transform_matrix_jax_array(self) -> jax.Array:
         return jnp.asarray(self.transform_matrix)
 
+    def scale_camera_positions(self, scale: float) -> "TransformJsonFrame":
+        new_transform_matrix = self.transform_matrix_numpy
+        new_transform_matrix[:3, 3] *= scale
+        return dataclasses.replace(
+            self,
+            transform_matrix=new_transform_matrix.tolist(),
+        )
+
 
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonBase:
@@ -228,7 +236,18 @@ class TransformJsonBase:
     # scene's bound, the name `aabb_scale` is for compatibility with instant-ngp (note that
     # instant-ngp requires this value to be a power of 2, other than that a value that can work with
     # instant-ngp will work with this code base as well).
-    aabb_scale: float=dataclasses.field(default_factory=lambda: 1.5, kw_only=True)
+    aabb_scale: float=dataclasses.field(default_factory=lambda: 1., kw_only=True)
+
+    # camera's translation vectors should be scaled with this factor while loading (default value
+    # taken from NVLabs/instant-ngp/include/neural-graphics-primitives/nerf_loader.h)
+    # NOTE: this value does not affect scene's bounding box
+    scale: float=dataclasses.field(default_factory=lambda: 1/3, kw_only=True)
+
+    def scale_camera_positions(self) -> "TransformJsonBase":
+        return dataclasses.replace(
+            self,
+            frames=tuple(map(lambda f: f.scale_camera_positions(self.scale), self.frames)),
+        )
 
     def merge(self, rhs: "TransformJsonBase") -> "TransformJsonBase":
         if rhs is None:

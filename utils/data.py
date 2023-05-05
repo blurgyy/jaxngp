@@ -533,7 +533,7 @@ def load_transform_json_recursive(src: Path | str) -> TransformJsonNGP | Transfo
                 if transforms.get("camera_angle_x") is not None
                 else TransformJsonNGP(**transforms)
             )
-            transforms = transforms.make_absolute(src.parent)
+            transforms = transforms.make_absolute(src.parent).scale_camera_positions()
         except TypeError:
             # not a valid transform.json
             return None
@@ -553,7 +553,7 @@ def load_scene(
     assert isinstance(srcs, collections.abc.Sequence) and not isinstance(srcs, str), (
         "load_scene accepts a sequence of paths as srcs to load, did you mean '{}'?".format([srcs])
     )
-    srcs = map(Path, srcs)
+    srcs = list(map(Path, srcs))
 
     transforms = merge_transforms(map(load_transform_json_recursive, srcs))
 
