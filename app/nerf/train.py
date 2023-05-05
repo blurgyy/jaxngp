@@ -56,10 +56,7 @@ def train_epoch(
             KEY=key,
             state=state,
             total_samples=total_samples,
-            camera=scene.meta.camera,
-            all_xys=scene.all_xys,
-            all_rgbas=scene.all_rgbas,
-            all_transforms=scene.all_transforms,
+            scene=scene,
             perm=perm,
         )
         n_processed_rays += state.batch_config.n_rays
@@ -246,7 +243,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
         KEY, key = jran.split(KEY, 2)
         permutation = data.make_permutation(
             key,
-            size=scene_train.all_xys.shape[0],
+            size=scene_train.meta.n_pixels,
             loop=args.train.data_loop,
             shuffle=True,
         )
@@ -324,7 +321,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
 
             gt_rgbs_f32 = list(map(
                 lambda val_view, rendered_image: data.blend_rgba_image_array(
-                    val_view.image_rgba,
+                    val_view.image_rgba_u8.astype(jnp.float32) / 255,
                     rendered_image.bg,
                 ),
                 val_views,

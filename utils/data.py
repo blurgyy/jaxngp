@@ -28,7 +28,6 @@ from .types import (
     RigidTransformation,
     SceneData,
     SceneMeta,
-    SceneMeta,
     TransformJsonFrame,
     TransformJsonNGP,
     TransformJsonNeRFSynthetic,
@@ -499,7 +498,7 @@ def make_image_metadata(
 
 def merge_transforms(transforms: Sequence[TransformJsonNGP | TransformJsonNeRFSynthetic]) -> TransformJsonNGP | TransformJsonNeRFSynthetic:
     return functools.reduce(
-        lambda lhs, rhs: lhs.merge(rhs),
+        lambda lhs, rhs: lhs.merge(rhs) if lhs is not None else rhs,
         transforms,
     )
 
@@ -613,6 +612,7 @@ def load_scene(
     scene_meta = SceneMeta(
         bound=transforms.aabb_scale * world_scale,
         camera=camera,
+        frames=transforms.frames,
     )
 
     if not load_views:
@@ -632,16 +632,10 @@ def load_scene(
         )
     )
 
-    # flatten
-    # int,[n_pixels, 2]
-    all_xys = jnp.tile(views[0].xys, [len(views), 1])
-
-    # float,[n_pixels, 4]
+    # uint8,[n_pixels, 4]
     all_rgbas = jnp.concatenate(
-        # executor.map() might return the values out-of-order, but that's ok because we assume all
-        # images have the same shape
         list(tqdm(
-            ThreadPoolExecutor().map(lambda view: view.rgbas, views),
+            ThreadPoolExecutor().map(lambda view: view.rgba_u8, views),
             total=len(views),
             desc="pre-loading views",
             bar_format=tqdm_format),
@@ -665,8 +659,7 @@ def load_scene(
 
     scene_data = SceneData(
         meta=scene_meta,
-        all_xys=all_xys,
-        all_rgbas=all_rgbas,
+        all_rgbas_u8=all_rgbas,
         all_transforms=all_transforms,
     )
 

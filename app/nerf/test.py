@@ -4,6 +4,7 @@ from PIL import Image
 from flax.training import checkpoints
 import jax
 import jax.random as jran
+import jax.numpy as jnp
 import numpy as np
 from tqdm import tqdm
 
@@ -77,7 +78,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
 
     gt_rgbs_f32 = map(
         lambda test_view, rendered_image: data.blend_rgba_image_array(
-            test_view.image_rgba,
+            test_view.image_rgba_u8.astype(jnp.float32) / 255,
             rendered_image.bg,
         ),
         test_views,

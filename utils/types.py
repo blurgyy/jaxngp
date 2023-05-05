@@ -314,12 +314,12 @@ class ViewMetadata:
         return image
 
     @property
-    def image_rgba(self) -> jax.Array:
-        image = jnp.asarray(self.image_pil).astype(jnp.float32) / 255
+    def image_rgba_u8(self) -> jax.Array:
+        image = jnp.asarray(self.image_pil)
         if image.shape[-1] == 1:
-            image = jnp.concatenate([image] * 3 + [jnp.ones_like(image[..., :1])], axis=-1)
+            image = jnp.concatenate([image] * 3 + [255 * jnp.ones_like(image[..., :1])], axis=-1)
         elif image.shape[-1] == 3:
-            image = jnp.concatenate([image, jnp.ones_like(image[..., :1])], axis=-1)
+            image = jnp.concatenate([image, 255 * jnp.ones_like(image[..., :1])], axis=-1)
         chex.assert_axis_dimension(image, -1, 4)
         return image
 
@@ -340,8 +340,8 @@ class ViewMetadata:
 
     # float, [H*W, 4]: normalized rgba values in range [0, 1]
     @property
-    def rgbas(self) -> jax.Array:
-        flattened = self.image_rgba.reshape(self.H * self.W, -1)
+    def rgba_u8(self) -> jax.Array:
+        flattened = self.image_rgba_u8.reshape(self.H * self.W, -1)
         chex.assert_axis_dimension(flattened, -1, 4)
         return flattened
 
@@ -353,6 +353,12 @@ class SceneMeta:
 
     # the camera model used to render this scene
     camera: PinholeCamera
+
+    frames: Tuple[TransformJsonFrame, ...]=struct.field(pytree_node=False)
+
+    @property
+    def n_pixels(self) -> float:
+        return self.camera.n_pixels * len(self.frames)
 
     # this is the same thing as `dt_gamma` in ashawkey/torch-ngp
     @property
@@ -373,11 +379,8 @@ class SceneMeta:
 class SceneData:
     meta: SceneMeta
 
-    # int,[n_pixels, 2], flattened xy coordinates from loaded images
-    all_xys: jax.Array
-
     # float,[n_pixels, 4], flattened rgb values from loaded images
-    all_rgbas: jax.Array
+    all_rgbas_u8: jax.Array
 
     # float,[n_views, 9+3] each row comprises of R(flattened,9), T(3), from loaded images
     all_transforms: jax.Array
