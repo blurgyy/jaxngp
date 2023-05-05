@@ -618,19 +618,17 @@ def load_scene(
     if not load_views:
         return scene_meta
 
-    views = list(
-        map(
-            lambda frame: ViewMetadata(
-                scale=image_scale,
-                transform=RigidTransformation(
-                    rotation=frame.transform_matrix_numpy[:3, :3],
-                    translation=frame.transform_matrix_numpy[:3, 3],
-                ),
-                file=try_image_extensions(frame.file_path),
+    views = list(map(
+        lambda frame: ViewMetadata(
+            scale=image_scale,
+            transform=RigidTransformation(
+                rotation=frame.transform_matrix_numpy[:3, :3],
+                translation=frame.transform_matrix_numpy[:3, 3],
             ),
-            transforms.frames,
-        )
-    )
+            file=try_image_extensions(frame.file_path),
+        ),
+        transforms.frames,
+    ))
 
     # uint8,[n_pixels, 4]
     all_rgbas = jnp.concatenate(

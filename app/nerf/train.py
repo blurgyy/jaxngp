@@ -5,7 +5,6 @@ import time
 from typing import List
 
 from flax.training import checkpoints
-import jax
 import jax.numpy as jnp
 import jax.random as jran
 import optax
@@ -234,7 +233,6 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
         gc.collect()
 
         ep_log = ep + 1
-        KEY, key = jran.split(KEY, 2)
 
         try:
             KEY, key = jran.split(KEY, 2)
