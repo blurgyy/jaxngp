@@ -227,7 +227,7 @@ class TransformJsonBase:
     # scene's bound, the name `aabb_scale` is for compatibility with instant-ngp (note that
     # instant-ngp requires this value to be a power of 2, other than that a value that can work with
     # instant-ngp will work with this code base as well).
-    aabb_scale: float=dataclasses.field(default_factory=lambda: 1.0, kw_only=True)
+    aabb_scale: float=dataclasses.field(default_factory=lambda: 1.5, kw_only=True)
 
     def as_json(self, /, indent: int=2) -> str:
         return json.dumps(dataclasses.asdict(self), indent=indent)

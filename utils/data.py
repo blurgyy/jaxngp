@@ -512,7 +512,11 @@ def load_scene(
         else TransformJsonNGP(**transforms)
     )
 
-    def try_image_extensions(basedir: Path, file_path: str, extensions: List[str]) -> Path:
+    def try_image_extensions(
+        basedir: Path,
+        file_path: str,
+        extensions: List[str]=["png", "jpg", "jpeg"],
+    ) -> Path:
         if "" not in extensions:
             extensions = [""] + list(extensions)
         for ext in extensions:
@@ -525,9 +529,13 @@ def load_scene(
             "could not find a file at {} with path {} and extensions {}".format(basedir, file_path, extensions)
         )
 
+    if len(transforms.frames) == 0:
+        raise ValueError("could not find any frame in {}".format(transforms_path))
+
     # shared camera model
-    W, H = int(transforms.w * image_scale), int(transforms.h * image_scale)
     if isinstance(transforms, TransformJsonNeRFSynthetic):
+        _img = Image.open(try_image_extensions(rootdir, transforms.frames[0].file_path))
+        W, H = int(_img.width * image_scale), int(_img.height * image_scale)
         fovx = transforms.camera_angle_x
         focal = float(.5 * W / np.tan(fovx / 2))
         camera = PinholeCamera(
@@ -541,8 +549,8 @@ def load_scene(
 
     elif isinstance(transforms, TransformJsonNGP):
         camera = PinholeCamera(
-            W=W,
-            H=H,
+            W=int(transforms.w * image_scale),
+            H=int(transforms.h * image_scale),
             fx=transforms.fl_x * image_scale,
             fy=transforms.fl_y * image_scale,
             cx=transforms.cx * image_scale,
@@ -571,14 +579,11 @@ def load_scene(
                     rotation=frame.transform_matrix_numpy[:3, :3],
                     translation=frame.transform_matrix_numpy[:3, 3],
                 ),
-                file=try_image_extensions(rootdir, frame.file_path, [".png", "jpg", "jpeg"]),
+                file=try_image_extensions(rootdir, frame.file_path),
             ),
             transforms.frames,
         )
     )
-
-    if len(views) == 0:
-        raise ValueError("loaded zero views from {}".format(transforms_path))
 
     # flatten
     # int,[n_pixels, 2]
