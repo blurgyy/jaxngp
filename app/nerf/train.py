@@ -32,7 +32,6 @@ def train_epoch(
     KEY: jran.KeyArray,
     state: NeRFState,
     scene: SceneData,
-    permutation: jax.Array,
     n_batches: int,
     total_samples: int,
     ep_log: int,
@@ -44,16 +43,11 @@ def train_epoch(
     running_mean_effective_samp_per_ray = state.batch_config.mean_effective_samples_per_ray
     running_mean_samp_per_ray = state.batch_config.mean_samples_per_ray
 
-    beg_idx = 0
     for _ in (pbar := tqdm(range(n_batches), desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs), bar_format=common.tqdm_format)):
-        if beg_idx >= len(permutation):
-            pbar.close()
-            break
-        KEY, key = jran.split(KEY, 2)
-        perm = permutation[beg_idx:beg_idx+state.batch_config.n_rays]
-        beg_idx += state.batch_config.n_rays
+        KEY, key_perm, key_train_step = jran.split(KEY, 3)
+        perm = jran.choice(key_perm, scene.meta.n_pixels, shape=(state.batch_config.n_rays,), replace=True)
         state, metrics = train_step(
-            KEY=key,
+            KEY=key_train_step,
             state=state,
             total_samples=total_samples,
             scene=scene,
@@ -241,12 +235,6 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
 
         ep_log = ep + 1
         KEY, key = jran.split(KEY, 2)
-        permutation = data.make_permutation(
-            key,
-            size=scene_train.meta.n_pixels,
-            loop=args.train.data_loop,
-            shuffle=True,
-        )
 
         try:
             KEY, key = jran.split(KEY, 2)
@@ -254,7 +242,6 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
                 KEY=key,
                 state=state,
                 scene=scene_train,
-                permutation=permutation,
                 n_batches=args.train.n_batches,
                 total_samples=args.train.bs,
                 ep_log=ep_log,
@@ -360,4 +347,3 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             del state_eval
             del gt_rgbs_f32
             del rendered_images
-        del permutation
