@@ -3,7 +3,7 @@ import dataclasses
 import json
 import math
 from pathlib import Path
-from typing import List, Literal, Sequence, Tuple, Union
+from typing import List, Literal, Sequence, Tuple
 
 from PIL import Image
 import chex
@@ -457,7 +457,7 @@ def get_xyrgbas(imgarr: jax.Array) -> Tuple[jax.Array, jax.Array]:
         )
 
 
-_ImageSourceType = Union[jax.Array, np.ndarray, Image.Image, Path, str],
+_ImageSourceType = jax.Array | np.ndarray | Image.Image | Path | str
 def make_image_metadata(
     image: _ImageSourceType,
     bg: RGBColor,
@@ -496,7 +496,7 @@ def make_image_metadata(
 
 
 def load_scene(
-    rootdir: Union[Path, str],
+    rootdir: Path | str,
     split: Literal["train", "val", "test"],
     world_scale: float,
     image_scale: float,

@@ -1,7 +1,7 @@
 import dataclasses
 import json
 from pathlib import Path
-from typing import Callable, Literal, Sequence, Tuple, Union
+from typing import Callable, Literal, Sequence, Tuple
 from PIL import Image
 
 import chex
@@ -122,7 +122,7 @@ class PinholeCamera:
         return self.H * self.W
 
     @classmethod
-    def from_colmap_txt(cls, txt_path: Union[str, Path]) -> "PinholeCamera":
+    def from_colmap_txt(cls, txt_path: str | Path) -> "PinholeCamera":
         """
         Example usage:
             cam = PinholeCamera.from_colmap_txt("path/to/txt")
@@ -236,12 +236,12 @@ class TransformJsonBase:
     def from_json(cls, jsonstr: str) -> "TransformJsonBase":
         return cls(**json.loads(jsonstr))
 
-    def save(self, path: Union[str, Path]) -> None:
+    def save(self, path: str | Path) -> None:
         path = Path(path)
         path.write_text(self.as_json())
 
     @classmethod
-    def load(cls, path: Union[str, Path]):
+    def load(cls, path: str | Path):
         path = Path(path)
         return cls.from_json(path.read_text())
 

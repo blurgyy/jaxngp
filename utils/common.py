@@ -11,7 +11,6 @@ from typing import (
     Optional,
     Optional,
     Sequence,
-    Union,
     get_args,
 )
 
@@ -33,7 +32,7 @@ class Logger(logging.Logger):
 
     _last_job: Future=None
 
-    def __init__(self, name: str, level: Union[int, LogLevel]) -> None:
+    def __init__(self, name: str, level: int | LogLevel) -> None:
         super().__init__(name, level)
 
     def setup_tensorboard(self, tb: tensorboard.SummaryWriter, executor: Executor) -> None:
@@ -83,7 +82,7 @@ def compose(*fns):
 #   * <https://github.com/google/jax/issues/7449>
 def vmap_jaxfn_with(
         # kwargs copied from `jax.vmap` source
-        in_axes: Union[int, Sequence[Any]] = 0,
+        in_axes: int | Sequence[Any]=0,
         out_axes: Any = 0,
         axis_name: Optional[Hashable] = None,
         axis_size: Optional[int] = None,
@@ -107,11 +106,11 @@ def mkValueError(desc, value, type):
 
 def jit_jaxfn_with(
         # kwargs copied from `jax.jit` source
-        static_argnums: Union[int, Iterable[int], None] = None,
-        static_argnames: Union[str, Iterable[str], None] = None,
+        static_argnums: int | Iterable[int] | None = None,
+        static_argnames: str | Iterable[str] | None = None,
         device: Optional[xc.Device] = None,
         backend: Optional[str] = None,
-        donate_argnums: Union[int, Iterable[int]] = (),
+        donate_argnums: int | Iterable[int] = (),
         inline: bool = False,
         keep_unused: bool = False,
         abstracted_axes: Optional[Any] = None,
@@ -132,7 +131,7 @@ def jit_jaxfn_with(
 def setup_logging(
     name: str,
     /,
-    file: Optional[Union[str, Path]]=None,
+    file: Optional[str | Path]=None,
     with_tensorboard: bool=False,
     level: LogLevel="INFO",
     file_level: LogLevel="DEBUG",

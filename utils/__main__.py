@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from functools import partial, reduce
 import os
 from pathlib import Path
-from typing import Annotated, List, Union
+from typing import Annotated, List
 from typing_extensions import assert_never
 
 from PIL import Image
@@ -67,32 +67,33 @@ class CreateDataset:
     fps: int=3
 
 
-Args = Union[
-    Annotated[
-        Concatenate,
-        tyro.conf.subcommand(
-            name="cat",
-            prefix_name=False,
-            description="concatenate images horizontally or vertically",
-        ),
-    ],
-    Annotated[
-        Metrics,
-        tyro.conf.subcommand(
-            name="metrics",
-            prefix_name=False,
-            description="compute metrics between images",
-        ),
-    ],
-    Annotated[
-        CreateDataset,
-        tyro.conf.subcommand(
-            name="create",
-            prefix_name=False,
-            description="create a instant-ngp format dataset from a video or a directory of images",
-        ),
-    ],
+CmdCat = Annotated[
+    Concatenate,
+    tyro.conf.subcommand(
+        name="cat",
+        prefix_name=False,
+        description="concatenate images horizontally or vertically",
+    ),
 ]
+CmdMetrics = Annotated[
+    Metrics,
+    tyro.conf.subcommand(
+        name="metrics",
+        prefix_name=False,
+        description="compute metrics between images",
+    ),
+]
+CmdCreate = Annotated[
+    CreateDataset,
+    tyro.conf.subcommand(
+        name="create",
+        prefix_name=False,
+        description="create a instant-ngp format dataset from a video or a directory of images",
+    ),
+]
+
+
+Args = CmdCat | CmdCreate | CmdMetrics
 
 
 def main(args: Args):

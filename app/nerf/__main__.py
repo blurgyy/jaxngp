@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from typing import Annotated, Union
+from typing import Annotated
 from typing_extensions import assert_never
 
 import tyro
@@ -9,22 +9,23 @@ from utils import common
 from utils.args import NeRFTestingArgs, NeRFTrainingArgs
 
 
-MainArgsType = Union[
-    Annotated[
-        NeRFTrainingArgs,
-        tyro.conf.subcommand(
-            name="train",
-            prefix_name=False,
-        ),
-    ],
-    Annotated[
-        NeRFTestingArgs,
-        tyro.conf.subcommand(
-            name="test",
-            prefix_name=False,
-        ),
-    ],
+CmdTrain = Annotated[
+    NeRFTrainingArgs,
+    tyro.conf.subcommand(
+        name="train",
+        prefix_name=False,
+    ),
 ]
+CmdTest = Annotated[
+    NeRFTestingArgs,
+    tyro.conf.subcommand(
+        name="test",
+        prefix_name=False,
+    ),
+]
+
+
+MainArgsType = CmdTrain | CmdTest
 
 
 def main(args: MainArgsType):

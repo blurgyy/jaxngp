@@ -1,5 +1,4 @@
 import math
-from typing import Union
 
 import jax
 import jax.numpy as jnp
@@ -217,7 +216,7 @@ def render_rays_train(
 
 @jit_jaxfn_with(static_argnames=["march_steps_cap"])
 def march_and_integrate_inference(
-    transmittance_threshold: Union[float, jax.Array],
+    transmittance_threshold: float | jax.Array,
     march_steps_cap: int,
     state: NeRFState,
 

@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, Union
+from typing import Dict, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -25,7 +25,7 @@ def train_step(
     all_rgbas: jax.Array,
     all_transforms: jax.Array,
     perm: jax.Array,
-) -> Tuple[NeRFState, Dict[str, Union[jax.Array, float]]]:
+) -> Tuple[NeRFState, Dict[str, jax.Array | float]]:
     # TODO:
     #   merge this and `models.renderers.make_rays_worldspace` as a single function
     def make_rays_worldspace() -> Tuple[jax.Array, jax.Array]:
