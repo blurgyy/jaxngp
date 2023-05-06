@@ -1,4 +1,5 @@
 import dataclasses
+import functools
 import json
 import math
 from pathlib import Path
@@ -11,8 +12,10 @@ from flax.struct import dataclass
 from flax.training.train_state import TrainState
 import jax
 import jax.numpy as jnp
+import jax.random as jran
 import numpy as np
 import pydantic
+from volrendjax import morton3d_invert, packbits
 
 
 PositionalEncodingType = Literal["identity", "frequency", "hashgrid"]
@@ -445,6 +448,72 @@ class NeRFState(TrainState):
 
     def __post_init__(self):
         assert self.apply_fn is None
+
+    @functools.partial(jax.jit, static_argnames=["cas", "update_all"])
+    def update_ogrid_density(self, KEY: jran.KeyArray, cas: int, update_all: bool) -> "NeRFState":
+        G3 = self.raymarch.density_grid_res ** 3
+        cas_slice = slice(cas * G3, (cas + 1) * G3)
+
+        decay = .95
+        cas_density_grid = self.ogrid.density[cas_slice] * decay
+
+        if update_all:
+            M = G3
+            indices = jnp.arange(M, dtype=jnp.uint32)
+        else:
+            M = G3 // 2
+            # The first 𝑀/2 cells are sampled uniformly among all cells.
+            KEY, key_firsthalf, key_secondhalf = jran.split(KEY, 3)
+            indices_firsthalf = jran.choice(key=key_firsthalf, a=jnp.arange(G3, dtype=jnp.uint32), shape=(M//2,), replace=True)  # allow duplicated choices
+            # Rejection sampling is used for the remaining samples to restrict selection to cells
+            # that are currently occupied.
+            # NOTE: Below is just uniformly sampling the occupied cells, not rejection sampling.
+            cas_occ_mask = self.ogrid.occ_mask[cas_slice]
+            p = cas_occ_mask.astype(jnp.float32)
+            indices_secondhalf = jran.choice(key=key_secondhalf, a=jnp.arange(G3, dtype=jnp.uint32), shape=(M//2,), replace=True, p=p)
+            indices = jnp.concatenate([indices_firsthalf, indices_secondhalf])
+
+        coordinates = morton3d_invert(indices).astype(jnp.float32)
+        coordinates = coordinates / (self.raymarch.density_grid_res - 1) * 2 - 1  # in [-1, 1]
+        mip_bound = min(self.scene_meta.bound, 2**cas)
+        half_cell_width = mip_bound / self.raymarch.density_grid_res
+        coordinates *= mip_bound - half_cell_width  # in [-mip_bound+half_cell_width, mip_bound-half_cell_width]
+        # random point inside grid cells
+        KEY, key = jran.split(KEY, 2)
+        coordinates += jran.uniform(
+            key,
+            coordinates.shape,
+            coordinates.dtype,
+            minval=-half_cell_width,
+            maxval=half_cell_width,
+        )
+        new_densities = self.nerf_fn(
+            {"params": self.locked_params["nerf"]},
+            jax.lax.stop_gradient(coordinates),
+            None,
+        )
+        cas_density_grid = cas_density_grid.at[indices].set(
+            jnp.maximum(cas_density_grid[indices], new_densities.ravel())
+        )
+        new_ogrid = self.ogrid.replace(
+            density=self.ogrid.density.at[cas_slice].set(cas_density_grid),
+        )
+        return self.replace(ogrid=new_ogrid)
+
+    @jax.jit
+    def threshold_ogrid(self) -> "NeRFState":
+        density_threshold = .01 * self.raymarch.diagonal_n_steps / (2 * min(self.scene_meta.bound, 1) * 3**.5)
+        mean_density = jnp.sum(jnp.where(self.ogrid.density > 0, self.ogrid.density, 0)) / jnp.sum(jnp.where(self.ogrid.density > 0, 1, 0))
+        density_threshold = jnp.minimum(density_threshold, mean_density)
+        occupied_mask, occupancy_bitfield = packbits(
+            density_threshold=density_threshold,
+            density_grid=self.ogrid.density,
+        )
+        new_ogrid = self.ogrid.replace(
+            occ_mask=occupied_mask,
+            occupancy=occupancy_bitfield,
+        )
+        return self.replace(ogrid=new_ogrid)
 
     @property
     def use_background_model(self) -> bool:

@@ -12,7 +12,7 @@ from tqdm import tqdm
 import tyro
 
 from models.nerfs import make_nerf_ngp, make_skysphere_background_model_ngp
-from models.renderers import render_image_inference, update_ogrid
+from models.renderers import render_image_inference
 from utils import common, data
 from utils.args import NeRFTrainingArgs
 from utils.types import (
@@ -77,12 +77,14 @@ def train_epoch(
 
         if state.should_call_update_ogrid:
             # update occupancy grid
-            KEY, key = jran.split(KEY, 2)
-            state = update_ogrid(
-                KEY=key,
-                update_all=bool(state.should_update_all_ogrid_cells),
-                state=state,
-            )
+            for cas in range(state.scene_meta.cascades):
+                KEY, key = jran.split(KEY, 2)
+                state = state.update_ogrid_density(
+                    KEY=key,
+                    cas=cas,
+                    update_all=bool(state.should_update_all_ogrid_cells),
+                )
+            state = state.threshold_ogrid()
 
         if state.should_update_batch_config:
             new_mean_effective_samples_per_ray = int(running_mean_effective_samp_per_ray + 1.5)
