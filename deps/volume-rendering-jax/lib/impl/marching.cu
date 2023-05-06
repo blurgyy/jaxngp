@@ -415,7 +415,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     CUDA_CHECK_THROW(cudaMemsetAsync(z_vals, 0x00, total_samples * sizeof(float), stream));
 
     // kernel launch
-    std::uint32_t const blockSize = 256;
+    std::uint32_t static constexpr blockSize = 512;
     std::uint32_t const numBlocks = (n_rays + blockSize - 1) / blockSize;
     march_rays_kernel<<<numBlocks, blockSize, 0, stream>>>(
         // static
@@ -499,7 +499,7 @@ void march_rays_inference_launcher(cudaStream_t stream, void **buffers, char con
     CUDA_CHECK_THROW(cudaMemsetAsync(z_vals, 0x00, n_rays * march_steps_cap * sizeof(float), stream));
 
     // kernel launch
-    std::uint32_t const blockSize = 256;
+    std::uint32_t static constexpr blockSize = 512;
     std::uint32_t const numBlocks = (n_rays + blockSize - 1) / blockSize;
     march_rays_inference_kernel<<<numBlocks, blockSize, 0, stream>>>(
         n_total_rays
@@ -548,8 +548,8 @@ void morton3d_launcher(cudaStream_t stream, void **buffers, char const *opaque, 
     std::uint32_t * const __restrict__ idcs = static_cast<std::uint32_t *>(next_buffer());  // [length]
 
     // kernel launch
-    int blockSize = 256;
-    int numBlocks = (desc.length + blockSize - 1) / blockSize;
+    std::uint32_t static constexpr blockSize = 512;
+    std::uint32_t const numBlocks = (desc.length + blockSize - 1) / blockSize;
     morton3d_kernel<<<numBlocks, blockSize, 0, stream>>>(
         // inputs
         /// static
@@ -580,7 +580,7 @@ void morton3d_invert_launcher(cudaStream_t stream, void **buffers, char const *o
     std::uint32_t * const __restrict__ xyzs = static_cast<std::uint32_t *>(next_buffer());
 
     // kernel launch
-    std::uint32_t const blockSize = 256;
+    std::uint32_t static constexpr blockSize = 512;
     std::uint32_t const numBlocks = (desc.length + blockSize - 1) / blockSize;
     morton3d_invert_kernel<<<numBlocks, blockSize, 0, stream>>>(
         // inputs

@@ -352,7 +352,7 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
     CUDA_CHECK_THROW(cudaMemsetAsync(depths, 0x00, n_rays * sizeof(float), stream));
 
     // kernel launch
-    std::uint32_t const blockSize = 256;
+    std::uint32_t static constexpr blockSize = 512;
     std::uint32_t const numBlocks = (n_rays + blockSize - 1) / blockSize;
     integrate_rays_kernel<<<numBlocks, blockSize, 0, stream>>>(
         // static arguments
@@ -422,7 +422,7 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
     CUDA_CHECK_THROW(cudaMemsetAsync(dL_drgbs, 0x00, total_samples * 3 * sizeof(float), stream));
 
     // kernel launch
-    std::uint32_t const blockSize = 256;
+    std::uint32_t static constexpr blockSize = 512;
     std::uint32_t const numBlocks = (n_rays + blockSize - 1) / blockSize;
     integrate_rays_backward_kernel<<<numBlocks, blockSize, 0, stream>>>(
         // static arguments
@@ -500,7 +500,7 @@ void integrate_rays_inference_launcher(cudaStream_t stream, void **buffers, char
     CUDA_CHECK_THROW(cudaMemsetAsync(rays_depth_out, 0x00, n_rays * sizeof(float), stream));
 
     // kernel launch
-    std::uint32_t const blockSize = 256;
+    std::uint32_t static constexpr blockSize = 512;
     std::uint32_t const numBlocks = (n_rays + blockSize - 1) / blockSize;
     integrate_rays_inference_kernel<<<numBlocks, blockSize, 1 * sizeof(std::uint32_t), stream>>>(
         n_total_rays
