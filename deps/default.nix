@@ -24,7 +24,7 @@ in {
       inherit generated cudaCapabilities;
       version = "0.1.0";
       source = generated.${name};
-      buildSharedLib = true;
+      buildSharedLib = false;
     };
   in
     final.python3.pkgs.callPackage package args
