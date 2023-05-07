@@ -56,15 +56,18 @@ class CreateDataset:
     # `Sequntial` for continuous frames, `Exhaustive` for all possible pairs
     matcher: ColmapMatcherType
 
-    # given that cameras' average distance to origin is 4.0, what would the scene's bound be?
+    # given that cameras' average distance to origin is (4.0 * `camera_scale`), what would the
+    # scene's bound be?
     # (a scene's bound is the half width of its bounding box, e.g. a scene with bound 4.0 has a
-    # bounding box with width 8.0, centered at the origin)
-    # this parameter just specifies the "aabb_scale" in the generated
-    # `transforms_{train,val,test}.json`.
+    # bounding box with width 8.0, centered at the origin) this parameter just specifies the 
+    # "aabb_scale" in the generated `transforms_{train,val,test}.json`.
     bound: float
 
+    # scale the camera's positions, the mean camera-to-origin distance will be `4.0 * camera_scale`.
+    camera_scale: float
+
     # how many frames to extract per second, only used when src is a video
-    fps: int=3
+    fps: int
 
 
 CmdCat = Annotated[
@@ -149,12 +152,14 @@ def main(args: Args):
                 dataset_root_dir=args.root_dir,
                 matcher=args.matcher,
                 bound=args.bound,
+                camera_scale=args.camera_scale,
             )
         else:
             create_dataset_from_video(
                 video_path=args.src,
                 dataset_root_dir=args.root_dir,
                 bound=args.bound,
+                camera_scale=args.camera_scale,
                 fps=args.fps,
             )
 

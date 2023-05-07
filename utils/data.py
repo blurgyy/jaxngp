@@ -121,8 +121,10 @@ def write_transforms_json(
     dataset_root_dir: Path,
     images_dir: Path,
     text_model_dir: Path,
-    # given that the cameras' average distance to the origin is 4.0, what would the scene's bound be?
+    # given that the cameras' average distance to the origin is (4.0 * `camera_scale`), what would
+    # the scene's bound be?
     bound: float,
+    camera_scale: float,
 ):
     "adapted from NVLabs/instant-ngp/scripts/colmap2nerf.py"
     dataset_root_dir, images_dir, text_model_dir = (
@@ -211,6 +213,10 @@ def write_transforms_json(
         h=camera.H,
         aabb_scale=bound,
     )
+    all_transform_json: TransformJsonNGP = dataclasses.replace(
+        all_transform_json,
+        scale=camera_scale,
+    ).scale_camera_positions()
     train_tj = dataclasses.replace(all_transform_json, frames=frames[:len(frames) // 2])
     val_tj = dataclasses.replace(all_transform_json, frames=frames[len(frames) // 2:len(frames) // 2 + len(frames) // 4])
     test_tj = dataclasses.replace(all_transform_json, frames=frames[len(frames) // 2 + len(frames) // 4:])
@@ -225,6 +231,7 @@ def create_dataset_from_single_camera_image_collection(
     dataset_root_dir: Path,
     matcher: ColmapMatcherType,
     bound: float,
+    camera_scale: float,
 ):
     raw_images_dir, dataset_root_dir = Path(raw_images_dir), Path(dataset_root_dir)
     dataset_root_dir.mkdir(parents=True, exist_ok=True)
@@ -266,6 +273,7 @@ def create_dataset_from_single_camera_image_collection(
         images_dir=undistorted_images_dir.joinpath("images"),
         text_model_dir=text_model_dir,
         bound=bound,
+        camera_scale=camera_scale,
     )
 
 
@@ -273,7 +281,8 @@ def create_dataset_from_video(
     video_path: Path,
     dataset_root_dir: Path,
     bound: float,
-    fps: int=3,
+    camera_scale: float,
+    fps: int,
 ):
     video_path, dataset_root_dir = Path(video_path), Path(dataset_root_dir)
     raw_images_dir = dataset_root_dir.joinpath("images-raw")
@@ -287,6 +296,7 @@ def create_dataset_from_video(
         dataset_root_dir=dataset_root_dir,
         matcher="Sequential",
         bound=bound,
+        camera_scale=camera_scale,
     )
 
 
