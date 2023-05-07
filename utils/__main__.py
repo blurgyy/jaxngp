@@ -83,17 +83,17 @@ CmdMetrics = Annotated[
         description="compute metrics between images",
     ),
 ]
-CmdCreate = Annotated[
+CmdCreateDataseet = Annotated[
     CreateDataset,
     tyro.conf.subcommand(
-        name="create",
+        name="create-dataset",
         prefix_name=False,
         description="create a instant-ngp format dataset from a video or a directory of images",
     ),
 ]
 
 
-Args = CmdCat | CmdCreate | CmdMetrics
+Args = CmdCat | CmdCreateDataseet | CmdMetrics
 
 
 def main(args: Args):
