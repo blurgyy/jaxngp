@@ -180,6 +180,7 @@ class HashGridEncoder(Encoder):
 
         Returns:
             indices [..., 2**dim]: indices of the grid cell's vertices in the hash table
+            pos_scaled [..., dim]: query points' coordinates scaled to each hierarchies (float)
             vert_pos [..., 2**dim, dim]: positions of the grid cell's vertices in the input space
         """
         chex.assert_type([pos, dim, res, T], [float, int, int, int])
