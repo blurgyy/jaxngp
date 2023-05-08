@@ -393,11 +393,11 @@ class SceneMeta:
     # this is the same thing as `dt_gamma` in ashawkey/torch-ngp
     @property
     def stepsize_portion(self) -> float:
-        if self.bound > 64:
+        if self.bound >= 64:
             return 1e-2
-        elif self.bound > 16:
+        elif self.bound >= 16:
             return 1/128
-        elif self.bound > 4:
+        elif self.bound >= 4:
             return 5e-3
         elif self.bound > 1:
             return 1/256
