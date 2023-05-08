@@ -158,7 +158,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
     if args.common.summary:
         print(nerf_model.tabulate(key, *init_input))
 
-    if args.scene.with_bg:
+    if scene_meta.bg:
         bg_model, init_input = (
             make_skysphere_background_model_ngp(bound=scene_meta.bound),
             (jnp.zeros((1, 3), dtype=jnp.float32), jnp.zeros((1, 3), dtype=jnp.float32))
@@ -198,7 +198,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
                 "rgb_mlp": True,
                 "position_encoder": False,
             },
-            "bg": args.scene.with_bg,
+            "bg": scene_meta.bg,
         },
     )
 
@@ -221,10 +221,10 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
         #   <https://github.com/deepmind/optax/issues/160>
         #   <https://github.com/google/flax/issues/1223>
         nerf_fn=nerf_model.apply,
-        bg_fn=bg_model.apply if args.scene.with_bg else None,
+        bg_fn=bg_model.apply if scene_meta.bg else None,
         params={
             "nerf": nerf_variables["params"].unfreeze(),
-            "bg": bg_variables["params"].unfreeze() if args.scene.with_bg else None,
+            "bg": bg_variables["params"].unfreeze() if scene_meta.bg else None,
         },
         tx=optimizer,
     )

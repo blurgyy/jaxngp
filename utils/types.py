@@ -180,9 +180,6 @@ class SceneOptions:
     # scale input images in case they are too large
     image_scale: float
 
-    # whether the scene has a background
-    with_bg: bool
-
 
 @dataclass
 class RigidTransformation:
@@ -246,6 +243,8 @@ class TransformJsonBase:
     # taken from NVLabs/instant-ngp/include/neural-graphics-primitives/nerf_loader.h)
     # NOTE: this value does not affect scene's bounding box
     scale: float=dataclasses.field(default_factory=lambda: 1/3, kw_only=True)
+
+    bg: bool=dataclasses.field(default_factory=lambda: False, kw_only=True)
 
     def scale_camera_positions(self) -> "TransformJsonBase":
         return dataclasses.replace(
@@ -369,10 +368,14 @@ class ViewMetadata:
         return flattened
 
 
+# scene's metadata (computed from SceneOptions and TransformJson)
 @dataclass
 class SceneMeta:
     # half width of axis-aligned bounding-box, i.e. aabb's width is `bound*2`
     bound: float
+
+    # whether the scene should be modeled with a background that is not part of the scene geometry
+    bg: bool
 
     # the camera model used to render this scene
     camera: PinholeCamera
@@ -517,7 +520,7 @@ class NeRFState(TrainState):
 
     @property
     def use_background_model(self) -> bool:
-        return self.scene_options.with_bg and self.params.get("bg") is not None
+        return self.scene_meta.bg and self.params.get("bg") is not None
 
     @property
     def locked_params(self):

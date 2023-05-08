@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from dataclasses import dataclass
+import dataclasses
 from functools import partial, reduce
 import os
 from pathlib import Path
@@ -64,7 +65,10 @@ class CreateDataset:
     bound: float
 
     # scale the camera's positions, the mean camera-to-origin distance will be `4.0 * camera_scale`.
-    camera_scale: float
+    camera_scale: float=dataclasses.field(default_factory=lambda: 1/3, kw_only=True)
+
+    # should the scene be modeled with a background that is not part of the scene geometry?
+    bg: bool=dataclasses.field(default_factory=lambda: True, kw_only=True)
 
     # how many frames to extract per second, only used when src is a video
     fps: int
@@ -153,6 +157,7 @@ def main(args: Args):
                 matcher=args.matcher,
                 bound=args.bound,
                 camera_scale=args.camera_scale,
+                bg=args.bg,
             )
         else:
             create_dataset_from_video(
@@ -160,6 +165,7 @@ def main(args: Args):
                 dataset_root_dir=args.root_dir,
                 bound=args.bound,
                 camera_scale=args.camera_scale,
+                bg=args.bg,
                 fps=args.fps,
             )
 
