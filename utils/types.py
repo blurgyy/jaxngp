@@ -15,8 +15,8 @@ import jax.numpy as jnp
 import jax.random as jran
 import numpy as np
 import pydantic
-from volrendjax import morton3d_invert, packbits
 from tqdm import tqdm
+from volrendjax import morton3d_invert, packbits
 
 from ._constants import tqdm_format
 

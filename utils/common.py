@@ -14,11 +14,10 @@ from jax._src.lib import xla_client as xc
 import jax.random as jran
 import numpy as np
 import tensorflow as tf
+from tqdm import tqdm as tqdm_original
 
 from ._constants import tqdm_format
 from .types import LogLevel
-
-from tqdm import tqdm as tqdm_original
 
 
 class Logger(logging.Logger):
