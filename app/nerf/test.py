@@ -56,7 +56,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     rendered_images: List[RenderedImage] = []
     try:
         logger.info("starting testing (totally {} image(s) to test)".format(len(test_views)))
-        for test_i, test_view in enumerate(tqdm(test_views, desc="testing", bar_format=common.tqdm_format)):
+        for test_i, test_view in enumerate(common.tqdm(test_views, desc="testing")):
             logger.debug("testing on {}".format(test_view))
             transform = RigidTransformation(
                 rotation=scene_data.all_transforms[test_i, :9].reshape(3, 3),
@@ -102,7 +102,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         dest_depth.mkdir(parents=True, exist_ok=True)
 
         logger.debug("saving as images")
-        for save_i, img in enumerate(tqdm(rendered_images, desc="saving images", bar_format=common.tqdm_format)):
+        for save_i, img in enumerate(common.tqdm(rendered_images, desc="saving images")):
             Image.fromarray(np.asarray(img.rgb)).save(dest_rgb.joinpath("{:03d}.png".format(save_i)))
             Image.fromarray(np.asarray(img.depth)).save(dest_depth.joinpath("{:03d}.png".format(save_i)))
 
