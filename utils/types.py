@@ -556,7 +556,8 @@ class NeRFState(TrainState):
     def mark_untrained_density_grid(self) -> "NeRFState":
         G = self.raymarch.density_grid_res
         G3 = G*G*G
-        i = jnp.arange(G3, dtype=jnp.uint32)
+        n_grids = self.scene_meta.cascades * G3
+        i = jnp.arange(n_grids, dtype=jnp.uint32)
         level, pos_idcs = i // G3, i % G3
         mip_bound = jnp.minimum(2 ** level, self.scene_meta.bound).astype(jnp.float32)
         cell_width = 2 * mip_bound / G
@@ -575,7 +576,7 @@ class NeRFState(TrainState):
             [1, 1, 1],
         ], dtype=jnp.float32)
         grid_vertices = xyzs[:, None, :] + vertex_offsets
-        visible_marker = jnp.zeros(G3, dtype=jnp.bool_)
+        visible_marker = jnp.zeros(n_grids, dtype=jnp.bool_)
 
         @jax.jit
         def mark_untrained_density_grid_single_frame(
@@ -610,11 +611,11 @@ class NeRFState(TrainState):
         # )))
         # np.savetxt("cams.xyz", cam_t)
 
-        for frame in (pbar := tqdm(self.scene_meta.frames, desc="marked 0/{} (0.00%) grids as trainable".format(G3), bar_format=tqdm_format)):
+        for frame in (pbar := tqdm(self.scene_meta.frames, desc="marked 0/{} (0.00%) grids as trainable".format(n_grids), bar_format=tqdm_format)):
             visible_marker = mark_untrained_density_grid_single_frame(visible_marker, frame.transform_matrix_jax_array)
             n_trainable = visible_marker.sum()
-            ratio_trainable = n_trainable / G3
-            pbar.set_description_str("marked {}/{} ({:3.2f}%) grids as trainable".format(n_trainable, G3, ratio_trainable * 100))
+            ratio_trainable = n_trainable / n_grids
+            pbar.set_description_str("marked {}/{} ({:3.2f}%) grids as trainable".format(n_trainable, n_grids, ratio_trainable * 100))
 
         marked_density = jnp.where(visible_marker, 1e-15, -1.)
         marked_occ_mask, marked_occupancy = packbits(
