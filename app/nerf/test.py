@@ -6,7 +6,6 @@ import jax
 import jax.random as jran
 import jax.numpy as jnp
 import numpy as np
-from tqdm import tqdm
 
 from models.nerfs import make_nerf_ngp, make_skysphere_background_model_ngp
 from models.renderers import render_image_inference
