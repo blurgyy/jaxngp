@@ -303,7 +303,7 @@ def render_image_inference(
     else:
         march_rays_cap = min(4, state.batch_config.mean_effective_samples_per_ray)
     march_rays_cap = int(march_rays_cap)
-    n_rays = 65536 // march_rays_cap
+    n_rays = min(65536, o_world.shape[0]) // march_rays_cap
 
     counter = jnp.zeros(1, dtype=jnp.uint32)
     terminated = jnp.ones(n_rays, dtype=jnp.bool_)  # all rays are terminated at the beginning
