@@ -44,25 +44,3 @@ def make_rays_worldspace(
     d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
 
     return o_world, d_world
-
-
-@jit_jaxfn_with(static_argnames=["H", "W", "chunk_size"])
-def get_indices_chunks(
-    KEY: jran.KeyArray,
-    H: int,
-    W: int,
-    chunk_size: int,
-):
-    n_pixels = H * W
-    n_chunks = (n_pixels + chunk_size - 1) // chunk_size
-
-    # randomize ray order
-    KEY, key = jran.split(KEY, 2)
-    indices = jran.permutation(key, H * W)
-
-    # xys has sorted order
-    _xs = jnp.mod(jnp.arange(H * W), W)
-    _ys = jnp.floor_divide(jnp.arange(H * W), H)
-    xys = jnp.concatenate([_xs.reshape(-1, 1), _ys.reshape(-1, 1)], axis=-1)
-
-    return xys, jnp.array_split(indices, n_chunks)
