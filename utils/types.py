@@ -161,6 +161,16 @@ class PinholeCamera:
             cy=float(cy),
         )
 
+    def scale_resolution(self, scale: int | float) -> "PinholeCamera":
+        return self.replace(
+            W=int(self.W * scale),
+            H=int(self.H * scale),
+            fx=self.fx * scale,
+            fy=self.fy * scale,
+            cx=self.cx * scale,
+            cy=self.cy * scale,
+        )
+
 
 @empty_impl
 @dataclass

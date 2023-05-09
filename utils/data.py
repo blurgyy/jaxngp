@@ -591,26 +591,25 @@ def load_scene(
     # shared camera model
     if isinstance(transforms, TransformJsonNeRFSynthetic):
         _img = Image.open(try_image_extensions(transforms.frames[0].file_path))
-        W, H = int(_img.width * image_scale), int(_img.height * image_scale)
         fovx = transforms.camera_angle_x
-        focal = float(.5 * W / np.tan(fovx / 2))
+        focal = float(.5 * _img.width / np.tan(fovx / 2))
         camera = PinholeCamera(
-            W=W,
-            H=H,
-            fx=focal * image_scale,
-            fy=focal * image_scale,
-            cx=W / 2,
-            cy=H / 2,
+            W=_img.width,
+            H=_img.height,
+            fx=focal,
+            fy=focal,
+            cx=_img.width / 2,
+            cy=_img.height / 2,
         )
 
     elif isinstance(transforms, TransformJsonNGP):
         camera = PinholeCamera(
-            W=int(transforms.w * image_scale),
-            H=int(transforms.h * image_scale),
-            fx=transforms.fl_x * image_scale,
-            fy=transforms.fl_y * image_scale,
-            cx=transforms.cx * image_scale,
-            cy=transforms.cy * image_scale,
+            W=transforms.w,
+            H=transforms.h,
+            fx=transforms.fl_x,
+            fy=transforms.fl_y,
+            cx=transforms.cx,
+            cy=transforms.cy,
         )
 
     else:
@@ -622,7 +621,7 @@ def load_scene(
     scene_meta = SceneMeta(
         bound=transforms.aabb_scale * world_scale,
         bg=transforms.bg,
-        camera=camera,
+        camera=camera.scale_resolution(image_scale),
         frames=transforms.frames,
     )
 
