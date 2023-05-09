@@ -13,6 +13,7 @@ import imageio
 import jax
 import jax.numpy as jnp
 import jax.random as jran
+from natsort import natsorted
 import numpy as np
 
 from . import sfm
@@ -558,6 +559,7 @@ def load_scene(
     srcs: Sequence[Path | str],
     world_scale: float,
     image_scale: float,
+    sort_frames: bool=False,
     load_views: bool=True,
 ) -> SceneMeta | Tuple[SceneData, List[ViewMetadata]]:
     assert isinstance(srcs, collections.abc.Sequence) and not isinstance(srcs, str), (
@@ -566,6 +568,11 @@ def load_scene(
     srcs = list(map(Path, srcs))
 
     transforms = merge_transforms(map(load_transform_json_recursive, srcs))
+    if sort_frames:
+        transforms = dataclasses.replace(
+            transforms,
+            frames=natsorted(transforms.frames, key=lambda f: f.file_path),
+        )
 
     if transforms is None:
         raise FileNotFoundError("could not find any valid transforms in {}".format(srcs))

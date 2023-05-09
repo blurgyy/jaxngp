@@ -109,6 +109,7 @@
           imageio
           ffmpeg-python
           pydantic
+          natsort
 
           pkgs.dearpygui
           pkgs.pycolmap

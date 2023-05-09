@@ -154,6 +154,9 @@ class NeRFTestingArgs(NeRFArgsBase):
     # use checkpoint from this path (can be a directory) for testing
     ckpt: Path
 
+    # naturally sort frames according to their file names before testing
+    sort_frames: bool=False
+
     # if specified value contains "video", a video will be saved; if specified value contains
     # "image", rendered images will be saved.  Value can contain both "video" and "image", e.g.,
     # `--save-as "video-image"` will save both video and images.

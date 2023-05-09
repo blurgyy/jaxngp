@@ -33,6 +33,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         srcs=args.frames,
         world_scale=args.scene.world_scale,
         image_scale=args.scene.image_scale,
+        sort_frames=args.sort_frames,
     )
 
     # load parameters
