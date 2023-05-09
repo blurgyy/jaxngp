@@ -154,9 +154,6 @@ class NeRFTestingArgs(NeRFArgsBase):
     # use checkpoint from this path (can be a directory) for testing
     ckpt: Path
 
-    # which split to test on
-    split: Literal["train", "test", "val"]="test"
-
     # if specified value contains "video", a video will be saved; if specified value contains
     # "image", rendered images will be saved.  Value can contain both "video" and "image", e.g.,
     # `--save-as "video-image"` will save both video and images.

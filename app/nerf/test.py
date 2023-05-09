@@ -92,7 +92,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     )) / len(rendered_images)
     logger.info("tested {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
 
-    save_dest = args.exp_dir.joinpath(args.split)
+    save_dest = args.exp_dir.joinpath("test")
     save_dest.mkdir(parents=True, exist_ok=True)
     if "image" in args.save_as:
         dest_rgb = save_dest.joinpath("rgb")
