@@ -189,7 +189,7 @@ class GuiWindowArgs():
     scene: SceneOptions=SceneOptions(
         world_scale=0.6,
         image_scale=1.0,
-        with_bg=False,
+
     )
     bound:float=1.5*scene.world_scale
     

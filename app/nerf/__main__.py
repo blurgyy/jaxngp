@@ -1,10 +1,9 @@
-#!/usr/bin/env python3
-
 from typing import Annotated
 from typing_extensions import assert_never
 
 import tyro
 
+from utils.args import NeRFTrainingArgs,NeRFTestingArgs,GuiWindowArgs
 
 
 CmdTrain = Annotated[
@@ -21,9 +20,16 @@ CmdTest = Annotated[
         prefix_name=False,
     ),
 ]
+CmdGui = Annotated[
+    GuiWindowArgs,
+    tyro.conf.subcommand(
+        name="gui",
+        prefix_name=False,
+    ),
+]
 
 
-MainArgsType = CmdTrain | CmdTest
+MainArgsType = CmdTrain | CmdTest | CmdGui
 
 
 def main(args: MainArgsType):

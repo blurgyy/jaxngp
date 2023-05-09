@@ -2,7 +2,7 @@
 #sys.path.append("/home/cad_83/E/chenyingxi/jaxngp")
 
 import logging
-from pathlib import Path
+from pathlib import Path,PosixPath
 import numpy as np
 from typing import List, Literal, Optional,Any,Tuple
 import jax.random as jran
@@ -70,10 +70,9 @@ class Gui_trainer():
 
         #load data
         self.scene_train, _ = data.load_scene(
-        rootdir=self.args.data_root,
-        split="train",
-        world_scale=self.args.scene.world_scale,
-        image_scale=self.args.scene.image_scale,
+            srcs=self.args.frames_train,
+            world_scale=self.args.scene.world_scale,
+            image_scale=self.args.scene.image_scale,
         )
         self.scene_meta = self.scene_train.meta
         # model parameters
@@ -86,7 +85,7 @@ class Gui_trainer():
         if self.args.common.summary:
             print(self.nerf_model.tabulate(key, *self.init_input))
         
-        if self.args.scene.with_bg:
+        if self.scene_meta.bg:
             self.bg_model, self.init_input = (
                 make_skysphere_background_model_ngp(bound=self.scene_meta.bound),
                 (jnp.zeros((1, 3), dtype=jnp.float32), jnp.zeros((1, 3), dtype=jnp.float32))
@@ -103,39 +102,39 @@ class Gui_trainer():
         end_value=self.args.train.lr / 100,  # stop decaying at `1/100 * init_lr`
         )
         self.optimizer = optax.adamw(
-        learning_rate=lr_sch,
-        b1=0.9,
-        b2=0.99,
-        # paper:
-        #   the small value of 𝜖 = 10^{−15} can significantly accelerate the convergence of the
-        #   hash table entries when their gradients are sparse and weak.
-        eps=1e-15,
-        eps_root=1e-15,
-        # In NeRF experiments, the network can converge to a reasonably low loss during the
-        # frist ~50k training steps (with 1024 rays per batch and 1024 samples per ray), but the
-        # loss becomes NaN after about 50~150k training steps.
-        # paper:
-        #   To prevent divergence after long training periods, we apply a weak L2 regularization
-        #   (factor 10^{−6}) to the neural network weights, ...
-        weight_decay=1e-6,
-        # paper:
-        #   ... to the neural network weights, but not to the hash table entries.
-        mask={
-            "nerf": {
-                "density_mlp": True,
-                "rgb_mlp": True,
-                "position_encoder": False,
+            learning_rate=lr_sch,
+            b1=0.9,
+            b2=0.99,
+            # paper:
+            #   the small value of 𝜖 = 10^{−15} can significantly accelerate the convergence of the
+            #   hash table entries when their gradients are sparse and weak.
+            eps=1e-15,
+            eps_root=1e-15,
+            # In NeRF experiments, the network can converge to a reasonably low loss during the
+            # frist ~50k training steps (with 1024 rays per batch and 1024 samples per ray), but the
+            # loss becomes NaN after about 50~150k training steps.
+            # paper:
+            #   To prevent divergence after long training periods, we apply a weak L2 regularization
+            #   (factor 10^{−6}) to the neural network weights, ...
+            weight_decay=1e-6,
+            # paper:
+            #   ... to the neural network weights, but not to the hash table entries.
+            mask={
+                "nerf": {
+                    "density_mlp": True,
+                    "rgb_mlp": True,
+                    "position_encoder": False,
+                },
+                "bg": self.scene_meta.bg,
             },
-            "bg": self.args.scene.with_bg,
-        },
         )
         
          # training state
         self.state = NeRFState.create(
             ogrid=OccupancyDensityGrid.create(
-                cascades=data.cascades_from_bound(self.scene_meta.bound),
-                grid_resolution=self.args.raymarch.density_grid_res,
-            ),
+                        cascades=self.scene_meta.cascades,
+                        grid_resolution=self.args.raymarch.density_grid_res,
+                    ),
             batch_config=NeRFBatchConfig(
                 mean_effective_samples_per_ray=self.args.raymarch.diagonal_n_steps,
                 mean_samples_per_ray=self.args.raymarch.diagonal_n_steps,
@@ -149,10 +148,10 @@ class Gui_trainer():
             #   <https://github.com/deepmind/optax/issues/160>
             #   <https://github.com/google/flax/issues/1223>
             nerf_fn=self.nerf_model.apply,
-            bg_fn=self.bg_model.apply if self.args.scene.with_bg else None,
+            bg_fn=self.bg_model.apply if self.scene_meta.bg else None,
             params={
                 "nerf": self.nerf_variables["params"].unfreeze(),
-                "bg": self.bg_variables["params"].unfreeze() if self.args.scene.with_bg else None,
+                "bg": self.bg_variables["params"].unfreeze() if self.scene_meta.bg else None,
             },
             tx=self.optimizer,
         )
@@ -163,15 +162,6 @@ class Gui_trainer():
         
         if self.cur_step<self.gui_args.max_step:
             self.KEY, key = jran.split(self.KEY, 2)
-            self.logger.info("self.scene_train.all_xys.shape:{}".format(self.scene_train.all_xys.shape))
-            permutation = data.make_permutation(
-                key,
-                size=self.scene_train.all_xys.shape[0],
-                loop=self.args.train.data_loop,
-                shuffle=True,
-            )
-            
-            self.KEY, key = jran.split(self.KEY, 2)
             loss_log, self.state = gui_train_epoch(
                 KEY=key,
                 state=self.state,
@@ -180,8 +170,6 @@ class Gui_trainer():
                 total_samples=self.args.train.bs,
                 cur_steps=self.cur_step,
                 logger=self.logger,
-                camera_pose=self.camera_pose,
-                args=self.gui_args
             )
             self.cur_step=self.cur_step+steps
             self.loss_log=str(loss_log)
@@ -208,13 +196,10 @@ def gui_train_epoch(
     KEY: jran.KeyArray,
     state: NeRFState,
     scene: SceneData,
-    permutation: jax.Array,
     n_batches: int,
     total_samples: int,
     cur_steps: int,
     logger: common.Logger,
-    camera_pose:jnp.array,
-    args: GuiWindowArgs
 ):
     n_processed_rays = 0
     total_loss = 0
@@ -225,13 +210,10 @@ def gui_train_epoch(
         KEY, key_perm, key_train_step = jran.split(KEY, 3)
         perm = jran.choice(key_perm, scene.meta.n_pixels, shape=(state.batch_config.n_rays,), replace=True)
         state, metrics = train_step(
-            KEY=key,
+            KEY=key_train_step,
             state=state,
             total_samples=total_samples,
-            camera=scene.meta.camera,
-            all_xys=scene.all_xys,
-            all_rgbas=scene.all_rgbas,
-            all_transforms=scene.all_transforms,
+            scene=scene,
             perm=perm,
         )
         cur_steps=cur_steps+1
@@ -260,12 +242,14 @@ def gui_train_epoch(
  
         if state.should_call_update_ogrid:
             # update occupancy grid
-            KEY, key = jran.split(KEY, 2)
-            state = update_ogrid(
-                KEY=key,
-                update_all=bool(state.should_update_all_ogrid_cells),
-                state=state,
-            )
+            for cas in range(state.scene_meta.cascades):
+                KEY, key = jran.split(KEY, 2)
+                state = state.update_ogrid_density(
+                    KEY=key,
+                    cas=cas,
+                    update_all=bool(state.should_update_all_ogrid_cells),
+                )
+            state = state.threshold_ogrid()
 
         if state.should_update_batch_config:
             new_mean_effective_samples_per_ray = int(running_mean_effective_samp_per_ray + 1.5)
@@ -287,9 +271,10 @@ def gui_train_epoch(
             logger.write_scalar("rendering/↓effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
             logger.write_scalar("rendering/↓marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
             logger.write_scalar("rendering/↑number of rays", state.batch_config.n_rays, state.step)
-        #gui_render(KEY,state,camera_pose,args)
+        
         
     return total_loss / n_processed_rays, state
+
 class TrainThread(threading.Thread):
     def __init__(self,KEY,args,gui_args,logger,camera_pose,step):
         super(TrainThread,self).__init__()   
