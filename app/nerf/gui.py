@@ -8,6 +8,7 @@ from typing import List, Literal, Optional,Any,Tuple
 import jax.random as jran
 import jax.numpy as jnp
 from dataclasses import dataclass,field
+from tqdm import tqdm
 
 import threading
 
