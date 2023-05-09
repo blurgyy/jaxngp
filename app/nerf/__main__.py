@@ -1,9 +1,13 @@
+#!/usr/bin/env python3
+
 from typing import Annotated
 from typing_extensions import assert_never
 
 import tyro
 
 from utils.args import NeRFTrainingArgs,NeRFTestingArgs,GuiWindowArgs
+from utils import common
+
 
 
 CmdTrain = Annotated[

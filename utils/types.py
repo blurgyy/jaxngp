@@ -16,6 +16,9 @@ import jax.random as jran
 import numpy as np
 import pydantic
 from volrendjax import morton3d_invert, packbits
+from tqdm import tqdm
+
+from ._constants import tqdm_format
 
 
 PositionalEncodingType = Literal["identity", "frequency", "hashgrid"]
@@ -125,6 +128,18 @@ class PinholeCamera:
     @property
     def n_pixels(self) -> int:
         return self.H * self.W
+
+    @property
+    def K_numpy(self) -> np.ndarray:
+        return np.asarray([
+            [self.fx,      0., self.cx],
+            [     0., self.fy, self.cy],
+            [     0.,      0.,      1.]
+        ])
+
+    @property
+    def K(self) -> jax.Array:
+        return jnp.asarray(self.K_numpy)
 
     @classmethod
     def from_colmap_txt(cls, txt_path: str | Path) -> "PinholeCamera":
@@ -393,11 +408,11 @@ class SceneMeta:
     # this is the same thing as `dt_gamma` in ashawkey/torch-ngp
     @property
     def stepsize_portion(self) -> float:
-        if self.bound > 64:
+        if self.bound >= 64:
             return 1e-2
-        elif self.bound > 16:
+        elif self.bound >= 16:
             return 1/128
-        elif self.bound > 4:
+        elif self.bound >= 4:
             return 5e-3
         elif self.bound > 1:
             return 1/256
@@ -460,20 +475,40 @@ class NeRFState(TrainState):
         decay = .95
         cas_density_grid = self.ogrid.density[cas_slice] * decay
 
+        cas_trainable_mask = cas_density_grid >= 0
         if update_all:
             M = G3
-            indices = jnp.arange(M, dtype=jnp.uint32)
+            # indices = jnp.arange(M, dtype=jnp.uint32)
+            KEY, key = jran.split(KEY, 2)
+            indices = jran.choice(
+                key=key,
+                a=jnp.arange(G3, dtype=jnp.uint32),
+                shape=(M,),
+                replace=True,
+                p=cas_trainable_mask.astype(jnp.float32),  # only update trainable grids
+            )
         else:
             M = G3 // 2
             # The first 𝑀/2 cells are sampled uniformly among all cells.
             KEY, key_firsthalf, key_secondhalf = jran.split(KEY, 3)
-            indices_firsthalf = jran.choice(key=key_firsthalf, a=jnp.arange(G3, dtype=jnp.uint32), shape=(M//2,), replace=True)  # allow duplicated choices
+            indices_firsthalf = jran.choice(
+                key=key_firsthalf,
+                a=jnp.arange(G3, dtype=jnp.uint32),
+                shape=(M//2,),
+                replace=True,  # allow duplicated choices
+                p=cas_trainable_mask.astype(jnp.float32),  # only care about trainable grids
+            )
             # Rejection sampling is used for the remaining samples to restrict selection to cells
             # that are currently occupied.
             # NOTE: Below is just uniformly sampling the occupied cells, not rejection sampling.
             cas_occ_mask = self.ogrid.occ_mask[cas_slice]
-            p = cas_occ_mask.astype(jnp.float32)
-            indices_secondhalf = jran.choice(key=key_secondhalf, a=jnp.arange(G3, dtype=jnp.uint32), shape=(M//2,), replace=True, p=p)
+            indices_secondhalf = jran.choice(
+                key=key_secondhalf,
+                a=jnp.arange(G3, dtype=jnp.uint32),
+                shape=(M//2,),
+                replace=True,  # allow duplicated choices
+                p=cas_occ_mask.astype(jnp.float32),  # only care about occupied grids
+            )
             indices = jnp.concatenate([indices_firsthalf, indices_secondhalf])
 
         coordinates = morton3d_invert(indices).astype(jnp.float32)
@@ -517,6 +552,89 @@ class NeRFState(TrainState):
             occupancy=occupancy_bitfield,
         )
         return self.replace(ogrid=new_ogrid)
+
+    def mark_untrained_density_grid(self) -> "NeRFState":
+        G = self.raymarch.density_grid_res
+        G3 = G*G*G
+        i = jnp.arange(G3, dtype=jnp.uint32)
+        level, pos_idcs = i // G3, i % G3
+        mip_bound = jnp.minimum(2 ** level, self.scene_meta.bound).astype(jnp.float32)
+        cell_width = 2 * mip_bound / G
+        xyzs = morton3d_invert(pos_idcs).astype(jnp.float32)  # [G3, 3]
+        xyzs /= G  # in range [0, 1)
+        xyzs -= 0.5  # in range [-0.5, 0.5)
+        xyzs *= 2 * mip_bound[:, None]  # in range [-mip_bound, mip_bound)
+        vertex_offsets = cell_width[:, None, None] * jnp.asarray([
+            [0, 0, 0],
+            [0, 0, 1],
+            [0, 1, 0],
+            [0, 1, 1],
+            [1, 0, 0],
+            [1, 0, 1],
+            [1, 1, 0],
+            [1, 1, 1],
+        ], dtype=jnp.float32)
+        grid_vertices = xyzs[:, None, :] + vertex_offsets
+        visible_marker = jnp.zeros(G3, dtype=jnp.bool_)
+
+        @jax.jit
+        def mark_untrained_density_grid_single_frame(
+            visible_marker: jax.Array,
+            transform_cw: jax.Array,
+        ):
+            rot_cw, t_cw = transform_cw[:3, :3], transform_cw[:3, 3]
+            # p_world, p_cam, T: [3, 1]
+            # rot_cw: [3, 3]
+            # p_world = rot_cw @ p_cam + t_cw
+            #   => p_cam = rot_cw.T @ (p_world - t_cw)
+            p_aligned = grid_vertices - t_cw
+            p_cam = (p_aligned[..., None, :] * rot_cw.T).sum(-1)
+
+            # camera looks along the -z axis
+            in_front_of_camera = p_cam[..., -1] < -1e-4
+
+            uvz = (p_cam[..., None, :] * self.scene_meta.camera.K).sum(-1)
+            uvz /= uvz[..., -1:]
+            uv = uvz[..., :2] / jnp.asarray([self.scene_meta.camera.W, self.scene_meta.camera.H], dtype=jnp.float32)
+            within_frame_range = (uv >= 0.) & (uv < 1.)
+            within_frame_range = (
+                within_frame_range  # shape is [n_grids, 8, 2]
+                    .all(axis=-1)  # u and v must all be within frame
+            )
+            visible_by_camera = (in_front_of_camera & within_frame_range).any(axis=-1)  # grid should be trained if any of its 8 vertices is visible
+            return visible_marker | visible_by_camera
+
+        # cam_t = np.asarray(list(map(
+        #     lambda frame: frame.transform_matrix_numpy[:3, 3],
+        #     self.scene_meta.frames,
+        # )))
+        # np.savetxt("cams.xyz", cam_t)
+
+        for frame in (pbar := tqdm(self.scene_meta.frames, desc="marked 0/{} (0.00%) grids as trainable".format(G3), bar_format=tqdm_format)):
+            visible_marker = mark_untrained_density_grid_single_frame(visible_marker, frame.transform_matrix_jax_array)
+            n_trainable = visible_marker.sum()
+            ratio_trainable = n_trainable / G3
+            pbar.set_description_str("marked {}/{} ({:3.2f}%) grids as trainable".format(n_trainable, G3, ratio_trainable * 100))
+
+        marked_density = jnp.where(visible_marker, 1e-15, -1.)
+        marked_occ_mask, marked_occupancy = packbits(
+            density_threshold=-.5,
+            density_grid=marked_density
+        )
+
+        # rgb = jnp.stack([~marked_occ_mask, jnp.zeros_like(marked_occ_mask, dtype=jnp.float32), marked_occ_mask]).T
+        # xyzrgb = np.asarray(jnp.concatenate([xyzs, rgb], axis=-1))
+        # np.savetxt("blue_for_trainable.txt", xyzrgb)
+        # np.savetxt("trainable.txt", xyzrgb[np.where(marked_occ_mask)])
+        # np.savetxt("untrainable.txt", xyzrgb[np.where(~marked_occ_mask)])
+
+        return self.replace(
+            ogrid=self.ogrid.replace(
+                density=marked_density,
+                occ_mask=marked_occ_mask,
+                occupancy=marked_occupancy,
+            ),
+        )
 
     @property
     def use_background_model(self) -> bool:

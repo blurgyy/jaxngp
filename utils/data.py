@@ -14,10 +14,9 @@ import jax
 import jax.numpy as jnp
 import jax.random as jran
 import numpy as np
-from tqdm import tqdm
 
 from . import sfm
-from .common import jit_jaxfn_with, mkValueError, tqdm_format
+from .common import jit_jaxfn_with, mkValueError, tqdm
 from .types import (
     ColmapMatcherType,
     ImageMetadata,
@@ -42,6 +41,10 @@ def to_cpu(array: jnp.DeviceArray) -> jnp.DeviceArray:
 def f32_to_u8(img: jax.Array) -> jax.Array:
     return jnp.clip(jnp.round(img * 255), 0, 255).astype(jnp.uint8)
 
+    sfm.export_text_format_model(
+        undistorted_sparse_reconstruction_dir=undistorted_images_dir.joinpath("sparse"),
+        text_model_dir=text_model_dir,
+    )
 
 @jax.jit
 def mono_to_rgb(img: jax.Array) -> jax.Array:
@@ -378,7 +381,7 @@ def write_video(dest: Path, images: Sequence, *, fps: int=24, loop: int=3):
     images = list(images) * loop
     assert len(images) > 0, "cannot write empty video"
     video_writer = imageio.get_writer(dest, mode="I", fps=fps)
-    for im in tqdm(images, desc="writing video to {}".format(dest.as_posix()), bar_format=tqdm_format):
+    for im in tqdm(images, desc="writing video to {}".format(dest.as_posix())):
         video_writer.append_data(np.asarray(im))
 
 
@@ -647,9 +650,8 @@ def load_scene(
         list(tqdm(
             ThreadPoolExecutor().map(lambda view: view.rgba_u8, views),
             total=len(views),
-            desc="pre-loading views",
-            bar_format=tqdm_format),
-        ),
+            desc="pre-loading views"
+        )),
         axis=0,
     )
 

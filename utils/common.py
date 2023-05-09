@@ -1,4 +1,5 @@
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
+import functools
 import logging
 import logging
 from pathlib import Path
@@ -14,7 +15,10 @@ import jax.random as jran
 import numpy as np
 import tensorflow as tf
 
+from ._constants import tqdm_format
 from .types import LogLevel
+
+from tqdm import tqdm as tqdm_original
 
 
 class Logger(logging.Logger):
@@ -49,11 +53,15 @@ class Logger(logging.Logger):
             self._last_job = self._executor.submit(self._tb.hparams, hparams)
 
 
-_tqdm_format = "SBRIGHT{desc}RESET: HI{percentage:3.0f}%RESET {n_fmt}/{total_fmt} [{elapsed}<HI{remaining}RESET, {rate_fmt}]"
-tqdm_format = _tqdm_format \
-    .replace("HI", Fore.CYAN) \
-    .replace("SBRIGHT", Style.BRIGHT) \
-    .replace("RESET", Style.RESET_ALL)
+tqdm = functools.partial(tqdm_original, bar_format=tqdm_format)
+
+
+def compose(*fns):
+    def _inner(x):
+        for fn in reversed(fns):
+            x = fn(x)
+        return x
+    return _inner
 
 
 def compose(*fns):

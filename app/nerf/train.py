@@ -2,13 +2,12 @@ import dataclasses
 import functools
 import gc
 import time
-from typing import List,Any
+from typing import List
 
 from flax.training import checkpoints
 import jax.numpy as jnp
 import jax.random as jran
 import optax
-from tqdm import tqdm
 import tyro
 import numpy as np
 from pathlib import Path
@@ -29,8 +28,6 @@ from utils.types import (
 from ._utils import train_step
 
 
-
-
     
 def train_epoch(
     KEY: jran.KeyArray,
@@ -47,7 +44,7 @@ def train_epoch(
     running_mean_effective_samp_per_ray = state.batch_config.mean_effective_samples_per_ray
     running_mean_samp_per_ray = state.batch_config.mean_samples_per_ray
 
-    for _ in (pbar := tqdm(range(n_batches), desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs), bar_format=common.tqdm_format)):
+    for _ in (pbar := common.tqdm(range(n_batches), desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs))):
         KEY, key_perm, key_train_step = jran.split(KEY, 3)
         perm = jran.choice(key_perm, scene.meta.n_pixels, shape=(state.batch_config.n_rays,), replace=True)
         state, metrics = train_step(
@@ -111,11 +108,10 @@ def train_epoch(
             logger.write_scalar("rendering/↓effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
             logger.write_scalar("rendering/↓marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
             logger.write_scalar("rendering/↑number of rays", state.batch_config.n_rays, state.step)
-        
-        
+
     return total_loss / n_processed_rays, state
 
- 
+
 def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
     if args.exp_dir.exists():
         logger.error("specified experiment directory '{}' already exists".format(args.exp_dir))
@@ -234,6 +230,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
         },
         tx=optimizer,
     )
+    state = state.mark_untrained_density_grid()
 
     logger.info("starting training")
     # training loop
@@ -288,7 +285,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             state_eval = state\
                 .replace(raymarch=args.raymarch_eval)\
                 .replace(render=args.render_eval)
-            for val_i, val_view in enumerate(tqdm(val_views, desc="validating", bar_format=common.tqdm_format)):
+            for val_i, val_view in enumerate(common.tqdm(val_views, desc="validating")):
                 logger.debug("validating on {}".format(val_view.file))
                 val_transform = RigidTransformation(
                     rotation=scene_val.all_transforms[val_i, :9].reshape(3, 3),
