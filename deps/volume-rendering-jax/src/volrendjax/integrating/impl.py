@@ -50,7 +50,6 @@ mlir.register_lowering(
 
 @jax.custom_vjp
 def __integrate_rays(
-    transmittance_threshold: jax.Array,
     rays_sample_startidx: jax.Array,
     rays_n_samples: jax.Array,
     bgs: jax.Array,
@@ -59,11 +58,9 @@ def __integrate_rays(
     densities: jax.Array,
     rgbs: jax.Array,
 ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
-    transmittance_threshold = jax.numpy.broadcast_to(transmittance_threshold, rays_sample_startidx.shape)
     bgs = jax.numpy.broadcast_to(bgs, (rays_sample_startidx.shape[0], 3))
 
     counter, opacities, final_rgbs, depths = integrate_rays_p.bind(
-        transmittance_threshold,
         rays_sample_startidx,
         rays_n_samples,
         bgs,
@@ -76,7 +73,6 @@ def __integrate_rays(
     return counter, opacities, final_rgbs, depths
 
 def __fwd_integrate_rays(
-    transmittance_threshold: jax.Array,
     rays_sample_startidx: jax.Array,
     rays_n_samples: jax.Array,
     bgs: jax.Array,
@@ -85,11 +81,9 @@ def __fwd_integrate_rays(
     densities: jax.Array,
     rgbs: jax.Array,
 ):
-    transmittance_threshold = jax.numpy.broadcast_to(transmittance_threshold, rays_sample_startidx.shape)
     bgs = jax.numpy.broadcast_to(bgs, (rays_sample_startidx.shape[0], 3))
 
     primal_outputs = __integrate_rays(
-        transmittance_threshold,
         rays_sample_startidx,
         rays_n_samples,
         bgs,
@@ -100,7 +94,6 @@ def __fwd_integrate_rays(
     )
     counter, opacities, final_rgbs, depths = primal_outputs
     aux = {
-        "in.transmittance_threshold": transmittance_threshold,
         "in.rays_sample_startidx": rays_sample_startidx,
         "in.rays_n_samples": rays_n_samples,
         "in.bgs": bgs,
@@ -119,7 +112,6 @@ def __fwd_integrate_rays(
 def __bwd_integrate_rays(aux, grads):
     _, dL_dopacities, dL_dfinal_rgbs, dL_ddepths = grads
     dL_dbgs, dL_dz_vals, dL_ddensities, dL_drgbs = integrate_rays_bwd_p.bind(
-        aux["in.transmittance_threshold"],
         aux["in.rays_sample_startidx"],
         aux["in.rays_n_samples"],
         aux["in.bgs"],
@@ -137,14 +129,14 @@ def __bwd_integrate_rays(aux, grads):
         dL_ddepths,
     )
     return (
-        # First 3 primal inputs are integer-valued arrays (`transmittance_threshold`, 
-        # `rays_sample_startidx`, and `rays_n_samples`), return no gradient for it.
+        # First 2 primal inputs are integer-valued arrays (`rays_sample_startidx`,
+        # `rays_n_samples`), return no gradient for them.
         # REF:
         #   <https://jax.readthedocs.io/en/latest/jep/4008-custom-vjp-update.html#what-to-update>:
         #   Wherever we used to use nondiff_argnums for array values, we should just pass those as
         #   regular arguments.  In the bwd rule, we need to produce values for them, but we can just
         #   produce `None` values to indicate there’s no corresponding gradient value.
-        None, None, None,
+        None, None,
         # 4-th primal input is `dss`, no gradient
         None,
         # gradients for background colors, z_vals and model predictions (densites and rgbs)

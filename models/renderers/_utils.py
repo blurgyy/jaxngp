@@ -1,5 +1,4 @@
 import jax.numpy as jnp
-import jax.random as jran
 
 from utils.common import jit_jaxfn_with
 from utils.types import PinholeCamera, RigidTransformation
@@ -24,7 +23,7 @@ def make_rays_worldspace(
         d_world [H*W, 3]: ray directions, in world-space
     """
     # [H*W, 1]
-    d_cam_idcs = jnp.arange(camera.n_pixels).reshape(-1, 1)
+    d_cam_idcs = jnp.arange(camera.n_pixels)
     # [H*W, 1]
     d_cam_xs = jnp.mod(d_cam_idcs, camera.W)
     d_cam_xs = ((d_cam_xs + 0.5) - camera.cx) / camera.fx
@@ -34,7 +33,7 @@ def make_rays_worldspace(
     # [H*W, 1]
     d_cam_zs = -jnp.ones_like(d_cam_idcs)
     # [H*W, 3]
-    d_cam = jnp.concatenate([d_cam_xs, d_cam_ys, d_cam_zs], axis=-1)
+    d_cam = jnp.stack([d_cam_xs, d_cam_ys, d_cam_zs]).T
     d_cam /= jnp.linalg.norm(d_cam, axis=-1, keepdims=True) + 1e-15
 
     # [H*W, 3]
@@ -43,26 +42,6 @@ def make_rays_worldspace(
     d_world = d_cam @ transform_cw.rotation.T
     d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
 
+    o_world += camera.near * d_world
+
     return o_world, d_world
-
-
-@jit_jaxfn_with(static_argnames=["H", "W", "chunk_size"])
-def get_indices_chunks(
-    KEY: jran.KeyArray,
-    H: int,
-    W: int,
-    chunk_size: int,
-):
-    n_pixels = H * W
-    n_chunks = (n_pixels + chunk_size - 1) // chunk_size
-
-    # randomize ray order
-    KEY, key = jran.split(KEY, 2)
-    indices = jran.permutation(key, H * W)
-
-    # xys has sorted order
-    _xs = jnp.mod(jnp.arange(H * W), W)
-    _ys = jnp.floor_divide(jnp.arange(H * W), H)
-    xys = jnp.concatenate([_xs.reshape(-1, 1), _ys.reshape(-1, 1)], axis=-1)
-
-    return xys, jnp.array_split(indices, n_chunks)

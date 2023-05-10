@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Tuple
+from typing import Tuple
 
 import tyro
 
-from utils.types import LogLevel, RayMarchingOptions, RenderingOptions, SceneOptions
+from utils.types import LogLevel, OrbitTrajectoryOptions, RayMarchingOptions, RenderingOptions, SceneOptions, TransformsProvider
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -132,7 +132,8 @@ class NeRFTrainingArgs(NeRFArgsBase):
     )
     scene: SceneOptions=SceneOptions(
         world_scale=1.0,
-        image_scale=1.0,
+        resolution_scale=1.0,
+        camera_near=0.1,
     )
 
     # raymarching/rendering options for validating during training
@@ -154,8 +155,14 @@ class NeRFTestingArgs(NeRFArgsBase):
     # use checkpoint from this path (can be a directory) for testing
     ckpt: Path
 
-    # which split to test on
-    split: Literal["train", "test", "val"]="test"
+    # if specified, render with a generated orbiting trajectory instead of the loaded frame
+    # transformations
+    trajectory: TransformsProvider="loaded"
+
+    orbit: OrbitTrajectoryOptions
+
+    # naturally sort frames according to their file names before testing
+    sort_frames: bool=False
 
     # if specified value contains "video", a video will be saved; if specified value contains
     # "image", rendered images will be saved.  Value can contain both "video" and "image", e.g.,
@@ -174,7 +181,8 @@ class NeRFTestingArgs(NeRFArgsBase):
     )
     scene: SceneOptions=SceneOptions(
         world_scale=1.0,
-        image_scale=1.0,
+        resolution_scale=1.0,
+        camera_near=0.1,
     )
     
 @dataclass(frozen=True,kw_only=True)

@@ -1,4 +1,5 @@
 from typing import List
+from typing_extensions import assert_never
 
 from PIL import Image
 from flax.training import checkpoints
@@ -6,7 +7,6 @@ import jax
 import jax.random as jran
 import jax.numpy as jnp
 import numpy as np
-from tqdm import tqdm
 
 from models.nerfs import make_nerf_ngp, make_skysphere_background_model_ngp
 from models.renderers import render_image_inference
@@ -28,23 +28,35 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         logger.error("specified checkpoint '{}' does not exist".format(args.ckpt))
         exit(1)
 
-    logger.info("loading testing frames")
-    scene_data, test_views = data.load_scene(
-        srcs=args.frames,
-        world_scale=args.scene.world_scale,
-        image_scale=args.scene.image_scale,
-    )
+    if args.trajectory == "orbit":
+        logger.debug("generating {} testing frames".format(args.orbit.n_frames))
+        scene_meta = data.load_scene(
+            srcs=args.frames,
+            scene_options=args.scene,
+            orbit_options=args.orbit,
+        )
+        logger.info("generated {} camera transforms for testing".format(len(scene_meta.frames)))
+    elif args.trajectory == "loaded":
+        logger.debug("loading testing frames from {}".format(args.frames))
+        scene_data, test_views = data.load_scene(
+            srcs=args.frames,
+            scene_options=args.scene,
+            sort_frames=args.sort_frames,
+        )
+        scene_meta = scene_data.meta
+        logger.info("loaded {} camera transforms for testing".format(len(scene_meta.frames)))
 
     # load parameters
+    logger.debug("loading checkpoint from '{}'".format(args.ckpt))
     state: NeRFState = checkpoints.restore_checkpoint(
         args.ckpt,
         target=NeRFState.empty(
             raymarch=args.raymarch,
             render=args.render,
             scene_options=args.scene,
-            scene_meta=scene_data.meta,
-            nerf_fn=make_nerf_ngp(bound=scene_data.meta.bound).apply,
-            bg_fn=make_skysphere_background_model_ngp(bound=scene_data.meta.bound).apply if scene_data.meta.bg else None,
+            scene_meta=scene_meta,
+            nerf_fn=make_nerf_ngp(bound=scene_meta.bound).apply,
+            bg_fn=make_skysphere_background_model_ngp(bound=scene_meta.bound).apply if scene_meta.bg else None,
         ),
     )
     # WARN:
@@ -52,15 +64,17 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     #   which slows down inference.  use jax.device_put() to convert them to jax's DeviceArray type.
     # REF: <https://github.com/google/flax/discussions/1199#discussioncomment-635132>
     state = jax.device_put(state)
+    logger.info("checkpoint loaded from '{}'".format(args.ckpt))
 
     rendered_images: List[RenderedImage] = []
     try:
-        logger.info("starting testing (totally {} image(s) to test)".format(len(test_views)))
-        for test_i, test_view in enumerate(common.tqdm(test_views, desc="testing")):
-            logger.debug("testing on {}".format(test_view))
+        n_frames = len(scene_meta.frames)
+        logger.info("starting testing (totally {} transform(s) to test)".format(n_frames))
+        for test_i in common.tqdm(range(n_frames), desc="testing"):
+            logger.debug("testing on frame {}".format(scene_meta.frames[test_i]))
             transform = RigidTransformation(
-                rotation=scene_data.all_transforms[test_i, :9].reshape(3, 3),
-                translation=scene_data.all_transforms[test_i, -3:].reshape(3),
+                rotation=scene_meta.frames[test_i].transform_matrix_jax_array[:3, :3],
+                translation=scene_meta.frames[test_i].transform_matrix_jax_array[:3, 3],
             )
             KEY, key = jran.split(KEY, 2)
             bg, rgb, depth = render_image_inference(
@@ -76,35 +90,31 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     except KeyboardInterrupt:
         logger.warn("keyboard interrupt, tested {} images".format(len(rendered_images)))
 
-    gt_rgbs_f32 = map(
-        lambda test_view, rendered_image: data.blend_rgba_image_array(
-            test_view.image_rgba_u8.astype(jnp.float32) / 255,
-            rendered_image.bg,
-        ),
-        test_views,
-        rendered_images,
-    )
-    logger.debug("calculating psnr")
-    mean_psnr = sum(map(
-        data.psnr,
-        map(data.f32_to_u8, gt_rgbs_f32),
-        map(lambda ri: ri.rgb, rendered_images),
-    )) / len(rendered_images)
-    logger.info("tested {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
+    if args.trajectory == "loaded":
+        gt_rgbs_f32 = map(
+            lambda test_view, rendered_image: data.blend_rgba_image_array(
+                test_view.image_rgba_u8.astype(jnp.float32) / 255,
+                rendered_image.bg,
+            ),
+            test_views,
+            rendered_images,
+        )
+        logger.debug("calculating psnr")
+        mean_psnr = sum(map(
+            data.psnr,
+            map(data.f32_to_u8, gt_rgbs_f32),
+            map(lambda ri: ri.rgb, rendered_images),
+        )) / len(rendered_images)
+        logger.info("tested {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
 
-    save_dest = args.exp_dir.joinpath(args.split)
+    elif args.trajectory == "orbit":
+        pass
+
+    else:
+        assert_never("")
+
+    save_dest = args.exp_dir.joinpath("test")
     save_dest.mkdir(parents=True, exist_ok=True)
-    if "image" in args.save_as:
-        dest_rgb = save_dest.joinpath("rgb")
-        dest_depth = save_dest.joinpath("depth")
-
-        dest_rgb.mkdir(parents=True, exist_ok=True)
-        dest_depth.mkdir(parents=True, exist_ok=True)
-
-        logger.debug("saving as images")
-        for save_i, img in enumerate(common.tqdm(rendered_images, desc="saving images")):
-            Image.fromarray(np.asarray(img.rgb)).save(dest_rgb.joinpath("{:03d}.png".format(save_i)))
-            Image.fromarray(np.asarray(img.depth)).save(dest_depth.joinpath("{:03d}.png".format(save_i)))
 
     if "video" in args.save_as:
         dest_rgb_video = save_dest.joinpath("rgb.mp4")
@@ -122,4 +132,14 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
             map(lambda img: img.depth, rendered_images),
         )
 
-    return mean_psnr
+    if "image" in args.save_as:
+        dest_rgb = save_dest.joinpath("rgb")
+        dest_depth = save_dest.joinpath("depth")
+
+        dest_rgb.mkdir(parents=True, exist_ok=True)
+        dest_depth.mkdir(parents=True, exist_ok=True)
+
+        logger.debug("saving as images")
+        for save_i, img in enumerate(common.tqdm(rendered_images, desc="saving images")):
+            Image.fromarray(np.asarray(img.rgb)).save(dest_rgb.joinpath("{:03d}.png".format(save_i)))
+            Image.fromarray(np.asarray(img.depth)).save(dest_depth.joinpath("{:03d}.png".format(save_i)))

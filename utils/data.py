@@ -13,6 +13,7 @@ import imageio
 import jax
 import jax.numpy as jnp
 import jax.random as jran
+from natsort import natsorted
 import numpy as np
 
 from . import sfm
@@ -20,15 +21,18 @@ from .common import jit_jaxfn_with, mkValueError, tqdm
 from .types import (
     ColmapMatcherType,
     ImageMetadata,
+    OrbitTrajectoryOptions,
     PinholeCamera,
     RGBColor,
     RGBColorU8,
     RigidTransformation,
     SceneData,
     SceneMeta,
+    SceneOptions,
     TransformJsonFrame,
     TransformJsonNGP,
     TransformJsonNeRFSynthetic,
+    TransformsProvider,
     ViewMetadata,
 )
 
@@ -560,9 +564,9 @@ def load_transform_json_recursive(src: Path | str) -> TransformJsonNGP | Transfo
 
 def load_scene(
     srcs: Sequence[Path | str],
-    world_scale: float,
-    image_scale: float,
-    load_views: bool=True,
+    scene_options: SceneOptions,
+    sort_frames: bool=False,
+    orbit_options: OrbitTrajectoryOptions | None=None,
 ) -> SceneMeta | Tuple[SceneData, List[ViewMetadata]]:
     assert isinstance(srcs, collections.abc.Sequence) and not isinstance(srcs, str), (
         "load_scene accepts a sequence of paths as srcs to load, did you mean '{}'?".format([srcs])
@@ -570,6 +574,11 @@ def load_scene(
     srcs = list(map(Path, srcs))
 
     transforms = merge_transforms(map(load_transform_json_recursive, srcs))
+    if sort_frames:
+        transforms = dataclasses.replace(
+            transforms,
+            frames=natsorted(transforms.frames, key=lambda f: f.file_path),
+        )
 
     if transforms is None:
         raise FileNotFoundError("could not find any valid transforms in {}".format(srcs))
@@ -595,26 +604,25 @@ def load_scene(
     # shared camera model
     if isinstance(transforms, TransformJsonNeRFSynthetic):
         _img = Image.open(try_image_extensions(transforms.frames[0].file_path))
-        W, H = int(_img.width * image_scale), int(_img.height * image_scale)
         fovx = transforms.camera_angle_x
-        focal = float(.5 * W / np.tan(fovx / 2))
+        focal = float(.5 * _img.width / np.tan(fovx / 2))
         camera = PinholeCamera(
-            W=W,
-            H=H,
-            fx=focal * image_scale,
-            fy=focal * image_scale,
-            cx=W / 2,
-            cy=H / 2,
+            W=_img.width,
+            H=_img.height,
+            fx=focal,
+            fy=focal,
+            cx=_img.width / 2,
+            cy=_img.height / 2,
         )
 
     elif isinstance(transforms, TransformJsonNGP):
         camera = PinholeCamera(
-            W=int(transforms.w * image_scale),
-            H=int(transforms.h * image_scale),
-            fx=transforms.fl_x * image_scale,
-            fy=transforms.fl_y * image_scale,
-            cx=transforms.cx * image_scale,
-            cy=transforms.cy * image_scale,
+            W=transforms.w,
+            H=transforms.h,
+            fx=transforms.fl_x,
+            fy=transforms.fl_y,
+            cx=transforms.cx,
+            cy=transforms.cy,
         )
 
     else:
@@ -624,18 +632,22 @@ def load_scene(
         ))
 
     scene_meta = SceneMeta(
-        bound=transforms.aabb_scale * world_scale,
+        bound=transforms.aabb_scale * scene_options.world_scale,
         bg=transforms.bg,
-        camera=camera,
+        camera=(
+            camera
+                .scale_world(scene_options.world_scale)
+                .scale_resolution(scene_options.resolution_scale)
+        ),
         frames=transforms.frames,
     )
 
-    if not load_views:
-        return scene_meta
+    if orbit_options is not None:
+        return scene_meta.make_data_with_orbiting_trajectory(orbit_options)
 
     views = list(map(
         lambda frame: ViewMetadata(
-            scale=image_scale,
+            scale=scene_options.resolution_scale,
             transform=RigidTransformation(
                 rotation=frame.transform_matrix_numpy[:3, :3],
                 translation=frame.transform_matrix_numpy[:3, 3],
@@ -665,7 +677,7 @@ def load_scene(
         list(map(lambda view: view.transform.translation.reshape(-1, 3), views)),
         axis=0,
     )
-    all_Ts *= world_scale
+    all_Ts *= scene_options.world_scale
     # float,[n_views, 3+9+3]
     all_transforms = jnp.concatenate([all_Rs, all_Ts], axis=-1)
 
