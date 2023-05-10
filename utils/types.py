@@ -105,11 +105,38 @@ class OccupancyDensityGrid:
 class NeRFBatchConfig:
     mean_effective_samples_per_ray: int
     mean_samples_per_ray: int
+
+    running_mean_effective_samples_per_ray: float
+    running_mean_samples_per_ray: float
+
     n_rays: int
 
-    @property
-    def estimated_batch_size(self):
-        return self.n_rays * self.mean_samples_per_ray
+    @classmethod
+    def create(cls, /, mean_effective_samples_per_ray: int, mean_samples_per_ray: int, n_rays: int) -> "NeRFBatchConfig":
+        return cls(
+            mean_effective_samples_per_ray=mean_effective_samples_per_ray,
+            mean_samples_per_ray=mean_samples_per_ray,
+            running_mean_effective_samples_per_ray=mean_effective_samples_per_ray,
+            running_mean_samples_per_ray=mean_samples_per_ray,
+            n_rays=n_rays,
+        )
+
+    def update(self, /, new_measured_batch_size: int, new_measured_batch_size_before_compaction: int) -> "NeRFBatchConfig":
+        decay = .95
+        return self.replace(
+            running_mean_effective_samples_per_ray=self.running_mean_effective_samples_per_ray * decay + (1 - decay) * new_measured_batch_size / self.n_rays,
+            running_mean_samples_per_ray=self.running_mean_samples_per_ray * decay + (1 - decay) * new_measured_batch_size_before_compaction / self.n_rays,
+        )
+
+    def commit(self, total_samples: int) -> "NeRFBatchConfig":
+        new_mean_effective_samples_per_ray=int(self.running_mean_samples_per_ray + 1.5)
+        new_mean_samples_per_ray=int(self.running_mean_samples_per_ray + 1.5)
+        new_n_rays=int(total_samples // new_mean_samples_per_ray)
+        return self.replace(
+            mean_effective_samples_per_ray=new_mean_effective_samples_per_ray,
+            mean_samples_per_ray=new_mean_samples_per_ray,
+            n_rays=new_n_rays,
+        )
 
 
 @dataclass
@@ -742,10 +769,18 @@ class NeRFState(TrainState):
         return self.step < 256
 
     @property
-    def should_update_batch_config(self) -> bool:
+    def should_commit_batch_config(self) -> bool:
         return (
             self.step > 0
             and self.step % 16 == 0
+        )
+
+    def update_batch_config(self, /, new_measured_batch_size: int, new_measured_batch_size_before_compaction: int) -> "NeRFState":
+        return self.replace(
+            batch_config=self.batch_config.update(
+                new_measured_batch_size=new_measured_batch_size,
+                new_measured_batch_size_before_compaction=new_measured_batch_size_before_compaction,
+            )
         )
 
     @property
