@@ -103,17 +103,6 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
 
     save_dest = args.exp_dir.joinpath("test")
     save_dest.mkdir(parents=True, exist_ok=True)
-    if "image" in args.save_as:
-        dest_rgb = save_dest.joinpath("rgb")
-        dest_depth = save_dest.joinpath("depth")
-
-        dest_rgb.mkdir(parents=True, exist_ok=True)
-        dest_depth.mkdir(parents=True, exist_ok=True)
-
-        logger.debug("saving as images")
-        for save_i, img in enumerate(common.tqdm(rendered_images, desc="saving images")):
-            Image.fromarray(np.asarray(img.rgb)).save(dest_rgb.joinpath("{:03d}.png".format(save_i)))
-            Image.fromarray(np.asarray(img.depth)).save(dest_depth.joinpath("{:03d}.png".format(save_i)))
 
     if "video" in args.save_as:
         dest_rgb_video = save_dest.joinpath("rgb.mp4")
@@ -130,3 +119,15 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
             save_dest.joinpath("depth.mp4"),
             map(lambda img: img.depth, rendered_images),
         )
+
+    if "image" in args.save_as:
+        dest_rgb = save_dest.joinpath("rgb")
+        dest_depth = save_dest.joinpath("depth")
+
+        dest_rgb.mkdir(parents=True, exist_ok=True)
+        dest_depth.mkdir(parents=True, exist_ok=True)
+
+        logger.debug("saving as images")
+        for save_i, img in enumerate(common.tqdm(rendered_images, desc="saving images")):
+            Image.fromarray(np.asarray(img.rgb)).save(dest_rgb.joinpath("{:03d}.png".format(save_i)))
+            Image.fromarray(np.asarray(img.depth)).save(dest_depth.joinpath("{:03d}.png".format(save_i)))
