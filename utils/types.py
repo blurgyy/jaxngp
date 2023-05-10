@@ -465,7 +465,7 @@ class SceneMeta:
     def make_data_with_orbiting_trajectory(
         self,
         opts: OrbitTrajectoryOptions,
-    ) -> "SceneData":
+    ) -> "SceneMeta":
         assert isinstance(opts, OrbitTrajectoryOptions)
 
         thetas = np.linspace(0, opts.n_orbit * 2 * np.pi, opts.n_frames + 1)[:-1]
@@ -495,11 +495,7 @@ class SceneMeta:
             xyzs,
         ))
 
-        return SceneData(
-            meta=self.replace(frames=frames),
-            all_rgbas_u8=None,
-            all_transforms=None,
-        )
+        return self.replace(frames=frames)
 
 
 @dataclass

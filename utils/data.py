@@ -563,7 +563,7 @@ def load_scene(
     scene_options: SceneOptions,
     sort_frames: bool=False,
     orbit_options: OrbitTrajectoryOptions | None=None,
-) -> Tuple[SceneData, List[ViewMetadata]]:
+) -> SceneMeta | Tuple[SceneData, List[ViewMetadata]]:
     assert isinstance(srcs, collections.abc.Sequence) and not isinstance(srcs, str), (
         "load_scene accepts a sequence of paths as srcs to load, did you mean '{}'?".format([srcs])
     )
@@ -639,7 +639,7 @@ def load_scene(
     )
 
     if orbit_options is not None:
-        return scene_meta.make_data_with_orbiting_trajectory(orbit_options), None
+        return scene_meta.make_data_with_orbiting_trajectory(orbit_options)
 
     views = list(map(
         lambda frame: ViewMetadata(

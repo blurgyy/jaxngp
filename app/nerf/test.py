@@ -28,24 +28,33 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         logger.error("specified checkpoint '{}' does not exist".format(args.ckpt))
         exit(1)
 
-    logger.info("loading testing frames")
-    scene_data, test_views = data.load_scene(
-        srcs=args.frames,
-        scene_options=args.scene,
-        sort_frames=args.sort_frames,
-        orbit_options=args.orbit if args.trajectory == "orbit" else None,
-    )
+    if args.trajectory == "orbit":
+        logger.info("generating {} testing frames".format(args.orbit.n_frames))
+        scene_meta = data.load_scene(
+            srcs=args.frames,
+            scene_options=args.scene,
+            orbit_options=args.orbit,
+        )
+    elif args.trajectory == "loaded":
+        logger.info("loading testing frames from {}".format(args.frames))
+        scene_data, test_views = data.load_scene(
+            srcs=args.frames,
+            scene_options=args.scene,
+            sort_frames=args.sort_frames,
+        )
+        scene_meta = scene_data.meta
 
     # load parameters
+    logger.info("loading checkpoint from '{}'".format(args.ckpt))
     state: NeRFState = checkpoints.restore_checkpoint(
         args.ckpt,
         target=NeRFState.empty(
             raymarch=args.raymarch,
             render=args.render,
             scene_options=args.scene,
-            scene_meta=scene_data.meta,
-            nerf_fn=make_nerf_ngp(bound=scene_data.meta.bound).apply,
-            bg_fn=make_skysphere_background_model_ngp(bound=scene_data.meta.bound).apply if scene_data.meta.bg else None,
+            scene_meta=scene_meta,
+            nerf_fn=make_nerf_ngp(bound=scene_meta.bound).apply,
+            bg_fn=make_skysphere_background_model_ngp(bound=scene_meta.bound).apply if scene_meta.bg else None,
         ),
     )
     # WARN:
@@ -56,13 +65,13 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
 
     rendered_images: List[RenderedImage] = []
     try:
-        n_frames = len(scene_data.meta.frames)
+        n_frames = len(scene_meta.frames)
         logger.info("starting testing (totally {} image(s) to test)".format(n_frames))
         for test_i in common.tqdm(range(n_frames), desc="testing"):
-            logger.debug("testing on frame {}".format(scene_data.meta.frames[test_i]))
+            logger.debug("testing on frame {}".format(scene_meta.frames[test_i]))
             transform = RigidTransformation(
-                rotation=scene_data.meta.frames[test_i].transform_matrix_jax_array[:3, :3],
-                translation=scene_data.meta.frames[test_i].transform_matrix_jax_array[:3, 3],
+                rotation=scene_meta.frames[test_i].transform_matrix_jax_array[:3, :3],
+                translation=scene_meta.frames[test_i].transform_matrix_jax_array[:3, 3],
             )
             KEY, key = jran.split(KEY, 2)
             bg, rgb, depth = render_image_inference(
