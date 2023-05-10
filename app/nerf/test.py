@@ -29,23 +29,25 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         exit(1)
 
     if args.trajectory == "orbit":
-        logger.info("generating {} testing frames".format(args.orbit.n_frames))
+        logger.debug("generating {} testing frames".format(args.orbit.n_frames))
         scene_meta = data.load_scene(
             srcs=args.frames,
             scene_options=args.scene,
             orbit_options=args.orbit,
         )
+        logger.info("generated {} camera transforms for testing".format(len(scene_meta.frames)))
     elif args.trajectory == "loaded":
-        logger.info("loading testing frames from {}".format(args.frames))
+        logger.debug("loading testing frames from {}".format(args.frames))
         scene_data, test_views = data.load_scene(
             srcs=args.frames,
             scene_options=args.scene,
             sort_frames=args.sort_frames,
         )
         scene_meta = scene_data.meta
+        logger.info("loaded {} camera transforms for testing".format(len(scene_meta.frames)))
 
     # load parameters
-    logger.info("loading checkpoint from '{}'".format(args.ckpt))
+    logger.debug("loading checkpoint from '{}'".format(args.ckpt))
     state: NeRFState = checkpoints.restore_checkpoint(
         args.ckpt,
         target=NeRFState.empty(
@@ -62,11 +64,12 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     #   which slows down inference.  use jax.device_put() to convert them to jax's DeviceArray type.
     # REF: <https://github.com/google/flax/discussions/1199#discussioncomment-635132>
     state = jax.device_put(state)
+    logger.info("checkpoint loaded from '{}'".format(args.ckpt))
 
     rendered_images: List[RenderedImage] = []
     try:
         n_frames = len(scene_meta.frames)
-        logger.info("starting testing (totally {} image(s) to test)".format(n_frames))
+        logger.info("starting testing (totally {} transform(s) to test)".format(n_frames))
         for test_i in common.tqdm(range(n_frames), desc="testing"):
             logger.debug("testing on frame {}".format(scene_meta.frames[test_i]))
             transform = RigidTransformation(
