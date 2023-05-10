@@ -5,8 +5,6 @@ import jax.numpy as jnp
 
 # jit rules
 def integrate_rays_abstract(
-    transmittance_threshold: jax.Array,
-
     rays_sample_startidx: jax.Array,
     rays_n_samples: jax.Array,
 
@@ -16,7 +14,7 @@ def integrate_rays_abstract(
     densities: jax.Array,
     rgbs: jax.Array,
 ):
-    (n_rays,), (total_samples,) = transmittance_threshold.shape, dss.shape
+    (n_rays,), (total_samples,) = rays_sample_startidx.shape, dss.shape
 
     chex.assert_shape([rays_sample_startidx, rays_n_samples], (n_rays,))
     chex.assert_shape(bgs, (n_rays, 3))
@@ -49,8 +47,6 @@ def integrate_rays_abstract(
     )
 
 def integrate_rays_backward_abstract(
-    transmittance_threshold: jax.Array,
-
     rays_sample_startidx: jax.Array,
     rays_n_samples: jax.Array,
 
@@ -71,7 +67,7 @@ def integrate_rays_backward_abstract(
     dL_dfinal_rgbs: jax.Array,
     dL_ddepths: jax.Array,
 ):
-    (n_rays,), (total_samples,) = transmittance_threshold.shape, dss.shape
+    (n_rays,), (total_samples,) = rays_sample_startidx.shape, dss.shape
 
     chex.assert_shape([rays_sample_startidx, rays_n_samples], (n_rays,))
     chex.assert_shape(bgs, (n_rays, 3))
@@ -106,7 +102,6 @@ def integrate_rays_backward_abstract(
 
 
 def integrate_rays_inference_abstract(
-    transmittance_threshold: jax.ShapedArray,
     rays_bg: jax.ShapedArray,
     rays_rgb: jax.ShapedArray,
     rays_T: jax.ShapedArray,
@@ -122,7 +117,7 @@ def integrate_rays_inference_abstract(
     (n_total_rays, _), (n_rays, march_steps_cap) = rays_rgb.shape, dss.shape
 
     chex.assert_shape([rays_bg, rays_rgb], (n_total_rays, 3))
-    chex.assert_shape([transmittance_threshold, rays_T, rays_depth], (n_total_rays,))
+    chex.assert_shape([rays_T, rays_depth], (n_total_rays,))
     chex.assert_shape([n_samples, indices], (n_rays,))
     chex.assert_shape([dss, z_vals], (n_rays, march_steps_cap))
     chex.assert_shape(densities, (n_rays, march_steps_cap, 1))

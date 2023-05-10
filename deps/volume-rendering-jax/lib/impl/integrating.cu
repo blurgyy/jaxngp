@@ -9,6 +9,8 @@ namespace volrendjax {
 
 namespace {
 
+static constexpr float T_THRESHOLD = 1e-4f;
+
 // debugging kernel for inspecting data passed to custom op
 __global__ void copy_left_to_right(std::uint32_t length, float const *lhs, float * const rhs) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -24,7 +26,6 @@ __global__ void integrate_rays_kernel(
     std::uint32_t const n_rays
 
     // input arrays (7)
-    , float const * const __restrict__ transmittance_threshold  // [n_rays]
     , std::uint32_t const * const __restrict__ rays_sample_startidx  // [n_rays]
     , std::uint32_t const * const __restrict__ rays_n_samples  // [n_rays]
 
@@ -61,7 +62,7 @@ __global__ void integrate_rays_kernel(
     float ray_depth = 0.f;
     float ray_transmittance = 1.f;
     float r = 0.f, g = 0.f, b = 0.f;
-    for (; ray_transmittance > transmittance_threshold[i] && sample_idx < n_samples; ++sample_idx) {
+    for (; ray_transmittance > T_THRESHOLD && sample_idx < n_samples; ++sample_idx) {
         float const z_val = ray_z_vals[sample_idx];
         float const delta_t = ray_dss[sample_idx];
         float const alpha = 1.f - __expf(-ray_densities[sample_idx] * delta_t);
@@ -88,7 +89,7 @@ __global__ void integrate_rays_kernel(
     // stop ray marching and **set the remaining contribution to zero** as soon as the transmittance
     // of the ray drops below a threshold
     // NOTE: `ray_transmittance` equals to `1 - ray_opacity`
-    if (ray_transmittance < transmittance_threshold[i]){ 
+    if (ray_transmittance < T_THRESHOLD){ 
         float const denom = ray_opacity;
         depths[i] = ray_depth / denom;
         opacities[i] = 1.f;
@@ -117,7 +118,6 @@ __global__ void integrate_rays_backward_kernel(
     std::uint32_t const n_rays
 
     // input arrays
-    , float const * const __restrict__ transmittance_threshold
     , std::uint32_t const * const __restrict__ rays_sample_startidx  // [n_rays]
     , std::uint32_t const * const __restrict__ rays_n_samples  // [n_rays]
 
@@ -184,7 +184,7 @@ __global__ void integrate_rays_backward_kernel(
     float transmittance = 1.f;
     float cur_rgb[3] = {0.f, 0.f, 0.f};
     float cur_depth = 0.f;
-    for (std::uint32_t sample_idx = 0; transmittance > transmittance_threshold[i] && sample_idx < n_samples; ++sample_idx) {
+    for (std::uint32_t sample_idx = 0; transmittance > T_THRESHOLD && sample_idx < n_samples; ++sample_idx) {
         float const z_val = ray_z_vals[sample_idx];
         float const delta_t = ray_dss[sample_idx];
         float const alpha = 1.f - __expf(-ray_densities[sample_idx] * delta_t);
@@ -235,7 +235,6 @@ __global__ void integrate_rays_inference_kernel(
     , std::uint32_t const n_rays
     , std::uint32_t const march_steps_cap
 
-    , float const * const __restrict__ transmittance_threshold  // [n_total_rays]
     , float const * const __restrict__ rays_bg  // [n_total_rays, 3]
     , float const * const __restrict__ rays_rgb  // [n_total_rays, 3]
     , float const * const __restrict__ rays_T  // [n_total_rays]
@@ -266,13 +265,12 @@ __global__ void integrate_rays_inference_kernel(
         float const * const __restrict__ ray_densities = densities + i * march_steps_cap;
         float const * const __restrict__ ray_rgbs = rgbs + i * march_steps_cap * 3;
 
-        float const T_thresh = transmittance_threshold[ray_idx];
         float ray_T = rays_T[ray_idx];
         float r = rays_rgb[ray_idx * 3 + 0];
         float g = rays_rgb[ray_idx * 3 + 1];
         float b = rays_rgb[ray_idx * 3 + 2];
         float ray_depth = rays_depth[ray_idx];
-        for (std::uint32_t sample_idx = 0; ray_T > T_thresh && sample_idx < ray_n_samples; ++sample_idx) {
+        for (std::uint32_t sample_idx = 0; ray_T > T_THRESHOLD && sample_idx < ray_n_samples; ++sample_idx) {
             float const ds = ray_dss[sample_idx];
             float const density = ray_densities[sample_idx];
             float const alpha = 1.f - __expf(-density * ds);
@@ -284,7 +282,7 @@ __global__ void integrate_rays_inference_kernel(
             ray_T *= (1.f - alpha);
         }
 
-        if (ray_T <= T_thresh) {
+        if (ray_T <= T_THRESHOLD) {
             float const denom = 1 - ray_T;
             terminated[i] = true;
             rays_depth_out[i] = ray_depth / denom;
@@ -328,7 +326,6 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
     std::uint32_t const n_rays = desc.n_rays;
     std::uint32_t const total_samples = desc.total_samples;
     /// arrays
-    float const * const __restrict__ transmittance_threshold = static_cast<float *>(next_buffer());
     std::uint32_t const * const __restrict__ rays_sample_startidx = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     std::uint32_t const * const __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     float const * const __restrict__ bgs = static_cast<float *>(next_buffer());  // [n_rays, 3]
@@ -358,7 +355,6 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
         // static arguments
         n_rays
         // input arrays (7)
-        , transmittance_threshold
         , rays_sample_startidx
         , rays_n_samples
         , bgs
@@ -391,7 +387,6 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
     std::uint32_t const total_samples = desc.total_samples;
 
     /// arrays
-    float const * const __restrict__ transmittance_threshold = static_cast<float *>(next_buffer());
     std::uint32_t const * const __restrict__ rays_sample_startidx = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     std::uint32_t const * const __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     //// original inputs
@@ -429,7 +424,6 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
         n_rays
 
         // input arrays
-        , transmittance_threshold
         , rays_sample_startidx
         , rays_n_samples
         /// original inputs
@@ -472,7 +466,6 @@ void integrate_rays_inference_launcher(cudaStream_t stream, void **buffers, char
     std::uint32_t const march_steps_cap = desc.march_steps_cap;
 
     /// arrays
-    float const * const __restrict__ transmittance_threshold = static_cast<float *>(next_buffer());  // [n_total_rays]
     float const * const __restrict__ rays_bg = static_cast<float *>(next_buffer());  // [n_total_rays, 3]
     float const * const __restrict__ rays_rgb = static_cast<float *>(next_buffer());  // [n_total_rays, 3]
     float const * const __restrict__ rays_T = static_cast<float *>(next_buffer());  // [n_total_rays]
@@ -507,7 +500,6 @@ void integrate_rays_inference_launcher(cudaStream_t stream, void **buffers, char
         , n_rays
         , march_steps_cap
 
-        , transmittance_threshold
         , rays_bg
         , rays_rgb
         , rays_T

@@ -9,7 +9,6 @@ from . import impl
 # `__integrate_rays` function because the @jax.custom_vjp decorator makes the decorated function's
 # docstring invisible to LSPs).
 def integrate_rays(
-    transmittance_threshold: jax.Array,
     rays_sample_startidx: jax.Array,
     rays_n_samples: jax.Array,
     bgs: jax.Array,
@@ -20,8 +19,6 @@ def integrate_rays(
 ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     """
     Inputs:
-        transmittance_threshold `[n_rays]`: the i-th ray will stop compositing color once its
-                                            accumulated transmittance is below this threshold
         rays_sample_startidx `[n_rays]`: i-th element is the index of the first sample in z_vals,
                                          densities, and rgbs of the i-th ray
         rays_n_samples `[n_rays]`: i-th element is the number of samples for the i-th ray
@@ -48,7 +45,6 @@ def integrate_rays(
         depths `[n_rays]`: estimated termination depth of each ray
     """
     counter, opacities, final_rgbs, depths = impl.__integrate_rays(
-        transmittance_threshold,
         rays_sample_startidx,
         rays_n_samples,
         bgs,
@@ -62,7 +58,6 @@ def integrate_rays(
 
 
 def integrate_rays_inference(
-    transmittance_threshold: jax.Array,
     rays_bg: jax.Array,
     rays_rgb: jax.Array,
     rays_T: jax.Array,
@@ -76,7 +71,6 @@ def integrate_rays_inference(
     rgbs: jax.Array,
 ):
     terminate_cnt, terminated, rays_rgb_out, rays_T_out, rays_depth_out = impl.integrate_rays_inference_p.bind(
-        jax.numpy.broadcast_to(transmittance_threshold, (rays_bg.shape[0],)),
         rays_bg,
         rays_rgb,
         rays_T,

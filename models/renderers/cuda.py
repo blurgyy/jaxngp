@@ -194,14 +194,13 @@ def render_rays_train(
     )
 
     effective_samples, opacities, final_rgbs, depths = integrate_rays(
-        1e-4,
-        rays_sample_startidx,
-        rays_n_samples,
-        bg,
-        dss,
-        z_vals,
-        densities,
-        rgbs,
+        rays_sample_startidx=rays_sample_startidx,
+        rays_n_samples=rays_n_samples,
+        bgs=bg,
+        dss=dss,
+        z_vals=z_vals,
+        densities=densities,
+        rgbs=rgbs,
     )
 
     batch_metrics = {
@@ -214,7 +213,6 @@ def render_rays_train(
 
 @jit_jaxfn_with(static_argnames=["march_steps_cap"])
 def march_and_integrate_inference(
-    transmittance_threshold: float | jax.Array,
     march_steps_cap: int,
     state: NeRFState,
 
@@ -257,7 +255,6 @@ def march_and_integrate_inference(
     )
 
     terminate_cnt, terminated, rays_rgb, rays_T, rays_depth = integrate_rays_inference(
-        transmittance_threshold=transmittance_threshold,
         rays_bg=rays_bg,
         rays_rgb=rays_rgb,
         rays_T=rays_T,
@@ -317,7 +314,6 @@ def render_image_inference(
         terminate_cnt = 0
         for _ in range(iters):
             iter_terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth = march_and_integrate_inference(
-                transmittance_threshold=1e-4,
                 march_steps_cap=march_rays_cap,
                 state=state,
 
