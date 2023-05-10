@@ -156,6 +156,7 @@ class Gui_trainer():
             },
             tx=self.optimizer,
         )
+        self.state=self.state.mark_untrained_density_grid()
         self.cur_step=0
     def render_frame(self):
         #camera pose
@@ -181,7 +182,7 @@ class Gui_trainer():
             #_scale=self.gui_args.resolution_scale
             _camera=PinholeCamera(
                                 H=int(_scene_meta.camera.H*_scale),
-                                W=int(_scene_meta.camera.H*_scale),
+                                W=int(_scene_meta.camera.W*_scale),
                                 fx=int(_scene_meta.camera.fx*_scale),
                                 fy=int(_scene_meta.camera.fy*_scale),
                                 cx=int(_scene_meta.camera.cx*_scale),
@@ -212,7 +213,6 @@ class Gui_trainer():
         img=Image.fromarray(np.array(img,dtype=np.uint8))
         img=img.resize(size=(800,800), resample=1)
         img=np.array(img,dtype=np.float32)/255.
-        self.logger.info("img shape:{}".format(img.shape))
         return img    
         
 def gui_train_epoch(
@@ -453,7 +453,7 @@ class NeRFGUI():
             #resolution
             with dpg.group(horizontal=True):
                 dpg.add_text("resolution scale:")
-                self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,clamped=True,min_value=0.0,max_value=1.0)
+                self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,clamped=True,min_value=0.1,max_value=1.0)
         dpg.setup_dearpygui()
         dpg.show_viewport()
     def train_step(self):
