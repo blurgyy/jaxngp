@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path,PosixPath
 import numpy as np
-from typing import List, Literal, Optional,Any,Tuple
+from typing import List, Literal, Optional,Any,Tuple,Union
 import jax.random as jran
 import jax.numpy as jnp
 from dataclasses import dataclass,field
@@ -158,13 +158,13 @@ class Gui_trainer():
         )
         self.cur_step=0
    
-    def train_steps(self,steps:int)->Tuple[np.array,np.array,np.array]:
+    def train_steps(self,steps:int,_scale:float)->Tuple[np.array,np.array,np.array]:
         gc.collect()
         
         if self.cur_step<self.gui_args.max_step:
             
             _scene_meta = self.scene_meta
-            _scale=self.gui_args.resolution_scale
+            #_scale=self.gui_args.resolution_scale
             _camera=PinholeCamera(
                                 H=int(_scene_meta.camera.H*_scale),
                                 W=int(_scene_meta.camera.H*_scale),
@@ -313,15 +313,17 @@ class TrainThread(threading.Thread):
         self.camera_pose=camera_pose
         self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args)
         self.step=step
-  
+        self.scale=gui_args.resolution_scale
         
         self.framebuff=np.ones(shape=(self.gui_args.H,self.gui_args.W,3),dtype=np.float32)
     def run(self):
         while self.istraining and self.trainer.cur_step<self.gui_args.max_step:
-            _,self.framebuff,_=self.trainer.train_steps(self.step)
+            _,self.framebuff,_=self.trainer.train_steps(self.step,self.scale)
         self.logger.info("training finished")    
     def stop(self):
         self.istraining=False
+    def set_scale(self,_scale):
+        self.scale=_scale
     
 
 @dataclass
@@ -344,8 +346,10 @@ class NeRFGUI():
     
     trainer:Gui_trainer=field(init=False)
     
+    scale_slider:Union[int,str]=field(init=False)
     
     def __post_init__(self):
+        #self.scale_slider=dpg.generate_uuid()
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
         self.H,self.W=self.gui_args.H,self.gui_args.W
         self.framebuff=np.ones(shape=(self.W,self.H,3),dtype=np.float32)#default background is white
@@ -381,6 +385,11 @@ class NeRFGUI():
         self.trainer=None
         
     def ItemsLayout(self):
+        # def resolutionControls():
+        #     dpg.add_text("resolution scale:",parent=)
+        #     dpg.add_slider_float(label="",parent=,width=300,default_value=self.step_sleep,clamped=True)
+        
+    
         dpg.create_viewport(title='NeRf', width=self.W, height=self.H)
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb, tag="_texture")
@@ -393,56 +402,60 @@ class NeRFGUI():
         #control
         with dpg.window(label="Control", tag="_control_window", width=400, height=300):
 
-                    # button theme
-                    with dpg.theme() as theme_button:
-                        with dpg.theme_component(dpg.mvButton):
-                            dpg.add_theme_color(dpg.mvThemeCol_Button, (23, 3, 18))
-                            dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (51, 3, 47))
-                            dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (83, 18, 83))
-                            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
-                            dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 3, 3)
-                    # time
-                    if not self.isTest:
-                        with dpg.group(horizontal=True):
-                            dpg.add_text("Train time: ")
-                            dpg.add_text("no data", tag="_log_train_time")
+            # button theme
+            with dpg.theme() as theme_button:
+                with dpg.theme_component(dpg.mvButton):
+                    dpg.add_theme_color(dpg.mvThemeCol_Button, (23, 3, 18))
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (51, 3, 47))
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (83, 18, 83))
+                    dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
+                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 3, 3)
+            # time
+            if not self.isTest:
+                with dpg.group(horizontal=True):
+                    dpg.add_text("Train time: ")
+                    dpg.add_text("no data", tag="_log_train_time")
+            with dpg.group(horizontal=True):
+                dpg.add_text("Infer time: ")
+                dpg.add_text("no data", tag="_log_infer_time")
+            with dpg.group(horizontal=True):
+                dpg.add_text("SPP: ")
+                dpg.add_text("1", tag="_log_spp")
+            # train button
+            if not self.isTest:
+                with dpg.collapsing_header(label="Train", default_open=True):
+                    # train / stop
                     with dpg.group(horizontal=True):
-                        dpg.add_text("Infer time: ")
-                        dpg.add_text("no data", tag="_log_infer_time")
+                        dpg.add_text("Train: ")
+                        def callback_train(sender, app_data):
+                            if self.need_train:
+                                self.logger.info("set need_train:{}".format(self.need_train))
+                                self.need_train = False
+                                self.train_thread.stop()
+                                dpg.configure_item("_button_train", label="start")
+                            else:
+                                
+                                dpg.configure_item("_button_train", label="stop")
+                                self.need_train = True
+                                self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.camera_pose,step=5)
+                                self.train_thread.start()
+
+                        dpg.add_button(label="start", tag="_button_train", callback=callback_train)
+                        dpg.bind_item_theme("_button_train", theme_button)
+                    # save ckpt
                     with dpg.group(horizontal=True):
-                        dpg.add_text("SPP: ")
-                        dpg.add_text("1", tag="_log_spp")
-                    # train button
-                    if not self.isTest:
-                        with dpg.collapsing_header(label="Train", default_open=True):
-                            # train / stop
-                            with dpg.group(horizontal=True):
-                                dpg.add_text("Train: ")
-                                def callback_train(sender, app_data):
-                                    if self.need_train:
-                                        self.logger.info("set need_train:{}".format(self.need_train))
-                                        self.need_train = False
-                                        self.train_thread.stop()
-                                        dpg.configure_item("_button_train", label="start")
-                                    else:
-                                        
-                                        dpg.configure_item("_button_train", label="stop")
-                                        self.need_train = True
-                                        self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.camera_pose,step=5)
-                                        self.train_thread.start()
+                        dpg.add_text("Checkpoint: ")
 
-                                dpg.add_button(label="start", tag="_button_train", callback=callback_train)
-                                dpg.bind_item_theme("_button_train", theme_button)
-                            # save ckpt
-                            with dpg.group(horizontal=True):
-                                dpg.add_text("Checkpoint: ")
+                        def callback_save(sender, app_data):
+                            pass
+                        dpg.add_button(label="save", tag="_button_save", callback=callback_save)
+                        dpg.bind_item_theme("_button_save", theme_button)
 
-                                def callback_save(sender, app_data):
-                                    pass
-                                dpg.add_button(label="save", tag="_button_save", callback=callback_save)
-                                dpg.bind_item_theme("_button_save", theme_button)
-
-                                dpg.add_text("", tag="_log_ckpt")
+                        dpg.add_text("", tag="_log_ckpt")
+            #resolution
+            with dpg.group(horizontal=True):
+                dpg.add_text("resolution scale:")
+                self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,clamped=True,min_value=0.0,max_value=1.0)
         dpg.setup_dearpygui()
         dpg.show_viewport()
     def train_step(self):
@@ -452,8 +465,10 @@ class NeRFGUI():
             
     def render(self):
         while dpg.is_dearpygui_running():
-            if self.need_train and self.train_thread:  
-                self.train_step()
+            if self.need_train and self.train_thread: 
+                self.train_thread.set_scale(dpg.get_value(self.scale_slider))
+                self.train_step() 
+                
             dpg.render_dearpygui_frame()
         dpg.destroy_context()
 
