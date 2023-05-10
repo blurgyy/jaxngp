@@ -197,8 +197,8 @@ class GuiWindowArgs():
     common: CommonArgs=CommonArgs()
     scene: SceneOptions=SceneOptions(
         world_scale=0.6,
-        image_scale=1.0,
-
+        resolution_scale=1.0,
+        camera_near=0.1,
     )
     bound:float=1.5*scene.world_scale
     

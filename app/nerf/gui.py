@@ -71,8 +71,7 @@ class Gui_trainer():
         #load data
         self.scene_train, _ = data.load_scene(
             srcs=self.args.frames_train,
-            world_scale=self.args.scene.world_scale,
-            image_scale=self.args.scene.image_scale,
+            scene_options=self.args.scene,
         )
         self.scene_meta=self.scene_train.meta
         #self.scene_meta.camera=self.scene_meta.replace(camera=_camera)
@@ -133,10 +132,10 @@ class Gui_trainer():
          # training state
         self.state = NeRFState.create(
             ogrid=OccupancyDensityGrid.create(
-                        cascades=self.scene_meta.cascades,
-                        grid_resolution=self.args.raymarch.density_grid_res,
-                    ),
-            batch_config=NeRFBatchConfig(
+                cascades=self.scene_meta.cascades,
+                grid_resolution=self.args.raymarch.density_grid_res,
+            ),
+            batch_config=NeRFBatchConfig.create(
                 mean_effective_samples_per_ray=self.args.raymarch.diagonal_n_steps,
                 mean_samples_per_ray=self.args.raymarch.diagonal_n_steps,
                 n_rays=self.args.train.bs // self.args.raymarch.diagonal_n_steps,
@@ -180,14 +179,7 @@ class Gui_trainer():
             
             _scene_meta = self.scene_meta
             #_scale=self.gui_args.resolution_scale
-            _camera=PinholeCamera(
-                                H=int(_scene_meta.camera.H*_scale),
-                                W=int(_scene_meta.camera.W*_scale),
-                                fx=int(_scene_meta.camera.fx*_scale),
-                                fy=int(_scene_meta.camera.fy*_scale),
-                                cx=int(_scene_meta.camera.cx*_scale),
-                                cy=int(_scene_meta.camera.cy*_scale)
-                                )
+            _camera=_scene_meta.camera.scale_resolution(_scale)
             self.test_scene_meta=SceneMeta(bound=_scene_meta.bound,
                                     bg=_scene_meta.bg,
                                     camera=_camera,
@@ -226,8 +218,6 @@ def gui_train_epoch(
 ):
     n_processed_rays = 0
     total_loss = 0
-    running_mean_effective_samp_per_ray = state.batch_config.mean_effective_samples_per_ray
-    running_mean_samp_per_ray = state.batch_config.mean_samples_per_ray
 
     for _ in (pbar := tqdm(range(n_batches), desc="Training epoch#{:03d}".format(cur_steps), bar_format=common.tqdm_format)):
         KEY, key_perm, key_train_step = jran.split(KEY, 3)
@@ -243,20 +233,16 @@ def gui_train_epoch(
         n_processed_rays += state.batch_config.n_rays
         total_loss += metrics["loss"]
         loss_log = metrics["loss"] / state.batch_config.n_rays
-        running_mean_samp_per_ray, running_mean_effective_samp_per_ray = (
-            running_mean_samp_per_ray * .95 + .05 * metrics["measured_batch_size_before_compaction"] / state.batch_config.n_rays,
-            running_mean_effective_samp_per_ray * .95 + .05 * metrics["measured_batch_size"] / state.batch_config.n_rays,
-        )
 
         loss_db = data.linear_to_db(loss_log, maxval=1)
         
         pbar.set_description_str(
-            desc="Training step#{:03d} batch_size={}/{} samp./ray={}/{} n_rays={} loss={:.3e}({:.2f}dB)".format(
+            desc="Training step#{:03d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss={:.3e}({:.2f}dB)".format(
                 cur_steps,
                 metrics["measured_batch_size"],
                 metrics["measured_batch_size_before_compaction"],
-                state.batch_config.mean_effective_samples_per_ray,
-                state.batch_config.mean_samples_per_ray,
+                state.batch_config.running_mean_effective_samples_per_ray,
+                state.batch_config.running_mean_samples_per_ray,
                 state.batch_config.n_rays,
                 loss_log,
                 loss_db,
@@ -274,17 +260,12 @@ def gui_train_epoch(
                 )
             state = state.threshold_ogrid()
 
-        if state.should_update_batch_config:
-            new_mean_effective_samples_per_ray = int(running_mean_effective_samp_per_ray + 1.5)
-            new_mean_samples_per_ray = int(running_mean_samp_per_ray + 1.5)
-            new_n_rays = total_samples // new_mean_samples_per_ray
-            state = state.replace(
-                batch_config=NeRFBatchConfig(
-                    mean_effective_samples_per_ray=new_mean_effective_samples_per_ray,
-                    mean_samples_per_ray=new_mean_samples_per_ray,
-                    n_rays=new_n_rays,
-                ),
-            )
+        state = state.update_batch_config(
+            new_measured_batch_size=metrics["measured_batch_size"],
+            new_measured_batch_size_before_compaction=metrics["measured_batch_size_before_compaction"],
+        )
+        if state.should_commit_batch_config:
+            state = state.replace(batch_config=state.batch_config.commit(total_samples))
 
         if state.should_write_batch_metrics:
             logger.write_scalar("batch/↓loss", loss_log, state.step)
