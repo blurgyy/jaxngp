@@ -157,7 +157,21 @@ class Gui_trainer():
             tx=self.optimizer,
         )
         self.cur_step=0
-   
+    def render_frame(self):
+        #camera pose
+        transform = RigidTransformation(rotation=self.camera_pose[:3, :3],
+                                        translation=jnp.squeeze(self.camera_pose[:3, 3].reshape(-1,3),axis=0))
+        self.KEY, key = jran.split(self.KEY, 2)
+        bg, rgb, depth = render_image_inference(
+            KEY=key,
+            transform_cw=transform,
+            state=self.state.replace(render=self.state.render.replace(random_bg=False),
+                                     scene_meta=self.test_scene_meta)
+        )
+        bg=self.get_npf32_image(bg)
+        rgb=self.get_npf32_image(rgb)
+        depth=self.get_npf32_image(depth)
+        return (bg, rgb, depth)
     def train_steps(self,steps:int,_scale:float)->Tuple[np.array,np.array,np.array]:
         gc.collect()
         
@@ -192,25 +206,7 @@ class Gui_trainer():
             self.loss_log=str(loss_log)
         loss_db = data.linear_to_db(loss_log, maxval=1)
         self.logger.info("epoch#{:03d}: loss={:.2e}({:.2f}dB)".format(self.cur_step, loss_log, loss_db))
-
-        #camera pose
-        transform = RigidTransformation(rotation=self.camera_pose[:3, :3],
-                                        translation=jnp.squeeze(self.camera_pose[:3, 3].reshape(-1,3),axis=0))
-        self.KEY, key = jran.split(self.KEY, 2)
-        bg, rgb, depth = render_image_inference(
-            KEY=key,
-            transform_cw=transform,
-            state=self.state.replace(render=self.state.render.replace(random_bg=False),
-                                     scene_meta=self.test_scene_meta)
-        )
-        bg=self.get_npf32_image(bg)
-        rgb=self.get_npf32_image(rgb)
-        depth=self.get_npf32_image(depth)
-        # bg=np.array(bg,dtype=np.float32)/255.
-        # rgb=np.array(rgb,dtype=np.float32)/255.
-        # depth=np.array(depth,dtype=np.float32)/255.
-        return (bg, rgb, depth)
-    
+        return self.render_frame()
     def get_npf32_image(self,img:jnp.array)->np.array:
         from PIL import Image
         img=Image.fromarray(np.array(img,dtype=np.uint8))
@@ -319,11 +315,15 @@ class TrainThread(threading.Thread):
     def run(self):
         while self.istraining and self.trainer.cur_step<self.gui_args.max_step:
             _,self.framebuff,_=self.trainer.train_steps(self.step,self.scale)
-        self.logger.info("training finished")    
+        self.logger.info("training finished")  
+    def render(self):
+        self.trainer.render_frame()  
     def stop(self):
         self.istraining=False
     def set_scale(self,_scale):
         self.scale=_scale
+    def get_scale(self):
+        return self.scale
     
 
 @dataclass
@@ -343,8 +343,6 @@ class NeRFGUI():
     KEY: jran.KeyArray=None
     logger: logging.Logger=None
     camera_pose:jnp.array=None
-    
-    trainer:Gui_trainer=field(init=False)
     
     scale_slider:Union[int,str]=field(init=False)
     
@@ -382,7 +380,7 @@ class NeRFGUI():
                     1.0
                 ]
             ])
-        self.trainer=None
+        
         
     def ItemsLayout(self):
         # def resolutionControls():
@@ -461,14 +459,21 @@ class NeRFGUI():
     def train_step(self):
         self.framebuff=self.train_thread.framebuff
         dpg.set_value("_texture", self.framebuff)
-
-            
+    def test_step(self):
+        if self.train_thread:
+            _,self.framebuff,_=self.train_thread.trainer.render_frame()   
+            dpg.set_value("_texture", self.framebuff)
     def render(self):
         while dpg.is_dearpygui_running():
-            if self.need_train and self.train_thread: 
-                self.train_thread.set_scale(dpg.get_value(self.scale_slider))
-                self.train_step() 
-                
+            if self.train_thread:
+                if dpg.get_value(self.scale_slider)!=self.train_thread.get_scale():
+                    self.train_thread.set_scale(dpg.get_value(self.scale_slider))
+                if self.need_train: 
+                    self.train_step()
+            #         self.need_update=True
+            # if self.need_update:
+            #     self.test_step()    
+            #     self.need_update=False
             dpg.render_dearpygui_frame()
         dpg.destroy_context()
 
