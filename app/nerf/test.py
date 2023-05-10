@@ -1,4 +1,5 @@
 from typing import List
+from typing_extensions import assert_never
 
 from PIL import Image
 from flax.training import checkpoints
@@ -33,6 +34,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         world_scale=args.scene.world_scale,
         image_scale=args.scene.image_scale,
         sort_frames=args.sort_frames,
+        orbit_options=args.orbit if args.trajectory == "orbit" else None,
     )
 
     # load parameters
@@ -55,12 +57,13 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
 
     rendered_images: List[RenderedImage] = []
     try:
-        logger.info("starting testing (totally {} image(s) to test)".format(len(test_views)))
-        for test_i, test_view in enumerate(common.tqdm(test_views, desc="testing")):
-            logger.debug("testing on {}".format(test_view))
+        n_frames = len(scene_data.meta.frames)
+        logger.info("starting testing (totally {} image(s) to test)".format(n_frames))
+        for test_i in common.tqdm(range(n_frames), desc="testing"):
+            logger.debug("testing on frame {}".format(scene_data.meta.frames[test_i]))
             transform = RigidTransformation(
-                rotation=scene_data.all_transforms[test_i, :9].reshape(3, 3),
-                translation=scene_data.all_transforms[test_i, -3:].reshape(3),
+                rotation=scene_data.meta.frames[test_i].transform_matrix_jax_array[:3, :3],
+                translation=scene_data.meta.frames[test_i].transform_matrix_jax_array[:3, 3],
             )
             KEY, key = jran.split(KEY, 2)
             bg, rgb, depth = render_image_inference(
@@ -76,21 +79,28 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     except KeyboardInterrupt:
         logger.warn("keyboard interrupt, tested {} images".format(len(rendered_images)))
 
-    gt_rgbs_f32 = map(
-        lambda test_view, rendered_image: data.blend_rgba_image_array(
-            test_view.image_rgba_u8.astype(jnp.float32) / 255,
-            rendered_image.bg,
-        ),
-        test_views,
-        rendered_images,
-    )
-    logger.debug("calculating psnr")
-    mean_psnr = sum(map(
-        data.psnr,
-        map(data.f32_to_u8, gt_rgbs_f32),
-        map(lambda ri: ri.rgb, rendered_images),
-    )) / len(rendered_images)
-    logger.info("tested {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
+    if args.trajectory == "loaded":
+        gt_rgbs_f32 = map(
+            lambda test_view, rendered_image: data.blend_rgba_image_array(
+                test_view.image_rgba_u8.astype(jnp.float32) / 255,
+                rendered_image.bg,
+            ),
+            test_views,
+            rendered_images,
+        )
+        logger.debug("calculating psnr")
+        mean_psnr = sum(map(
+            data.psnr,
+            map(data.f32_to_u8, gt_rgbs_f32),
+            map(lambda ri: ri.rgb, rendered_images),
+        )) / len(rendered_images)
+        logger.info("tested {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
+
+    elif args.trajectory == "orbit":
+        pass
+
+    else:
+        assert_never("")
 
     save_dest = args.exp_dir.joinpath("test")
     save_dest.mkdir(parents=True, exist_ok=True)
@@ -121,5 +131,3 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
             save_dest.joinpath("depth.mp4"),
             map(lambda img: img.depth, rendered_images),
         )
-
-    return mean_psnr

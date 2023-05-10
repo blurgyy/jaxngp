@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Tuple
+from typing import Tuple
 
 import tyro
 
-from utils.types import LogLevel, RayMarchingOptions, RenderingOptions, SceneOptions
+from utils.types import LogLevel, OrbitTrajectoryOptions, RayMarchingOptions, RenderingOptions, SceneOptions, TransformsProvider
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -153,6 +153,12 @@ class NeRFTestingArgs(NeRFArgsBase):
 
     # use checkpoint from this path (can be a directory) for testing
     ckpt: Path
+
+    # if specified, render with a generated orbiting trajectory instead of the loaded frame
+    # transformations
+    trajectory: TransformsProvider="loaded"
+
+    orbit: OrbitTrajectoryOptions
 
     # naturally sort frames according to their file names before testing
     sort_frames: bool=False

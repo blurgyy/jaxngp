@@ -35,6 +35,7 @@ ActivationType = Literal[
 
 ColmapMatcherType = Literal["Exhaustive", "Sequential"]
 LogLevel = Literal["DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL"]
+TransformsProvider = Literal["loaded", "orbit"]
 
 DensityAndRGB = Tuple[jax.Array, jax.Array]
 RGBColor = Tuple[float, float, float]
@@ -202,7 +203,8 @@ class SceneOptions:
     # scale both the scene's camera positions and bounding box with this factor
     world_scale: float
 
-    # scale input images in case they are too large
+    # scale input images in case they are too large, camera intrinsics are also scaled to match the
+    # updated image resolution.
     image_scale: float
 
 
@@ -229,7 +231,7 @@ class ImageMetadata:
 
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonFrame:
-    file_path: str
+    file_path: str | None
     transform_matrix: Matrix4x4
 
     # unused, kept for compatibility with the original nerf_synthetic dataset
@@ -393,6 +395,30 @@ class ViewMetadata:
         return flattened
 
 
+@dataclass
+class OrbitTrajectoryOptions:
+    # cameras' distance to the orbiting axis
+    radius: float=.8
+
+    # height of cameras
+    elevation: float=1
+
+    # how many frames should be rendered per orbit
+    n_frames_per_orbit: int=120
+
+    n_orbit: int=2
+
+    # all orbiting cameras will look at this point
+    centroid: Tuple[float, float, float]=(0., 0., 0.)
+
+    # if specified, generate a nerf-synthetic-like orbiting trajectory with the two elevation values
+    alt_elevation: float=1.5
+
+    @property
+    def n_frames(self) -> int:
+        return self.n_frames_per_orbit * self.n_orbit
+
+
 # scene's metadata (computed from SceneOptions and TransformJson)
 @dataclass
 class SceneMeta:
@@ -428,6 +454,45 @@ class SceneMeta:
             return 1/256
         else:
             return 0
+
+    def make_data_with_orbiting_trajectory(
+        self,
+        opts: OrbitTrajectoryOptions,
+    ) -> "SceneData":
+        assert isinstance(opts, OrbitTrajectoryOptions)
+
+        thetas = np.linspace(0, opts.n_orbit * 2 * np.pi, opts.n_frames + 1)[:-1]
+        xs = np.asarray(tuple(map(np.cos, thetas))) * opts.radius
+        ys = np.asarray(tuple(map(np.sin, thetas))) * opts.radius
+        elevation_range = opts.alt_elevation - opts.elevation
+        mid_elevation = opts.elevation + .5 * elevation_range
+        zs = mid_elevation + .5 * elevation_range * np.sin(np.linspace(0, 2 * np.pi, opts.n_frames + 1)[:-1])
+        xyzs = np.stack([xs, ys, zs]).T
+
+        view_dirs = -xyzs / np.linalg.norm(xyzs, axis=-1, keepdims=True)
+        right_dirs = np.stack([-np.sin(thetas), np.cos(thetas), np.zeros_like(thetas)]).T
+        up_dirs = -np.cross(view_dirs, right_dirs)
+        up_dirs = up_dirs / np.linalg.norm(up_dirs, axis=-1, keepdims=True)
+
+        rot_cws = np.concatenate([right_dirs[..., None], up_dirs[..., None], -view_dirs[..., None]], axis=-1)
+
+        frames = tuple(map(
+            lambda rot_cw, t_cw: TransformJsonFrame(
+                file_path=None,
+                transform_matrix=np.concatenate(
+                    [np.concatenate([rot_cw, t_cw.reshape(3, 1)], axis=-1), np.ones((1, 4))],
+                    axis=0,
+                ).tolist(),
+            ),
+            rot_cws,
+            xyzs,
+        ))
+
+        return SceneData(
+            meta=self.replace(frames=frames),
+            all_rgbas_u8=None,
+            all_transforms=None,
+        )
 
 
 @dataclass
