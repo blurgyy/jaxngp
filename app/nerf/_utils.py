@@ -54,6 +54,8 @@ def train_step(
         # d_cam was normalized already, normalize d_world just to be sure
         d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
 
+        o_world += scene.meta.camera.near * d_world
+
         return o_world, d_world
 
     def loss_fn(params, gt_rgba_f32, KEY):

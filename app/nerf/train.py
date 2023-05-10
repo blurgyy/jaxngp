@@ -130,16 +130,14 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
     logger.info("loading training frames")
     scene_train, _ = data.load_scene(
         srcs=args.frames_train,
-        world_scale=args.scene.world_scale,
-        image_scale=args.scene.image_scale,
+        scene_options=args.scene,
     )
 
     if len(args.frames_val) > 0:
         logger.info("loading validation frames")
         scene_val, val_views = data.load_scene(
             srcs=args.frames_val,
-            world_scale=args.scene.world_scale,
-            image_scale=args.scene.image_scale,
+            scene_options=args.scene,
         )
         assert scene_train.meta == scene_val.meta
     else:

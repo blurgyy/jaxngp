@@ -28,6 +28,7 @@ from .types import (
     RigidTransformation,
     SceneData,
     SceneMeta,
+    SceneOptions,
     TransformJsonFrame,
     TransformJsonNGP,
     TransformJsonNeRFSynthetic,
@@ -559,8 +560,7 @@ def load_transform_json_recursive(src: Path | str) -> TransformJsonNGP | Transfo
 
 def load_scene(
     srcs: Sequence[Path | str],
-    world_scale: float,
-    image_scale: float,
+    scene_options: SceneOptions,
     sort_frames: bool=False,
     orbit_options: OrbitTrajectoryOptions | None=None,
 ) -> Tuple[SceneData, List[ViewMetadata]]:
@@ -628,9 +628,13 @@ def load_scene(
         ))
 
     scene_meta = SceneMeta(
-        bound=transforms.aabb_scale * world_scale,
+        bound=transforms.aabb_scale * scene_options.world_scale,
         bg=transforms.bg,
-        camera=camera.scale_resolution(image_scale),
+        camera=(
+            camera
+                .scale_world(scene_options.world_scale)
+                .scale_resolution(scene_options.resolution_scale)
+        ),
         frames=transforms.frames,
     )
 
@@ -639,7 +643,7 @@ def load_scene(
 
     views = list(map(
         lambda frame: ViewMetadata(
-            scale=image_scale,
+            scale=scene_options.resolution_scale,
             transform=RigidTransformation(
                 rotation=frame.transform_matrix_numpy[:3, :3],
                 translation=frame.transform_matrix_numpy[:3, 3],
@@ -669,7 +673,7 @@ def load_scene(
         list(map(lambda view: view.transform.translation.reshape(-1, 3), views)),
         axis=0,
     )
-    all_Ts *= world_scale
+    all_Ts *= scene_options.world_scale
     # float,[n_views, 3+9+3]
     all_transforms = jnp.concatenate([all_Rs, all_Ts], axis=-1)
 

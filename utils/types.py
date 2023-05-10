@@ -126,6 +126,8 @@ class PinholeCamera:
     cx: float
     cy: float
 
+    near: float=0.0
+
     @property
     def n_pixels(self) -> int:
         return self.H * self.W
@@ -172,6 +174,9 @@ class PinholeCamera:
             cy=self.cy * scale,
         )
 
+    def scale_world(self, scale: int | float) -> "PinholeCamera":
+        return self.replace(near=self.near * scale)
+
 
 @empty_impl
 @dataclass
@@ -205,7 +210,9 @@ class SceneOptions:
 
     # scale input images in case they are too large, camera intrinsics are also scaled to match the
     # updated image resolution.
-    image_scale: float
+    resolution_scale: float
+
+    camera_near: float
 
 
 @dataclass
@@ -667,7 +674,7 @@ class NeRFState(TrainState):
             p_cam = (p_aligned[..., None, :] * rot_cw.T).sum(-1)
 
             # camera looks along the -z axis
-            in_front_of_camera = p_cam[..., -1] < -1e-4
+            in_front_of_camera = p_cam[..., -1] < -self.scene_meta.camera.near
 
             uvz = (p_cam[..., None, :] * self.scene_meta.camera.K).sum(-1)
             uvz /= uvz[..., -1:]

@@ -31,8 +31,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     logger.info("loading testing frames")
     scene_data, test_views = data.load_scene(
         srcs=args.frames,
-        world_scale=args.scene.world_scale,
-        image_scale=args.scene.image_scale,
+        scene_options=args.scene,
         sort_frames=args.sort_frames,
         orbit_options=args.orbit if args.trajectory == "orbit" else None,
     )

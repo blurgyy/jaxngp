@@ -42,4 +42,6 @@ def make_rays_worldspace(
     d_world = d_cam @ transform_cw.rotation.T
     d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
 
+    o_world += camera.near * d_world
+
     return o_world, d_world
