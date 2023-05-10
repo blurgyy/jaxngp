@@ -407,8 +407,11 @@ class OrbitTrajectoryOptions:
     # cameras' distance to the orbiting axis
     radius: float=.8
 
-    # height of cameras
-    elevation: float=1
+    # lowest height of generated trajectory
+    low: float=1
+
+    # highest height of generated trajectory
+    high: float=1.5
 
     # how many frames should be rendered per orbit
     n_frames_per_orbit: int=120
@@ -417,9 +420,6 @@ class OrbitTrajectoryOptions:
 
     # all orbiting cameras will look at this point
     centroid: Tuple[float, float, float]=(0., 0., 0.)
-
-    # if specified, generate a nerf-synthetic-like orbiting trajectory with the two elevation values
-    alt_elevation: float=1.5
 
     @property
     def n_frames(self) -> int:
@@ -471,8 +471,8 @@ class SceneMeta:
         thetas = np.linspace(0, opts.n_orbit * 2 * np.pi, opts.n_frames + 1)[:-1]
         xs = np.asarray(tuple(map(np.cos, thetas))) * opts.radius
         ys = np.asarray(tuple(map(np.sin, thetas))) * opts.radius
-        elevation_range = opts.alt_elevation - opts.elevation
-        mid_elevation = opts.elevation + .5 * elevation_range
+        elevation_range = opts.high - opts.low
+        mid_elevation = opts.low + .5 * elevation_range
         zs = mid_elevation + .5 * elevation_range * np.sin(np.linspace(0, 2 * np.pi, opts.n_frames + 1)[:-1])
         xyzs = np.stack([xs, ys, zs]).T
 
