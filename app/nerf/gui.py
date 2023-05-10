@@ -1,6 +1,3 @@
-#import sys
-#sys.path.append("/home/cad_83/E/chenyingxi/jaxngp")
-
 import logging
 from pathlib import Path,PosixPath
 import numpy as np
@@ -26,7 +23,8 @@ _state:NeRFState
 from utils.types import (
     SceneData,
     SceneMeta,
-    ViewMetadata
+    ViewMetadata,
+    PinholeCamera
 )
 from models.nerfs import (NeRF,SkySphereBg)
 @dataclass
@@ -40,6 +38,7 @@ class Gui_trainer():
     scene_train:SceneData=field(init=False)
     scene_val:SceneData=field(init=False)
     scene_meta:SceneMeta=field(init=False)
+    test_scene_meta:SceneMeta=field(init=False)
     val_views:ViewMetadata=field(init=False)
     
     nerf_model:NeRF=field(init=False)
@@ -75,7 +74,8 @@ class Gui_trainer():
             world_scale=self.args.scene.world_scale,
             image_scale=self.args.scene.image_scale,
         )
-        self.scene_meta = self.scene_train.meta
+        self.scene_meta=self.scene_train.meta
+        #self.scene_meta.camera=self.scene_meta.replace(camera=_camera)
         # model parameters
         self.nerf_model, self.init_input = (
             make_nerf_ngp(bound=self.scene_meta.bound),
@@ -157,11 +157,27 @@ class Gui_trainer():
             tx=self.optimizer,
         )
         self.cur_step=0
-        
+   
     def train_steps(self,steps:int)->Tuple[np.array,np.array,np.array]:
         gc.collect()
         
         if self.cur_step<self.gui_args.max_step:
+            
+            _scene_meta = self.scene_meta
+            _scale=self.gui_args.resolution_scale
+            _camera=PinholeCamera(
+                                H=int(_scene_meta.camera.H*_scale),
+                                W=int(_scene_meta.camera.H*_scale),
+                                fx=int(_scene_meta.camera.fx*_scale),
+                                fy=int(_scene_meta.camera.fy*_scale),
+                                cx=int(_scene_meta.camera.cx*_scale),
+                                cy=int(_scene_meta.camera.cy*_scale)
+                                )
+            self.test_scene_meta=SceneMeta(bound=_scene_meta.bound,
+                                    bg=_scene_meta.bg,
+                                    camera=_camera,
+                                    frames=_scene_meta.frames)
+            
             self.KEY, key = jran.split(self.KEY, 2)
             loss_log, self.state = gui_train_epoch(
                 KEY=key,
@@ -184,14 +200,24 @@ class Gui_trainer():
         bg, rgb, depth = render_image_inference(
             KEY=key,
             transform_cw=transform,
-            state=self.state.replace(render=self.state.render.replace(random_bg=False)),
+            state=self.state.replace(render=self.state.render.replace(random_bg=False),
+                                     scene_meta=self.test_scene_meta)
         )
-        bg=np.array(bg,dtype=np.float32)/255.
-        rgb=np.array(rgb,dtype=np.float32)/255.
-        depth=np.array(depth,dtype=np.float32)/255.
-
+        bg=self.get_npf32_image(bg)
+        rgb=self.get_npf32_image(rgb)
+        depth=self.get_npf32_image(depth)
+        # bg=np.array(bg,dtype=np.float32)/255.
+        # rgb=np.array(rgb,dtype=np.float32)/255.
+        # depth=np.array(depth,dtype=np.float32)/255.
         return (bg, rgb, depth)
-
+    
+    def get_npf32_image(self,img:jnp.array)->np.array:
+        from PIL import Image
+        img=Image.fromarray(np.array(img,dtype=np.uint8))
+        img=img.resize(size=(800,800), resample=1)
+        img=np.array(img,dtype=np.float32)/255.
+        self.logger.info("img shape:{}".format(img.shape))
+        return img    
         
 def gui_train_epoch(
     KEY: jran.KeyArray,

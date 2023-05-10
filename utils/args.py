@@ -185,6 +185,7 @@ class GuiWindowArgs():
     
     W:int=800 
     H:int=800
+    resolution_scale=1.0
     common: CommonArgs=CommonArgs()
     scene: SceneOptions=SceneOptions(
         world_scale=0.6,
