@@ -6,25 +6,19 @@ import jax.random as jran
 import jax.numpy as jnp
 from dataclasses import dataclass,field
 from tqdm import tqdm
-
 import threading
-
 import dearpygui.dearpygui as dpg
-from utils.args import GuiWindowArgs
-
-import matplotlib.image as mpimg
-from utils.args import NeRFTestingArgs, NeRFTrainingArgs,GuiWindowArgs
-
+from PIL import Image
+from utils.args import GuiWindowArgs, NeRFTrainingArgs,GuiWindowArgs
 from .train import *
-
-_state:NeRFState
-
-
+from utils.data import load_transform_json_recursive,merge_transforms
 from utils.types import (
     SceneData,
     SceneMeta,
     ViewMetadata,
-    PinholeCamera
+    PinholeCamera,
+    TransformJsonNeRFSynthetic,
+    TransformJsonNGP
 )
 from models.nerfs import (NeRF,SkySphereBg)
 @dataclass
@@ -34,6 +28,8 @@ class Gui_trainer():
     logger: common.Logger
     camera_pose:jnp.array
     gui_args:GuiWindowArgs
+    H:int
+    W:int
     
     scene_train:SceneData=field(init=False)
     scene_val:SceneData=field(init=False)
@@ -52,7 +48,6 @@ class Gui_trainer():
     cur_step:int=field(init=False)
     loss_log:str="--"
     
-
     def __post_init__(self):
         self.cur_step=0
         logs_dir = self.args.exp_dir.joinpath("logs")
@@ -211,7 +206,7 @@ class Gui_trainer():
     def get_npf32_image(self,img:jnp.array)->np.array:
         from PIL import Image
         img=Image.fromarray(np.array(img,dtype=np.uint8))
-        img=img.resize(size=(800,800), resample=1)
+        img=img.resize(size=(self.H,self.W), resample=1)
         img=np.array(img,dtype=np.float32)/255.
         return img    
         
@@ -299,7 +294,7 @@ def gui_train_epoch(
     return total_loss / n_processed_rays, state
 
 class TrainThread(threading.Thread):
-    def __init__(self,KEY,args,gui_args,logger,camera_pose,step):
+    def __init__(self,KEY,args,gui_args,logger,camera_pose,step,H,W):
         super(TrainThread,self).__init__()   
         self.istraining=True
         self.KEY=KEY
@@ -307,11 +302,11 @@ class TrainThread(threading.Thread):
         self.gui_args=gui_args
         self.logger=logger
         self.camera_pose=camera_pose
-        self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args)
+        self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
         self.step=step
         self.scale=gui_args.resolution_scale
         
-        self.framebuff=np.ones(shape=(self.gui_args.H,self.gui_args.W,3),dtype=np.float32)
+        self.framebuff=np.ones(shape=(H,W,3),dtype=np.float32)
     def run(self):
         while self.istraining and self.trainer.cur_step<self.gui_args.max_step:
             _,self.framebuff,_=self.trainer.train_steps(self.step,self.scale)
@@ -345,11 +340,43 @@ class NeRFGUI():
     camera_pose:jnp.array=None
     
     scale_slider:Union[int,str]=field(init=False)
-    
+    def init_HW(self):
+        def try_image_extensions(
+            file_path: str,
+            extensions: List[str]=["png", "jpg", "jpeg"],) -> Path:
+            if "" not in extensions:
+                extensions = [""] + list(extensions)
+            for ext in extensions:
+                if len(ext) > 0 and ext[0] != ".":
+                    ext = "." + ext
+                p = Path(file_path + ext)
+                if p.exists():
+                    return p
+            raise FileNotFoundError(
+                "could not find a file at {} with any extension of {}".format(file_path, extensions)
+            )
+        srcs = list(map(Path, self.train_args.frames_train))
+        transforms = merge_transforms(map(load_transform_json_recursive, srcs))
+        if transforms is None:
+            raise FileNotFoundError("could not find any valid transforms in {}".format(srcs))
+        if len(transforms.frames) == 0:
+            raise ValueError("could not find any frame in {}".format(srcs))
+        if isinstance(transforms, TransformJsonNeRFSynthetic):
+            from PIL import Image
+            _img = Image.open(try_image_extensions(transforms.frames[0].file_path))
+            self.W, self.H = int(_img.width * self.gui_args.scene.image_scale), int(_img.height * self.gui_args.scene.image_scale)
+        elif isinstance(transforms, TransformJsonNGP):
+            self.W,self.H=int(transforms.w * self.gui_args.scene.image_scale),int(transforms.h * self.gui_args.scene.image_scale)
+        else:
+            raise TypeError("unexpected type for transforms: {}, expected one of {}".format(
+                type(transforms),
+                [TransformJsonNeRFSynthetic, TransformJsonNGP],
+            ))
     def __post_init__(self):
         #self.scale_slider=dpg.generate_uuid()
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
-        self.H,self.W=self.gui_args.H,self.gui_args.W
+        self.init_HW()
+        #self.H,self.W=self.gui_args.H,self.gui_args.W
         self.framebuff=np.ones(shape=(self.W,self.H,3),dtype=np.float32)#default background is white
         dpg.create_context()
         self.ItemsLayout()
@@ -435,7 +462,7 @@ class NeRFGUI():
                                 
                                 dpg.configure_item("_button_train", label="stop")
                                 self.need_train = True
-                                self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.camera_pose,step=5)
+                                self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.camera_pose,step=5,H=self.H,W=self.W)
                                 self.train_thread.start()
 
                         dpg.add_button(label="start", tag="_button_train", callback=callback_train)
