@@ -580,18 +580,11 @@ class NeRFState(TrainState):
         decay = .95
         cas_density_grid = self.ogrid.density[cas_slice] * decay
 
-        cas_trainable_mask = cas_density_grid >= 0
         if update_all:
+            # During the first 256 training steps, we sample 𝑀 = 𝐾 · 128^{3} cells uniformly without
+            # repetition.
             M = G3
-            # indices = jnp.arange(M, dtype=jnp.uint32)
-            KEY, key = jran.split(KEY, 2)
-            indices = jran.choice(
-                key=key,
-                a=jnp.arange(G3, dtype=jnp.uint32),
-                shape=(M,),
-                replace=True,
-                p=cas_trainable_mask.astype(jnp.float32),  # only update trainable grids
-            )
+            indices = jnp.arange(M, dtype=jnp.uint32)
         else:
             M = G3 // 2
             # The first 𝑀/2 cells are sampled uniformly among all cells.
@@ -601,7 +594,6 @@ class NeRFState(TrainState):
                 a=jnp.arange(G3, dtype=jnp.uint32),
                 shape=(M//2,),
                 replace=True,  # allow duplicated choices
-                p=cas_trainable_mask.astype(jnp.float32),  # only care about trainable grids
             )
             # Rejection sampling is used for the remaining samples to restrict selection to cells
             # that are currently occupied.
@@ -630,13 +622,17 @@ class NeRFState(TrainState):
             minval=-half_cell_width,
             maxval=half_cell_width,
         )
-        new_densities = self.nerf_fn(
-            {"params": self.locked_params["nerf"]},
-            jax.lax.stop_gradient(coordinates),
-            None,
+        new_densities = jnp.where(
+            condition=cas_density_grid[indices] >= 0,
+            x=self.nerf_fn(
+                {"params": self.locked_params["nerf"]},
+                jax.lax.stop_gradient(coordinates),
+                None,
+            ).ravel(),
+            y=-1.,
         )
         cas_density_grid = cas_density_grid.at[indices].set(
-            jnp.maximum(cas_density_grid[indices], new_densities.ravel())
+            jnp.maximum(cas_density_grid[indices], new_densities)
         )
         new_ogrid = self.ogrid.replace(
             density=self.ogrid.density.at[cas_slice].set(cas_density_grid),
