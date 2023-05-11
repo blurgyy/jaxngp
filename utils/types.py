@@ -3,7 +3,7 @@ import functools
 import json
 import math
 from pathlib import Path
-from typing import Callable, Literal, Tuple
+from typing import Callable, List, Literal, Tuple
 
 from PIL import Image
 import chex
@@ -73,6 +73,12 @@ class OccupancyDensityGrid:
     # uint8, each bit is an occupancy value of a grid cell
     occupancy: jax.Array
 
+    # uint32, indices of the grids that are alive (trainable)
+    alive_indices: jax.Array
+
+    # list of `int`s, upper bound of each cascade
+    alive_indices_offset: List[int]=struct.field(pytree_node=False)
+
     @classmethod
     def create(cls, cascades: int, grid_resolution: int=128):
         """
@@ -85,19 +91,27 @@ class OccupancyDensityGrid:
         Example usage:
             ogrid = OccupancyDensityGrid.create(cascades=5, grid_resolution=128)
         """
+        G3 = grid_resolution**3
+        n_grids = cascades * G3
         occupancy = 255 * jnp.ones(
-            shape=(cascades*grid_resolution**3 // 8,),  # each bit is an occupancy value
+            shape=(n_grids // 8,),  # each bit is an occupancy value
             dtype=jnp.uint8,
         )
         density = jnp.zeros(
-            shape=(cascades*grid_resolution**3,),
+            shape=(n_grids,),
             dtype=jnp.float32,
         )
         occ_mask = jnp.zeros(
-            shape=(cascades*grid_resolution**3,),
+            shape=(n_grids,),
             dtype=jnp.bool_,
         )
-        return cls(density=density, occ_mask=occ_mask, occupancy=occupancy)
+        return cls(
+            density=density,
+            occ_mask=occ_mask,
+            occupancy=occupancy,
+            alive_indices=jnp.arange(n_grids, dtype=jnp.uint32),
+            alive_indices_offset=np.cumsum([0] + [G3] * cascades).tolist(),
+        )
 
 
 @empty_impl
@@ -574,41 +588,44 @@ class NeRFState(TrainState):
 
     @functools.partial(jax.jit, static_argnames=["cas", "update_all"])
     def update_ogrid_density(self, KEY: jran.KeyArray, cas: int, update_all: bool) -> "NeRFState":
-        G3 = self.raymarch.density_grid_res ** 3
+        G3 = self.raymarch.density_grid_res**3
         cas_slice = slice(cas * G3, (cas + 1) * G3)
+        cas_alive_indices = self.ogrid.alive_indices[self.ogrid.alive_indices_offset[cas]:self.ogrid.alive_indices_offset[cas+1]]
+        aligned_indices = cas_alive_indices % G3  # values are in range [0, G3)
+        n_grids = aligned_indices.shape[0]
 
         decay = .95
         cas_density_grid = self.ogrid.density[cas_slice] * decay
+        cas_occ_mask = self.ogrid.occ_mask[cas_slice]
 
         if update_all:
             # During the first 256 training steps, we sample 𝑀 = 𝐾 · 128^{3} cells uniformly without
             # repetition.
-            M = G3
-            indices = jnp.arange(M, dtype=jnp.uint32)
+            cas_updated_indices = aligned_indices
         else:
-            M = G3 // 2
+            M = max(1, n_grids // 2)
             # The first 𝑀/2 cells are sampled uniformly among all cells.
             KEY, key_firsthalf, key_secondhalf = jran.split(KEY, 3)
             indices_firsthalf = jran.choice(
                 key=key_firsthalf,
-                a=jnp.arange(G3, dtype=jnp.uint32),
-                shape=(M//2,),
+                a=aligned_indices,
+                shape=(max(1, M//2),),
                 replace=True,  # allow duplicated choices
             )
             # Rejection sampling is used for the remaining samples to restrict selection to cells
             # that are currently occupied.
             # NOTE: Below is just uniformly sampling the occupied cells, not rejection sampling.
-            cas_occ_mask = self.ogrid.occ_mask[cas_slice]
+            cas_alive_occ_mask = cas_occ_mask[aligned_indices]
             indices_secondhalf = jran.choice(
                 key=key_secondhalf,
-                a=jnp.arange(G3, dtype=jnp.uint32),
-                shape=(M//2,),
+                a=aligned_indices,
+                shape=(max(1, M//2),),
                 replace=True,  # allow duplicated choices
-                p=cas_occ_mask.astype(jnp.float32),  # only care about occupied grids
+                p=cas_alive_occ_mask.astype(jnp.float32),  # only care about occupied grids
             )
-            indices = jnp.concatenate([indices_firsthalf, indices_secondhalf])
+            cas_updated_indices = jnp.concatenate([indices_firsthalf, indices_secondhalf])
 
-        coordinates = morton3d_invert(indices).astype(jnp.float32)
+        coordinates = morton3d_invert(cas_updated_indices).astype(jnp.float32)
         coordinates = coordinates / (self.raymarch.density_grid_res - 1) * 2 - 1  # in [-1, 1]
         mip_bound = min(self.scene_meta.bound, 2**cas)
         half_cell_width = mip_bound / self.raymarch.density_grid_res
@@ -622,17 +639,13 @@ class NeRFState(TrainState):
             minval=-half_cell_width,
             maxval=half_cell_width,
         )
-        new_densities = jnp.where(
-            condition=cas_density_grid[indices] >= 0,
-            x=self.nerf_fn(
-                {"params": self.locked_params["nerf"]},
-                jax.lax.stop_gradient(coordinates),
-                None,
-            ).ravel(),
-            y=-1.,
+        new_densities = self.nerf_fn(
+            {"params": self.locked_params["nerf"]},
+            jax.lax.stop_gradient(coordinates),
+            None,
         )
-        cas_density_grid = cas_density_grid.at[indices].set(
-            jnp.maximum(cas_density_grid[indices], new_densities)
+        cas_density_grid = cas_density_grid.at[cas_updated_indices].set(
+            jnp.maximum(cas_density_grid[cas_updated_indices], new_densities.ravel())
         )
         new_ogrid = self.ogrid.replace(
             density=self.ogrid.density.at[cas_slice].set(cas_density_grid),
@@ -642,7 +655,7 @@ class NeRFState(TrainState):
     @jax.jit
     def threshold_ogrid(self) -> "NeRFState":
         density_threshold = .01 * self.raymarch.diagonal_n_steps / (2 * min(self.scene_meta.bound, 1) * 3**.5)
-        mean_density = jnp.sum(jnp.where(self.ogrid.density > 0, self.ogrid.density, 0)) / jnp.sum(jnp.where(self.ogrid.density > 0, 1, 0))
+        mean_density = self.ogrid.density[self.ogrid.alive_indices].mean()
         density_threshold = jnp.minimum(density_threshold, mean_density)
         occupied_mask, occupancy_bitfield = packbits(
             density_threshold=density_threshold,
@@ -658,8 +671,8 @@ class NeRFState(TrainState):
         G = self.raymarch.density_grid_res
         G3 = G*G*G
         n_grids = self.scene_meta.cascades * G3
-        i = jnp.arange(n_grids, dtype=jnp.uint32)
-        level, pos_idcs = i // G3, i % G3
+        all_indices = jnp.arange(n_grids, dtype=jnp.uint32)
+        level, pos_idcs = all_indices // G3, all_indices % G3
         mip_bound = jnp.minimum(2 ** level, self.scene_meta.bound).astype(jnp.float32)
         cell_width = 2 * mip_bound / G
         xyzs = morton3d_invert(pos_idcs).astype(jnp.float32)  # [G3, 3]
@@ -677,11 +690,11 @@ class NeRFState(TrainState):
             [1, 1, 1],
         ], dtype=jnp.float32)
         grid_vertices = xyzs[:, None, :] + vertex_offsets
-        visible_marker = jnp.zeros(n_grids, dtype=jnp.bool_)
+        alive_marker = jnp.zeros(n_grids, dtype=jnp.bool_)
 
         @jax.jit
         def mark_untrained_density_grid_single_frame(
-            visible_marker: jax.Array,
+            alive_marker: jax.Array,
             transform_cw: jax.Array,
         ):
             rot_cw, t_cw = transform_cw[:3, :3], transform_cw[:3, 3]
@@ -701,10 +714,10 @@ class NeRFState(TrainState):
             within_frame_range = (uv >= 0.) & (uv < 1.)
             within_frame_range = (
                 within_frame_range  # shape is [n_grids, 8, 2]
-                    .all(axis=-1)  # u and v must all be within frame
+                    .all(axis=-1)  # u and v must both be within frame
             )
             visible_by_camera = (in_front_of_camera & within_frame_range).any(axis=-1)  # grid should be trained if any of its 8 vertices is visible
-            return visible_marker | visible_by_camera
+            return alive_marker | visible_by_camera
 
         # cam_t = np.asarray(list(map(
         #     lambda frame: frame.transform_matrix_numpy[:3, 3],
@@ -712,13 +725,13 @@ class NeRFState(TrainState):
         # )))
         # np.savetxt("cams.xyz", cam_t)
 
-        for frame in (pbar := tqdm(self.scene_meta.frames, desc="marked 0/{} (0.00%) grids as trainable".format(n_grids), bar_format=tqdm_format)):
-            visible_marker = mark_untrained_density_grid_single_frame(visible_marker, frame.transform_matrix_jax_array)
-            n_trainable = visible_marker.sum()
-            ratio_trainable = n_trainable / n_grids
-            pbar.set_description_str("marked {}/{} ({:3.2f}%) grids as trainable".format(n_trainable, n_grids, ratio_trainable * 100))
+        for frame in (pbar := tqdm(self.scene_meta.frames, desc="marking trainable grids".format(n_grids), bar_format=tqdm_format)):
+            alive_marker = mark_untrained_density_grid_single_frame(alive_marker, frame.transform_matrix_jax_array)
+            n_alive_grids = alive_marker.sum()
+            ratio_trainable = n_alive_grids / n_grids
+            pbar.set_description_str("marked {}/{} ({:.2f}%) grids as trainable".format(n_alive_grids, n_grids, ratio_trainable * 100))
 
-        marked_density = jnp.where(visible_marker, 1e-15, -1.)
+        marked_density = jnp.where(alive_marker, 1e-15, -1.)
         marked_occ_mask, marked_occupancy = packbits(
             density_threshold=-.5,
             density_grid=marked_density
@@ -735,6 +748,11 @@ class NeRFState(TrainState):
                 density=marked_density,
                 occ_mask=marked_occ_mask,
                 occupancy=marked_occupancy,
+                alive_indices=all_indices[alive_marker],
+                alive_indices_offset=np.cumsum([0] + list(map(
+                    lambda cas_alive_marker: int(cas_alive_marker.sum()),
+                    jnp.split(alive_marker, self.scene_meta.cascades),
+                ))).tolist(),
             ),
         )
 
