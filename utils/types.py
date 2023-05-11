@@ -693,7 +693,7 @@ class NeRFState(TrainState):
             p_cam = (p_aligned[..., None, :] * rot_cw.T).sum(-1)
 
             # camera looks along the -z axis
-            in_front_of_camera = p_cam[..., -1] < -self.scene_meta.camera.near
+            in_front_of_camera = p_cam[..., -1] < -self.scene_meta.camera.near - 1e-4
 
             uvz = (p_cam[..., None, :] * self.scene_meta.camera.K).sum(-1)
             uvz /= uvz[..., -1:]
