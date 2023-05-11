@@ -15,8 +15,8 @@ import jax.numpy as jnp
 import jax.random as jran
 import numpy as np
 import pydantic
-from volrendjax import morton3d_invert, packbits
 from tqdm import tqdm
+from volrendjax import morton3d_invert, packbits
 
 from ._constants import tqdm_format
 
@@ -35,6 +35,7 @@ ActivationType = Literal[
 
 ColmapMatcherType = Literal["Exhaustive", "Sequential"]
 LogLevel = Literal["DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL"]
+TransformsProvider = Literal["loaded", "orbit"]
 
 DensityAndRGB = Tuple[jax.Array, jax.Array]
 RGBColor = Tuple[float, float, float]
@@ -104,11 +105,38 @@ class OccupancyDensityGrid:
 class NeRFBatchConfig:
     mean_effective_samples_per_ray: int
     mean_samples_per_ray: int
+
+    running_mean_effective_samples_per_ray: float
+    running_mean_samples_per_ray: float
+
     n_rays: int
 
-    @property
-    def estimated_batch_size(self):
-        return self.n_rays * self.mean_samples_per_ray
+    @classmethod
+    def create(cls, /, mean_effective_samples_per_ray: int, mean_samples_per_ray: int, n_rays: int) -> "NeRFBatchConfig":
+        return cls(
+            mean_effective_samples_per_ray=mean_effective_samples_per_ray,
+            mean_samples_per_ray=mean_samples_per_ray,
+            running_mean_effective_samples_per_ray=mean_effective_samples_per_ray,
+            running_mean_samples_per_ray=mean_samples_per_ray,
+            n_rays=n_rays,
+        )
+
+    def update(self, /, new_measured_batch_size: int, new_measured_batch_size_before_compaction: int) -> "NeRFBatchConfig":
+        decay = .95
+        return self.replace(
+            running_mean_effective_samples_per_ray=self.running_mean_effective_samples_per_ray * decay + (1 - decay) * new_measured_batch_size / self.n_rays,
+            running_mean_samples_per_ray=self.running_mean_samples_per_ray * decay + (1 - decay) * new_measured_batch_size_before_compaction / self.n_rays,
+        )
+
+    def commit(self, total_samples: int) -> "NeRFBatchConfig":
+        new_mean_effective_samples_per_ray=int(self.running_mean_samples_per_ray + 1.5)
+        new_mean_samples_per_ray=int(self.running_mean_samples_per_ray + 1.5)
+        new_n_rays=int(total_samples // new_mean_samples_per_ray)
+        return self.replace(
+            mean_effective_samples_per_ray=new_mean_effective_samples_per_ray,
+            mean_samples_per_ray=new_mean_samples_per_ray,
+            n_rays=new_n_rays,
+        )
 
 
 @dataclass
@@ -124,6 +152,8 @@ class PinholeCamera:
     # principal point
     cx: float
     cy: float
+
+    near: float=0.0
 
     @property
     def n_pixels(self) -> int:
@@ -161,6 +191,19 @@ class PinholeCamera:
             cy=float(cy),
         )
 
+    def scale_resolution(self, scale: int | float) -> "PinholeCamera":
+        return self.replace(
+            W=int(self.W * scale),
+            H=int(self.H * scale),
+            fx=self.fx * scale,
+            fy=self.fy * scale,
+            cx=self.cx * scale,
+            cy=self.cy * scale,
+        )
+
+    def scale_world(self, scale: int | float) -> "PinholeCamera":
+        return self.replace(near=self.near * scale)
+
 
 @empty_impl
 @dataclass
@@ -192,8 +235,11 @@ class SceneOptions:
     # scale both the scene's camera positions and bounding box with this factor
     world_scale: float
 
-    # scale input images in case they are too large
-    image_scale: float
+    # scale input images in case they are too large, camera intrinsics are also scaled to match the
+    # updated image resolution.
+    resolution_scale: float
+
+    camera_near: float
 
 
 @dataclass
@@ -219,7 +265,7 @@ class ImageMetadata:
 
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonFrame:
-    file_path: str
+    file_path: str | None
     transform_matrix: Matrix4x4
 
     # unused, kept for compatibility with the original nerf_synthetic dataset
@@ -383,6 +429,30 @@ class ViewMetadata:
         return flattened
 
 
+@dataclass
+class OrbitTrajectoryOptions:
+    # cameras' distance to the orbiting axis
+    radius: float=.8
+
+    # lowest height of generated trajectory
+    low: float=1
+
+    # highest height of generated trajectory
+    high: float=1.5
+
+    # how many frames should be rendered per orbit
+    n_frames_per_orbit: int=120
+
+    n_orbit: int=2
+
+    # all orbiting cameras will look at this point
+    centroid: Tuple[float, float, float]=(0., 0., 0.)
+
+    @property
+    def n_frames(self) -> int:
+        return self.n_frames_per_orbit * self.n_orbit
+
+
 # scene's metadata (computed from SceneOptions and TransformJson)
 @dataclass
 class SceneMeta:
@@ -418,6 +488,41 @@ class SceneMeta:
             return 1/256
         else:
             return 0
+
+    def make_data_with_orbiting_trajectory(
+        self,
+        opts: OrbitTrajectoryOptions,
+    ) -> "SceneMeta":
+        assert isinstance(opts, OrbitTrajectoryOptions)
+
+        thetas = np.linspace(0, opts.n_orbit * 2 * np.pi, opts.n_frames + 1)[:-1]
+        xs = np.asarray(tuple(map(np.cos, thetas))) * opts.radius
+        ys = np.asarray(tuple(map(np.sin, thetas))) * opts.radius
+        elevation_range = opts.high - opts.low
+        mid_elevation = opts.low + .5 * elevation_range
+        zs = mid_elevation + .5 * elevation_range * np.sin(np.linspace(0, 2 * np.pi, opts.n_frames + 1)[:-1])
+        xyzs = np.stack([xs, ys, zs]).T
+
+        view_dirs = -xyzs / np.linalg.norm(xyzs, axis=-1, keepdims=True)
+        right_dirs = np.stack([-np.sin(thetas), np.cos(thetas), np.zeros_like(thetas)]).T
+        up_dirs = -np.cross(view_dirs, right_dirs)
+        up_dirs = up_dirs / np.linalg.norm(up_dirs, axis=-1, keepdims=True)
+
+        rot_cws = np.concatenate([right_dirs[..., None], up_dirs[..., None], -view_dirs[..., None]], axis=-1)
+
+        frames = tuple(map(
+            lambda rot_cw, t_cw: TransformJsonFrame(
+                file_path=None,
+                transform_matrix=np.concatenate(
+                    [np.concatenate([rot_cw, t_cw.reshape(3, 1)], axis=-1), np.ones((1, 4))],
+                    axis=0,
+                ).tolist(),
+            ),
+            rot_cws,
+            xyzs,
+        ))
+
+        return self.replace(frames=frames)
 
 
 @dataclass
@@ -556,7 +661,8 @@ class NeRFState(TrainState):
     def mark_untrained_density_grid(self) -> "NeRFState":
         G = self.raymarch.density_grid_res
         G3 = G*G*G
-        i = jnp.arange(G3, dtype=jnp.uint32)
+        n_grids = self.scene_meta.cascades * G3
+        i = jnp.arange(n_grids, dtype=jnp.uint32)
         level, pos_idcs = i // G3, i % G3
         mip_bound = jnp.minimum(2 ** level, self.scene_meta.bound).astype(jnp.float32)
         cell_width = 2 * mip_bound / G
@@ -575,7 +681,7 @@ class NeRFState(TrainState):
             [1, 1, 1],
         ], dtype=jnp.float32)
         grid_vertices = xyzs[:, None, :] + vertex_offsets
-        visible_marker = jnp.zeros(G3, dtype=jnp.bool_)
+        visible_marker = jnp.zeros(n_grids, dtype=jnp.bool_)
 
         @jax.jit
         def mark_untrained_density_grid_single_frame(
@@ -591,7 +697,7 @@ class NeRFState(TrainState):
             p_cam = (p_aligned[..., None, :] * rot_cw.T).sum(-1)
 
             # camera looks along the -z axis
-            in_front_of_camera = p_cam[..., -1] < -1e-4
+            in_front_of_camera = p_cam[..., -1] < -self.scene_meta.camera.near
 
             uvz = (p_cam[..., None, :] * self.scene_meta.camera.K).sum(-1)
             uvz /= uvz[..., -1:]
@@ -610,11 +716,11 @@ class NeRFState(TrainState):
         # )))
         # np.savetxt("cams.xyz", cam_t)
 
-        for frame in (pbar := tqdm(self.scene_meta.frames, desc="marked 0/{} (0.00%) grids as trainable".format(G3), bar_format=tqdm_format)):
+        for frame in (pbar := tqdm(self.scene_meta.frames, desc="marked 0/{} (0.00%) grids as trainable".format(n_grids), bar_format=tqdm_format)):
             visible_marker = mark_untrained_density_grid_single_frame(visible_marker, frame.transform_matrix_jax_array)
             n_trainable = visible_marker.sum()
-            ratio_trainable = n_trainable / G3
-            pbar.set_description_str("marked {}/{} ({:3.2f}%) grids as trainable".format(n_trainable, G3, ratio_trainable * 100))
+            ratio_trainable = n_trainable / n_grids
+            pbar.set_description_str("marked {}/{} ({:3.2f}%) grids as trainable".format(n_trainable, n_grids, ratio_trainable * 100))
 
         marked_density = jnp.where(visible_marker, 1e-15, -1.)
         marked_occ_mask, marked_occupancy = packbits(
@@ -663,10 +769,18 @@ class NeRFState(TrainState):
         return self.step < 256
 
     @property
-    def should_update_batch_config(self) -> bool:
+    def should_commit_batch_config(self) -> bool:
         return (
             self.step > 0
             and self.step % 16 == 0
+        )
+
+    def update_batch_config(self, /, new_measured_batch_size: int, new_measured_batch_size_before_compaction: int) -> "NeRFState":
+        return self.replace(
+            batch_config=self.batch_config.update(
+                new_measured_batch_size=new_measured_batch_size,
+                new_measured_batch_size_before_compaction=new_measured_batch_size_before_compaction,
+            )
         )
 
     @property

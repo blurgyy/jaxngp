@@ -41,8 +41,6 @@ def train_epoch(
 ):
     n_processed_rays = 0
     total_loss = 0
-    running_mean_effective_samp_per_ray = state.batch_config.mean_effective_samples_per_ray
-    running_mean_samp_per_ray = state.batch_config.mean_samples_per_ray
 
     for _ in (pbar := common.tqdm(range(n_batches), desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs))):
         KEY, key_perm, key_train_step = jran.split(KEY, 3)
@@ -57,20 +55,16 @@ def train_epoch(
         n_processed_rays += state.batch_config.n_rays
         total_loss += metrics["loss"]
         loss_log = metrics["loss"] / state.batch_config.n_rays
-        running_mean_samp_per_ray, running_mean_effective_samp_per_ray = (
-            running_mean_samp_per_ray * .95 + .05 * metrics["measured_batch_size_before_compaction"] / state.batch_config.n_rays,
-            running_mean_effective_samp_per_ray * .95 + .05 * metrics["measured_batch_size"] / state.batch_config.n_rays,
-        )
 
         loss_db = data.linear_to_db(loss_log, maxval=1)
         pbar.set_description_str(
-            desc="Training epoch#{:03d}/{:d} batch_size={}/{} samp./ray={}/{} n_rays={} loss={:.3e}({:.2f}dB)".format(
+            desc="Training epoch#{:03d}/{:d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss={:.3e}({:.2f}dB)".format(
                 ep_log,
                 total_epochs,
                 metrics["measured_batch_size"],
                 metrics["measured_batch_size_before_compaction"],
-                state.batch_config.mean_effective_samples_per_ray,
-                state.batch_config.mean_samples_per_ray,
+                state.batch_config.running_mean_effective_samples_per_ray,
+                state.batch_config.running_mean_samples_per_ray,
                 state.batch_config.n_rays,
                 loss_log,
                 loss_db,
@@ -88,17 +82,12 @@ def train_epoch(
                 )
             state = state.threshold_ogrid()
 
-        if state.should_update_batch_config:
-            new_mean_effective_samples_per_ray = int(running_mean_effective_samp_per_ray + 1.5)
-            new_mean_samples_per_ray = int(running_mean_samp_per_ray + 1.5)
-            new_n_rays = total_samples // new_mean_samples_per_ray
-            state = state.replace(
-                batch_config=NeRFBatchConfig(
-                    mean_effective_samples_per_ray=new_mean_effective_samples_per_ray,
-                    mean_samples_per_ray=new_mean_samples_per_ray,
-                    n_rays=new_n_rays,
-                ),
-            )
+        state = state.update_batch_config(
+            new_measured_batch_size=metrics["measured_batch_size"],
+            new_measured_batch_size_before_compaction=metrics["measured_batch_size_before_compaction"],
+        )
+        if state.should_commit_batch_config:
+            state = state.replace(batch_config=state.batch_config.commit(total_samples))
 
         if state.should_write_batch_metrics:
             logger.write_scalar("batch/↓loss", loss_log, state.step)
@@ -133,16 +122,14 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
     logger.info("loading training frames")
     scene_train, _ = data.load_scene(
         srcs=args.frames_train,
-        world_scale=args.scene.world_scale,
-        image_scale=args.scene.image_scale,
+        scene_options=args.scene,
     )
 
     if len(args.frames_val) > 0:
         logger.info("loading validation frames")
         scene_val, val_views = data.load_scene(
             srcs=args.frames_val,
-            world_scale=args.scene.world_scale,
-            image_scale=args.scene.image_scale,
+            scene_options=args.scene,
         )
         assert scene_train.meta == scene_val.meta
     else:
@@ -210,7 +197,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             cascades=scene_meta.cascades,
             grid_resolution=args.raymarch.density_grid_res,
         ),
-        batch_config=NeRFBatchConfig(
+        batch_config=NeRFBatchConfig.create(
             mean_effective_samples_per_ray=args.raymarch.diagonal_n_steps,
             mean_samples_per_ray=args.raymarch.diagonal_n_steps,
             n_rays=args.train.bs // args.raymarch.diagonal_n_steps,

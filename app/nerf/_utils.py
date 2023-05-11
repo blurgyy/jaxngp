@@ -26,23 +26,16 @@ def train_step(
     # TODO:
     #   merge this and `models.renderers.make_rays_worldspace` as a single function
     def make_rays_worldspace() -> Tuple[jax.Array, jax.Array]:
-        # [N, 2]
-        xys = jnp.stack([
-            perm % scene.meta.camera.W,
-            (perm // scene.meta.camera.W) % scene.meta.camera.H,
-        ]).T
-        # [N, 3]
-        xyzs = jnp.concatenate([xys, jnp.ones((xys.shape[0], 1))], axis=-1)
         # [N, 1]
-        d_cam_xs = xyzs[:, 0:1]
+        d_cam_xs = jnp.mod(perm, scene.meta.camera.W)
         d_cam_xs = ((d_cam_xs + 0.5) - scene.meta.camera.cx) / scene.meta.camera.fx
         # [N, 1]
-        d_cam_ys = xyzs[:, 1:2]
+        d_cam_ys = jnp.mod(jnp.floor_divide(perm, scene.meta.camera.W), scene.meta.camera.H)
         d_cam_ys = -((d_cam_ys + 0.5) - scene.meta.camera.cy) / scene.meta.camera.fy
         # [N, 1]
-        d_cam_zs = -xyzs[:, 2:3]
+        d_cam_zs = -jnp.ones_like(perm)
         # [N, 3]
-        d_cam = jnp.concatenate([d_cam_xs, d_cam_ys, d_cam_zs], axis=-1)
+        d_cam = jnp.stack([d_cam_xs, d_cam_ys, d_cam_zs]).T
         d_cam /= jnp.linalg.norm(d_cam, axis=-1, keepdims=True) + 1e-15
 
         # indices of views, used to retrieve transformation information for each ray
@@ -60,6 +53,8 @@ def train_step(
 
         # d_cam was normalized already, normalize d_world just to be sure
         d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
+
+        o_world += scene.meta.camera.near * d_world
 
         return o_world, d_world
 

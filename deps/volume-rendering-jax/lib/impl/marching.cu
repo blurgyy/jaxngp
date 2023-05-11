@@ -94,13 +94,17 @@ __global__ void march_rays_kernel(
     std::uint32_t const i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_rays) { return; }
 
-    // input arrays
-    float const * const __restrict__ ray_o = rays_o + i * 3;  // [3]
-    float const * const __restrict__ ray_d = rays_d + i * 3;  // [3]
+    // inputs
+    float const ox = rays_o[i * 3 + 0];
+    float const oy = rays_o[i * 3 + 1];
+    float const oz = rays_o[i * 3 + 2];
+    float const dx = rays_d[i * 3 + 0];
+    float const dy = rays_d[i * 3 + 1];
+    float const dz = rays_d[i * 3 + 2];
     float const ray_t_start = t_starts[i];  // [] (a scalar has no shape)
     float const ray_t_end = t_ends[i];  // [] (a scalar has no shape)
 
-    if (ray_t_end <= 0.f) { return; }
+    if (ray_t_end <= ray_t_start) { return; }
 
     float const ray_noise = noises[i];  // [] (a scalar has no shape)
 
@@ -113,9 +117,9 @@ __global__ void march_rays_kernel(
     float ray_t = ray_t_start;
     ray_t += calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps) * ray_noise;
     while (ray_n_samples < diagonal_n_steps * bound && ray_t < ray_t_end) {
-        float const x = ray_o[0] + ray_t * ray_d[0];
-        float const y = ray_o[1] + ray_t * ray_d[1];
-        float const z = ray_o[2] + ray_t * ray_d[2];
+        float const x = ox + ray_t * dx;
+        float const y = oy + ray_t * dy;
+        float const z = oz + ray_t * dz;
 
         float const ds = calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps);
 
@@ -141,9 +145,9 @@ __global__ void march_rays_kernel(
             ++ray_n_samples;
             ray_t += ds;
         } else {
-            float const tx = (((grid_x + .5f + .5f * signf(ray_d[0])) / G * 2 - 1) * mip_bound - x) / ray_d[0];
-            float const ty = (((grid_y + .5f + .5f * signf(ray_d[1])) / G * 2 - 1) * mip_bound - y) / ray_d[1];
-            float const tz = (((grid_z + .5f + .5f * signf(ray_d[2])) / G * 2 - 1) * mip_bound - z) / ray_d[2];
+            float const tx = (((grid_x + .5f + .5f * signf(dx)) / G * 2 - 1) * mip_bound - x) / dx;
+            float const ty = (((grid_y + .5f + .5f * signf(dy)) / G * 2 - 1) * mip_bound - y) / dy;
+            float const tz = (((grid_z + .5f + .5f * signf(dz)) / G * 2 - 1) * mip_bound - z) / dz;
 
             // distance to next voxel
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
@@ -180,9 +184,9 @@ __global__ void march_rays_kernel(
     //  we still need the condition (ray_t < ray_t_end) because if a ray never hits an occupied grid
     //  cell, its `steps` won't increment, adding this condition avoids infinite loops.
     while (steps < ray_n_samples && ray_t < ray_t_end) {
-        float const x = ray_o[0] + ray_t * ray_d[0];
-        float const y = ray_o[1] + ray_t * ray_d[1];
-        float const z = ray_o[2] + ray_t * ray_d[2];
+        float const x = ox + ray_t * dx;
+        float const y = oy + ray_t * dy;
+        float const z = oz + ray_t * dz;
 
         float const ds = calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps);
 
@@ -208,18 +212,18 @@ __global__ void march_rays_kernel(
             ray_xyzs[steps * 3 + 0] = x;
             ray_xyzs[steps * 3 + 1] = y;
             ray_xyzs[steps * 3 + 2] = z;
-            ray_dirs[steps * 3 + 0] = ray_d[0];
-            ray_dirs[steps * 3 + 1] = ray_d[1];
-            ray_dirs[steps * 3 + 2] = ray_d[2];
+            ray_dirs[steps * 3 + 0] = dx;
+            ray_dirs[steps * 3 + 1] = dy;
+            ray_dirs[steps * 3 + 2] = dz;
             ray_dss[steps] = ds;
             ray_z_vals[steps] = ray_t;
 
             ++steps;
             ray_t += ds;
         } else {
-            float const tx = (((grid_x + .5f + .5f * signf(ray_d[0])) / G * 2 - 1) * mip_bound - x) / ray_d[0];
-            float const ty = (((grid_y + .5f + .5f * signf(ray_d[1])) / G * 2 - 1) * mip_bound - y) / ray_d[1];
-            float const tz = (((grid_z + .5f + .5f * signf(ray_d[2])) / G * 2 - 1) * mip_bound - z) / ray_d[2];
+            float const tx = (((grid_x + .5f + .5f * signf(dx)) / G * 2 - 1) * mip_bound - x) / dx;
+            float const ty = (((grid_y + .5f + .5f * signf(dy)) / G * 2 - 1) * mip_bound - y) / dy;
+            float const tz = (((grid_z + .5f + .5f * signf(dz)) / G * 2 - 1) * mip_bound - z) / dz;
 
             // distance to next voxel
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
@@ -265,12 +269,16 @@ __global__ void march_rays_inference_kernel(
     indices_out[i] = ray_idx;
     if (ray_idx >= n_total_rays) { return; }
 
-    float const * const __restrict__ ray_o = rays_o + ray_idx * 3;
-    float const * const __restrict__ ray_d = rays_d + ray_idx * 3;
+    float const ox = rays_o[ray_idx * 3 + 0];
+    float const oy = rays_o[ray_idx * 3 + 1];
+    float const oz = rays_o[ray_idx * 3 + 2];
+    float const dx = rays_d[ray_idx * 3 + 0];
+    float const dy = rays_d[ray_idx * 3 + 1];
+    float const dz = rays_d[ray_idx * 3 + 2];
     float const ray_t_start = t_starts[ray_idx];
     float const ray_t_end = t_ends[ray_idx];
 
-    if (ray_t_end <= 0.f) { return; }
+    if (ray_t_end <= ray_t_start) { return; }
 
     float * const __restrict__ ray_xyzdirs = xyzdirs + i * march_steps_cap * 6;
     float * const __restrict__ ray_dss = dss + i * march_steps_cap;
@@ -281,9 +289,9 @@ __global__ void march_rays_inference_kernel(
     std::uint32_t steps = 0;
     float ray_t = ray_t_start;
     while (steps < march_steps_cap && ray_t < ray_t_end) {
-        float const x = ray_o[0] + ray_t * ray_d[0];
-        float const y = ray_o[1] + ray_t * ray_d[1];
-        float const z = ray_o[2] + ray_t * ray_d[2];
+        float const x = ox + ray_t * dx;
+        float const y = oy + ray_t * dy;
+        float const z = oz + ray_t * dz;
 
         float const ds = calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps);
 
@@ -309,18 +317,18 @@ __global__ void march_rays_inference_kernel(
             ray_xyzdirs[steps * 6 + 0] = x;
             ray_xyzdirs[steps * 6 + 1] = y;
             ray_xyzdirs[steps * 6 + 2] = z;
-            ray_xyzdirs[steps * 6 + 3] = ray_d[0];
-            ray_xyzdirs[steps * 6 + 4] = ray_d[1];
-            ray_xyzdirs[steps * 6 + 5] = ray_d[2];
+            ray_xyzdirs[steps * 6 + 3] = dx;
+            ray_xyzdirs[steps * 6 + 4] = dy;
+            ray_xyzdirs[steps * 6 + 5] = dz;
             ray_dss[steps] = ds;
             ray_z_vals[steps] = ray_t;
 
             ++steps;
             ray_t += ds;
         } else {
-            float const tx = (((grid_x + .5f + .5f * signf(ray_d[0])) / G * 2 - 1) * mip_bound - x) / ray_d[0];
-            float const ty = (((grid_y + .5f + .5f * signf(ray_d[1])) / G * 2 - 1) * mip_bound - y) / ray_d[1];
-            float const tz = (((grid_z + .5f + .5f * signf(ray_d[2])) / G * 2 - 1) * mip_bound - z) / ray_d[2];
+            float const tx = (((grid_x + .5f + .5f * signf(dx)) / G * 2 - 1) * mip_bound - x) / dx;
+            float const ty = (((grid_y + .5f + .5f * signf(dy)) / G * 2 - 1) * mip_bound - y) / dy;
+            float const tz = (((grid_z + .5f + .5f * signf(dz)) / G * 2 - 1) * mip_bound - z) / dz;
 
             // distance to next voxel
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
