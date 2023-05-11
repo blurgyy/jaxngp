@@ -4,7 +4,14 @@ from typing import Tuple
 
 import tyro
 
-from utils.types import LogLevel, OrbitTrajectoryOptions, RayMarchingOptions, RenderingOptions, SceneOptions, TransformsProvider
+from utils.types import (
+    LogLevel,
+    OrbitTrajectoryOptions,
+    RayMarchingOptions,
+    RenderingOptions,
+    SceneOptions,
+    TransformsProvider,
+)
 
 
 @dataclass(frozen=True, kw_only=True)
