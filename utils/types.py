@@ -117,7 +117,6 @@ class OccupancyDensityGrid:
 @empty_impl
 @dataclass
 class NeRFBatchConfig:
-    mean_effective_samples_per_ray: int
     mean_samples_per_ray: int
 
     running_mean_effective_samples_per_ray: float
@@ -125,10 +124,13 @@ class NeRFBatchConfig:
 
     n_rays: int
 
+    @property
+    def mean_effective_samples_per_ray(self) -> int:
+        return int(self.running_mean_effective_samples_per_ray + 0.5)
+
     @classmethod
     def create(cls, /, mean_effective_samples_per_ray: int, mean_samples_per_ray: int, n_rays: int) -> "NeRFBatchConfig":
         return cls(
-            mean_effective_samples_per_ray=mean_effective_samples_per_ray,
             mean_samples_per_ray=mean_samples_per_ray,
             running_mean_effective_samples_per_ray=mean_effective_samples_per_ray,
             running_mean_samples_per_ray=mean_samples_per_ray,
@@ -143,11 +145,9 @@ class NeRFBatchConfig:
         )
 
     def commit(self, total_samples: int) -> "NeRFBatchConfig":
-        new_mean_effective_samples_per_ray=int(self.running_mean_samples_per_ray + 1.5)
         new_mean_samples_per_ray=int(self.running_mean_samples_per_ray + 1.5)
         new_n_rays=int(total_samples // new_mean_samples_per_ray)
         return self.replace(
-            mean_effective_samples_per_ray=new_mean_effective_samples_per_ray,
             mean_samples_per_ray=new_mean_samples_per_ray,
             n_rays=new_n_rays,
         )
