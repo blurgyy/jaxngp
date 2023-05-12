@@ -460,7 +460,7 @@ class OrbitTrajectoryOptions:
     n_orbit: int=2
 
     # all orbiting cameras will look at this point
-    centroid: Tuple[float, float, float]=(0., 0., 0.)
+    centroid: Tuple[float, float, float]=(0., 0., 0.1)
 
     @property
     def n_frames(self) -> int:
@@ -503,7 +503,7 @@ class SceneMeta:
         else:
             return 0
 
-    def make_data_with_orbiting_trajectory(
+    def make_frames_with_orbiting_trajectory(
         self,
         opts: OrbitTrajectoryOptions,
     ) -> "SceneMeta":
@@ -517,7 +517,7 @@ class SceneMeta:
         zs = mid_elevation + .5 * elevation_range * np.sin(np.linspace(0, 2 * np.pi, opts.n_frames + 1)[:-1])
         xyzs = np.stack([xs, ys, zs]).T
 
-        view_dirs = -xyzs / np.linalg.norm(xyzs, axis=-1, keepdims=True)
+        view_dirs = (jnp.asarray(opts.centroid) - xyzs) / np.linalg.norm(xyzs, axis=-1, keepdims=True)
         right_dirs = np.stack([-np.sin(thetas), np.cos(thetas), np.zeros_like(thetas)]).T
         up_dirs = -np.cross(view_dirs, right_dirs)
         up_dirs = up_dirs / np.linalg.norm(up_dirs, axis=-1, keepdims=True)

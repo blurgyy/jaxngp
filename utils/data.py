@@ -639,7 +639,7 @@ def load_scene(
     )
 
     if orbit_options is not None:
-        return scene_meta.make_data_with_orbiting_trajectory(orbit_options)
+        return scene_meta.make_frames_with_orbiting_trajectory(orbit_options)
 
     views = list(map(
         lambda frame: ViewMetadata(
