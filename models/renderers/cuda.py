@@ -314,7 +314,7 @@ def render_image_inference(
 
     while n_rendered_rays < state.scene_meta.camera.n_pixels:
         iters = max(1, (state.scene_meta.camera.n_pixels - n_rendered_rays) // n_rays)
-        iters = 2 ** int(math.log2(iters))
+        iters = 2 ** int(math.log2(iters) + 1)
 
         terminate_cnt = 0
         for _ in range(iters):
