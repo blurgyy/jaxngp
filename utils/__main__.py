@@ -62,7 +62,7 @@ class CreateDataset:
     # (a scene's bound is the half width of its bounding box, e.g. a scene with bound 4.0 has a
     # bounding box with width 8.0, centered at the origin) this parameter just specifies the 
     # "aabb_scale" in the generated `transforms_{train,val,test}.json`.
-    bound: float
+    bound: float=8.0
 
     # scale the camera's positions, the mean camera-to-origin distance will be `4.0 * camera_scale`.
     camera_scale: float=dataclasses.field(default_factory=lambda: 1/3, kw_only=True)
