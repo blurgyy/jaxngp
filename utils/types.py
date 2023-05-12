@@ -446,16 +446,16 @@ class ViewMetadata:
 @dataclass
 class OrbitTrajectoryOptions:
     # cameras' distance to the orbiting axis
-    radius: float=.8
+    radius: float=1
 
     # lowest height of generated trajectory
-    low: float=1
+    low: float=0.0
 
     # highest height of generated trajectory
-    high: float=1.5
+    high: float=0.8
 
     # how many frames should be rendered per orbit
-    n_frames_per_orbit: int=120
+    n_frames_per_orbit: int=144
 
     n_orbit: int=2
 
