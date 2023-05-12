@@ -49,7 +49,6 @@ class Gui_trainer():
     loss_log:str="--"
     
     def __post_init__(self):
-        self.cur_step=0
         logs_dir = self.args.exp_dir.joinpath("logs")
         logs_dir.mkdir(parents=True, exist_ok=True)
         self.logger = common.setup_logging(
@@ -198,8 +197,8 @@ class Gui_trainer():
     def get_npf32_image(self,img:jnp.array)->np.array:
         from PIL import Image
         img=Image.fromarray(np.array(img,dtype=np.uint8))
-        self.logger.info("H:{},W:{}".format(self.H,self.W))
-        img=img.resize(size=(self.H,self.W), resample=1)
+        _img=np.array(img,dtype=np.float32)
+        img=img.resize(size=(self.W,self.H), resample=1)
         img=np.array(img,dtype=np.float32)/255.
         return img    
         
@@ -390,13 +389,7 @@ class NeRFGUI():
                 ]
             ])
         
-        
     def ItemsLayout(self):
-        # def resolutionControls():
-        #     dpg.add_text("resolution scale:",parent=)
-        #     dpg.add_slider_float(label="",parent=,width=300,default_value=self.step_sleep,clamped=True)
-        
-    
         dpg.create_viewport(title='NeRf', width=self.W, height=self.H)
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb, tag="_texture")
