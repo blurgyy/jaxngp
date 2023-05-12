@@ -108,7 +108,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         logger.info("tested {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
 
     elif args.trajectory == "orbit":
-        pass
+        logger.debug("using generated orbiting trajectory, not calculating psnr")
 
     else:
         assert_never("")
