@@ -6,25 +6,20 @@ import jax.random as jran
 import jax.numpy as jnp
 from dataclasses import dataclass,field
 from tqdm import tqdm
-
 import threading
-
 import dearpygui.dearpygui as dpg
-from utils.args import GuiWindowArgs
-
-import matplotlib.image as mpimg
-from utils.args import NeRFTestingArgs, NeRFTrainingArgs,GuiWindowArgs
-
+from PIL import Image
+import ctypes
+from utils.args import GuiWindowArgs, NeRFTrainingArgs,GuiWindowArgs
 from .train import *
-
-_state:NeRFState
-
-
+from utils.data import load_transform_json_recursive,merge_transforms
 from utils.types import (
     SceneData,
     SceneMeta,
     ViewMetadata,
-    PinholeCamera
+    PinholeCamera,
+    TransformJsonNeRFSynthetic,
+    TransformJsonNGP
 )
 from models.nerfs import (NeRF,SkySphereBg)
 @dataclass
@@ -34,6 +29,8 @@ class Gui_trainer():
     logger: common.Logger
     camera_pose:jnp.array
     gui_args:GuiWindowArgs
+    H:int
+    W:int
     
     scene_train:SceneData=field(init=False)
     scene_val:SceneData=field(init=False)
@@ -52,9 +49,10 @@ class Gui_trainer():
     cur_step:int=field(init=False)
     loss_log:str="--"
     
-
+    istraining:bool=field(init=False)
     def __post_init__(self):
-        self.cur_step=0
+        
+        self.istraining=True
         logs_dir = self.args.exp_dir.joinpath("logs")
         logs_dir.mkdir(parents=True, exist_ok=True)
         self.logger = common.setup_logging(
@@ -175,7 +173,7 @@ class Gui_trainer():
     def train_steps(self,steps:int,_scale:float)->Tuple[np.array,np.array,np.array]:
         gc.collect()
         
-        if self.cur_step<self.gui_args.max_step:
+        if self.cur_step<self.gui_args.max_step and self.istraining:
             
             _scene_meta = self.scene_meta
             #_scale=self.gui_args.resolution_scale
@@ -186,7 +184,7 @@ class Gui_trainer():
                                     frames=_scene_meta.frames)
             
             self.KEY, key = jran.split(self.KEY, 2)
-            loss_log, self.state = gui_train_epoch(
+            loss_log, self.state = self.gui_train_epoch(
                 KEY=key,
                 state=self.state,
                 scene=self.scene_train,
@@ -203,109 +201,140 @@ class Gui_trainer():
     def get_npf32_image(self,img:jnp.array)->np.array:
         from PIL import Image
         img=Image.fromarray(np.array(img,dtype=np.uint8))
-        img=img.resize(size=(800,800), resample=1)
+        img=img.resize(size=(self.W,self.H), resample=1)
         img=np.array(img,dtype=np.float32)/255.
         return img    
         
-def gui_train_epoch(
-    KEY: jran.KeyArray,
-    state: NeRFState,
-    scene: SceneData,
-    n_batches: int,
-    total_samples: int,
-    cur_steps: int,
-    logger: common.Logger,
-):
-    n_processed_rays = 0
-    total_loss = 0
-
-    for _ in (pbar := tqdm(range(n_batches), desc="Training epoch#{:03d}".format(cur_steps), bar_format=common.tqdm_format)):
-        KEY, key_perm, key_train_step = jran.split(KEY, 3)
-        perm = jran.choice(key_perm, scene.meta.n_pixels, shape=(state.batch_config.n_rays,), replace=True)
-        state, metrics = train_step(
-            KEY=key_train_step,
-            state=state,
-            total_samples=total_samples,
-            scene=scene,
-            perm=perm,
-        )
-        cur_steps=cur_steps+1
-        n_processed_rays += state.batch_config.n_rays
-        total_loss += metrics["loss"]
-        loss_log = metrics["loss"] / state.batch_config.n_rays
-
-        loss_db = data.linear_to_db(loss_log, maxval=1)
+    def gui_train_epoch(
+        self,
+        KEY: jran.KeyArray,
+        state: NeRFState,
+        scene: SceneData,
+        n_batches: int,
+        total_samples: int,
+        cur_steps: int,
+        logger: common.Logger,
+    ):
+        n_processed_rays = 0
+        total_loss = 0
         
-        pbar.set_description_str(
-            desc="Training step#{:03d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss={:.3e}({:.2f}dB)".format(
-                cur_steps,
-                metrics["measured_batch_size"],
-                metrics["measured_batch_size_before_compaction"],
-                state.batch_config.running_mean_effective_samples_per_ray,
-                state.batch_config.running_mean_samples_per_ray,
-                state.batch_config.n_rays,
-                loss_log,
-                loss_db,
+        for _ in (pbar := tqdm(range(n_batches), desc="Training epoch#{:03d}".format(cur_steps), bar_format=common.tqdm_format)):
+            if not self.istraining:
+                logger.warn("aborted at step {}".format(cur_steps))
+                # logger.info("saving training state ... ")
+                # ckpt_name = checkpoints.save_checkpoint(args.exp_dir, state, step="ep{}aborted".format(ep_log), overwrite=True, keep=2**30)
+                # logger.info("training state of epoch {} saved to: {}".format(ep_log, ckpt_name))
+                logger.info("exiting cleanly ...")
+                exit()
+                #break
+            KEY, key_perm, key_train_step = jran.split(KEY, 3)
+            perm = jran.choice(key_perm, scene.meta.n_pixels, shape=(state.batch_config.n_rays,), replace=True)
+            state, metrics = train_step(
+                KEY=key_train_step,
+                state=state,
+                total_samples=total_samples,
+                scene=scene,
+                perm=perm,
             )
-        )
- 
-        if state.should_call_update_ogrid:
-            # update occupancy grid
-            for cas in range(state.scene_meta.cascades):
-                KEY, key = jran.split(KEY, 2)
-                state = state.update_ogrid_density(
-                    KEY=key,
-                    cas=cas,
-                    update_all=bool(state.should_update_all_ogrid_cells),
+            cur_steps=cur_steps+1
+            n_processed_rays += state.batch_config.n_rays
+            total_loss += metrics["loss"]
+            loss_log = metrics["loss"] / state.batch_config.n_rays
+
+            loss_db = data.linear_to_db(loss_log, maxval=1)
+            
+            pbar.set_description_str(
+                desc="Training step#{:03d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss={:.3e}({:.2f}dB)".format(
+                    cur_steps,
+                    metrics["measured_batch_size"],
+                    metrics["measured_batch_size_before_compaction"],
+                    state.batch_config.running_mean_effective_samples_per_ray,
+                    state.batch_config.running_mean_samples_per_ray,
+                    state.batch_config.n_rays,
+                    loss_log,
+                    loss_db,
                 )
-            state = state.threshold_ogrid()
+            )
+    
+            if state.should_call_update_ogrid:
+                # update occupancy grid
+                for cas in range(state.scene_meta.cascades):
+                    KEY, key = jran.split(KEY, 2)
+                    state = state.update_ogrid_density(
+                        KEY=key,
+                        cas=cas,
+                        update_all=bool(state.should_update_all_ogrid_cells),
+                    )
+                state = state.threshold_ogrid()
 
-        state = state.update_batch_config(
-            new_measured_batch_size=metrics["measured_batch_size"],
-            new_measured_batch_size_before_compaction=metrics["measured_batch_size_before_compaction"],
-        )
-        if state.should_commit_batch_config:
-            state = state.replace(batch_config=state.batch_config.commit(total_samples))
+            state = state.update_batch_config(
+                new_measured_batch_size=metrics["measured_batch_size"],
+                new_measured_batch_size_before_compaction=metrics["measured_batch_size_before_compaction"],
+            )
+            if state.should_commit_batch_config:
+                state = state.replace(batch_config=state.batch_config.commit(total_samples))
 
-        if state.should_write_batch_metrics:
-            logger.write_scalar("batch/↓loss", loss_log, state.step)
-            logger.write_scalar("batch/↑loss (db)", loss_db, state.step)
-            logger.write_scalar("batch/effective batch size (not compacted)", metrics["measured_batch_size_before_compaction"], state.step)
-            logger.write_scalar("batch/↑effective batch size (compacted)", metrics["measured_batch_size"], state.step)
-            logger.write_scalar("rendering/↓effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
-            logger.write_scalar("rendering/↓marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
-            logger.write_scalar("rendering/↑number of rays", state.batch_config.n_rays, state.step)
-        
-        
-    return total_loss / n_processed_rays, state
-
+            if state.should_write_batch_metrics:
+                logger.write_scalar("batch/↓loss", loss_log, state.step)
+                logger.write_scalar("batch/↑loss (db)", loss_db, state.step)
+                logger.write_scalar("batch/effective batch size (not compacted)", metrics["measured_batch_size_before_compaction"], state.step)
+                logger.write_scalar("batch/↑effective batch size (compacted)", metrics["measured_batch_size"], state.step)
+                logger.write_scalar("rendering/↓effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
+                logger.write_scalar("rendering/↓marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
+                logger.write_scalar("rendering/↑number of rays", state.batch_config.n_rays, state.step)
+    
+            
+        return total_loss / n_processed_rays, state
+    def stop_trainer(self):
+        self.istraining=False
 class TrainThread(threading.Thread):
-    def __init__(self,KEY,args,gui_args,logger,camera_pose,step):
+    def __init__(self,KEY,args,gui_args,logger,camera_pose,step,H,W):
         super(TrainThread,self).__init__()   
-        self.istraining=True
-        self.KEY=KEY
-        self.args=args
-        self.gui_args=gui_args
-        self.logger=logger
-        self.camera_pose=camera_pose
-        self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args)
-        self.step=step
-        self.scale=gui_args.resolution_scale
-        
-        self.framebuff=np.ones(shape=(self.gui_args.H,self.gui_args.W,3),dtype=np.float32)
+        try:
+            self.istraining=True
+            self.KEY=KEY
+            self.args=args
+            self.gui_args=gui_args
+            self.logger=logger
+            self.camera_pose=camera_pose
+            self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
+            self.step=step
+            self.scale=gui_args.resolution_scale
+            
+            self.framebuff=np.ones(shape=(H,W,3),dtype=np.float32)
+        except Exception as e:
+            self.logger.warning(e)
     def run(self):
-        while self.istraining and self.trainer.cur_step<self.gui_args.max_step:
-            _,self.framebuff,_=self.trainer.train_steps(self.step,self.scale)
-        self.logger.info("training finished")  
+        try:
+            while self.istraining and self.trainer.cur_step<self.gui_args.max_step:
+                _,self.framebuff,_=self.trainer.train_steps(self.step,self.scale)
+            self.logger.info("training finished")  
+        except Exception as e:
+            self.logger.warning(e)
     def render(self):
         self.trainer.render_frame()  
+
     def stop(self):
         self.istraining=False
+        self.trainer.stop_trainer()
+        thread_id = self.get_id() 
+        self.logger.warning("Throw training thread exit Exception")
+        res = ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, 
+            ctypes.py_object(SystemExit)) 
+        if res > 1: 
+            ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, 0) 
+            self.logger.warn("Exception raise failure", category=None, stacklevel=1)
     def set_scale(self,_scale):
         self.scale=_scale
     def get_scale(self):
         return self.scale
-    
+    def get_id(self): 
+    # returns id of the respective thread 
+        if hasattr(self, '_thread_id'): 
+            return self._thread_id 
+        for id, thread in threading._active.items(): 
+            if thread is self: 
+                return id
 
 @dataclass
 class NeRFGUI():
@@ -326,11 +355,43 @@ class NeRFGUI():
     camera_pose:jnp.array=None
     
     scale_slider:Union[int,str]=field(init=False)
-    
+    def init_HW(self):
+        def try_image_extensions(
+            file_path: str,
+            extensions: List[str]=["png", "jpg", "jpeg"],) -> Path:
+            if "" not in extensions:
+                extensions = [""] + list(extensions)
+            for ext in extensions:
+                if len(ext) > 0 and ext[0] != ".":
+                    ext = "." + ext
+                p = Path(file_path + ext)
+                if p.exists():
+                    return p
+            raise FileNotFoundError(
+                "could not find a file at {} with any extension of {}".format(file_path, extensions)
+            )
+        srcs = list(map(Path, self.train_args.frames_train))
+        transforms = merge_transforms(map(load_transform_json_recursive, srcs))
+        if transforms is None:
+            raise FileNotFoundError("could not find any valid transforms in {}".format(srcs))
+        if len(transforms.frames) == 0:
+            raise ValueError("could not find any frame in {}".format(srcs))
+        if isinstance(transforms, TransformJsonNeRFSynthetic):
+            from PIL import Image
+            _img = Image.open(try_image_extensions(transforms.frames[0].file_path))
+            self.W, self.H = _img.width, _img.height
+        elif isinstance(transforms, TransformJsonNGP):
+            self.W,self.H=transforms.w,transforms.h
+        else:
+            raise TypeError("unexpected type for transforms: {}, expected one of {}".format(
+                type(transforms),
+                [TransformJsonNeRFSynthetic, TransformJsonNGP],
+            ))
     def __post_init__(self):
         #self.scale_slider=dpg.generate_uuid()
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
-        self.H,self.W=self.gui_args.H,self.gui_args.W
+        self.init_HW()
+        #self.H,self.W=self.gui_args.H,self.gui_args.W
         self.framebuff=np.ones(shape=(self.W,self.H,3),dtype=np.float32)#default background is white
         dpg.create_context()
         self.ItemsLayout()
@@ -362,13 +423,7 @@ class NeRFGUI():
                 ]
             ])
         
-        
     def ItemsLayout(self):
-        # def resolutionControls():
-        #     dpg.add_text("resolution scale:",parent=)
-        #     dpg.add_slider_float(label="",parent=,width=300,default_value=self.step_sleep,clamped=True)
-        
-    
         dpg.create_viewport(title='NeRf', width=self.W, height=self.H)
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb, tag="_texture")
@@ -416,7 +471,8 @@ class NeRFGUI():
                                 
                                 dpg.configure_item("_button_train", label="stop")
                                 self.need_train = True
-                                self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.camera_pose,step=5)
+                                self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.camera_pose,step=5,H=self.H,W=self.W)
+                                self.train_thread.setDaemon(True)
                                 self.train_thread.start()
 
                         dpg.add_button(label="start", tag="_button_train", callback=callback_train)
@@ -445,22 +501,29 @@ class NeRFGUI():
             _,self.framebuff,_=self.train_thread.trainer.render_frame()   
             dpg.set_value("_texture", self.framebuff)
     def render(self):
-        while dpg.is_dearpygui_running():
+        try:
+            while dpg.is_dearpygui_running():
+                if self.train_thread:
+                    if dpg.get_value(self.scale_slider)!=self.train_thread.get_scale():
+                        self.train_thread.set_scale(dpg.get_value(self.scale_slider))
+                    if self.need_train: 
+                        self.train_step()
+                dpg.render_dearpygui_frame()
+        except KeyboardInterrupt:
             if self.train_thread:
-                if dpg.get_value(self.scale_slider)!=self.train_thread.get_scale():
-                    self.train_thread.set_scale(dpg.get_value(self.scale_slider))
-                if self.need_train: 
-                    self.train_step()
-            #         self.need_update=True
-            # if self.need_update:
-            #     self.test_step()    
-            #     self.need_update=False
-            dpg.render_dearpygui_frame()
+                self.train_thread.stop()
+            self.logger.info("exiting cleanly ...")
+            exit()    
         dpg.destroy_context()
 
 
+def gui_exit(): 
+    import sys
+    sys.exit()
 
 def GuiWindow(KEY: jran.KeyArray, args: GuiWindowArgs, logger: logging.Logger):
+    # import keyboard
+    # keyboard.add_hotkey('q', gui_exit)
     nerfGui=NeRFGUI(gui_args=args,KEY=KEY,logger=logger)
     nerfGui.render()
     
