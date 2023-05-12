@@ -19,6 +19,7 @@ import numpy as np
 from . import sfm
 from .common import jit_jaxfn_with, mkValueError, tqdm
 from .types import (
+    CameraOverrideOptions,
     ColmapMatcherType,
     ImageMetadata,
     OrbitTrajectoryOptions,
@@ -32,7 +33,6 @@ from .types import (
     TransformJsonFrame,
     TransformJsonNGP,
     TransformJsonNeRFSynthetic,
-    TransformsProvider,
     ViewMetadata,
 )
 

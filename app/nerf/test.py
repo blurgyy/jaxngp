@@ -35,6 +35,8 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
             scene_options=args.scene,
             orbit_options=args.orbit,
         )
+        if args.camera_override.enabled:
+            scene_meta = scene_meta.replace(camera=args.camera_override.camera)
         logger.info("generated {} camera transforms for testing".format(len(scene_meta.frames)))
     elif args.trajectory == "loaded":
         logger.debug("loading testing frames from {}".format(args.frames))
@@ -70,7 +72,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     try:
         n_frames = len(scene_meta.frames)
         logger.info("starting testing (totally {} transform(s) to test)".format(n_frames))
-        for test_i in common.tqdm(range(n_frames), desc="testing"):
+        for test_i in common.tqdm(range(n_frames), desc="testing (resolultion: {}x{})".format(scene_meta.camera.W, scene_meta.camera.H)):
             logger.debug("testing on frame {}".format(scene_meta.frames[test_i]))
             transform = RigidTransformation(
                 rotation=scene_meta.frames[test_i].transform_matrix_jax_array[:3, :3],

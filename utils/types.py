@@ -245,6 +245,55 @@ class RenderingOptions:
 
 @empty_impl
 @pydantic.dataclasses.dataclass(frozen=True)
+class CameraOverrideOptions:
+    width: int | None=None
+    height: int | None=None
+    focal: float | None=None
+    near: float=0.1
+
+    def __post_init__(self):
+        if self.width is None and self.height is None:
+            return
+        if int(self.width is not None) + int(self.height is not None) == 1:
+            side = self.width if self.width is not None else self.height
+            self.__init__(
+                width=side,
+                height=side,
+                focal=self.focal,
+                near=self.near,
+            )
+        assert self.width > 0 and self.height > 0
+        if self.enabled and self.focal is None:
+            self.__init__(
+                width=self.width,
+                height=self.height,
+                focal=min(self.width, self.height),
+                near=self.near,
+            )
+
+    @property
+    def enabled(self) -> bool:
+        return (
+            self.width is not None
+            and self.height is not None
+        )
+
+    @property
+    def camera(self) -> PinholeCamera:
+        assert self.enabled
+        return PinholeCamera(
+            W=self.width,
+            H=self.height,
+            fx=self.focal,
+            fy=self.focal,
+            cx=self.width / 2,
+            cy=self.height / 2,
+            near=self.near,
+        )
+
+
+@empty_impl
+@pydantic.dataclasses.dataclass(frozen=True)
 class SceneOptions:
     # scale both the scene's camera positions and bounding box with this factor
     world_scale: float
@@ -252,8 +301,6 @@ class SceneOptions:
     # scale input images in case they are too large, camera intrinsics are also scaled to match the
     # updated image resolution.
     resolution_scale: float
-
-    camera_near: float
 
 
 @dataclass

@@ -1,10 +1,11 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 import tyro
 
 from utils.types import (
+    CameraOverrideOptions,
     LogLevel,
     OrbitTrajectoryOptions,
     RayMarchingOptions,
@@ -140,7 +141,6 @@ class NeRFTrainingArgs(NeRFArgsBase):
     scene: SceneOptions=SceneOptions(
         world_scale=1.0,
         resolution_scale=1.0,
-        camera_near=0.1,
     )
 
     # raymarching/rendering options for validating during training
@@ -158,6 +158,8 @@ class NeRFTrainingArgs(NeRFArgsBase):
 @dataclass(frozen=True, kw_only=True)
 class NeRFTestingArgs(NeRFArgsBase):
     frames: tyro.conf.Positional[Tuple[Path, ...]]
+
+    camera_override: CameraOverrideOptions=None
 
     # use checkpoint from this path (can be a directory) for testing
     ckpt: Path
@@ -189,5 +191,4 @@ class NeRFTestingArgs(NeRFArgsBase):
     scene: SceneOptions=SceneOptions(
         world_scale=1.0,
         resolution_scale=1.0,
-        camera_near=0.1,
     )
