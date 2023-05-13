@@ -335,11 +335,13 @@ class TrainThread(threading.Thread):
         for id, thread in threading._active.items(): 
             if thread is self: 
                 return id
-
+    def get_state(self):
+        return self.trainer.state
 @dataclass
 class NeRFGUI():
     
     framebuff:Any= field(init=False)
+    state:NeRFState=None
     H:int= field(init=False)
     W:int= field(init=False)
     isTest:bool=False
@@ -496,6 +498,7 @@ class NeRFGUI():
     def train_step(self):
         self.framebuff=self.train_thread.framebuff
         dpg.set_value("_texture", self.framebuff)
+        self.state=self.train_thread.get_state()
     def test_step(self):
         if self.train_thread:
             _,self.framebuff,_=self.train_thread.trainer.render_frame()   
