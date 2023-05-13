@@ -205,7 +205,7 @@ def write_transforms_json(
         new_m[0:3, 3] *= 4.0 / avglen
         frames[i] = dataclasses.replace(f, transform_matrix=new_m.tolist())
 
-    print("scene bound (i.e. half width of scene's aabb):", bound * 2)
+    print("scene bound (i.e. half width of scene's aabb):", bound)
     all_transform_json = TransformJsonNGP(
         frames=frames,
         fl_x=camera.fx,
