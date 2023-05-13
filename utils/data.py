@@ -584,7 +584,7 @@ def load_scene(
     def try_image_extensions(
         file_path: str,
         extensions: List[str]=["png", "jpg", "jpeg"],
-    ) -> Path:
+    ) -> Path | None:
         if "" not in extensions:
             extensions = [""] + list(extensions)
         for ext in extensions:
@@ -593,9 +593,10 @@ def load_scene(
             p = Path(file_path + ext)
             if p.exists():
                 return p
-        raise FileNotFoundError(
-            "could not find a file at {} with any extension of {}".format(file_path, extensions)
-        )
+        # raise FileNotFoundError(
+        #     "could not find a file at {} with any extension of {}".format(file_path, extensions)
+        # )
+        return None
 
     # shared camera model
     if isinstance(transforms, TransformJsonNeRFSynthetic):
@@ -641,7 +642,7 @@ def load_scene(
     if orbit_options is not None:
         return scene_meta.make_frames_with_orbiting_trajectory(orbit_options)
 
-    views = list(map(
+    views = map(
         lambda frame: ViewMetadata(
             scale=scene_options.resolution_scale,
             transform=RigidTransformation(
@@ -651,6 +652,10 @@ def load_scene(
             file=try_image_extensions(frame.file_path),
         ),
         transforms.frames,
+    )
+    views = list(filter(
+        lambda view: view.file is not None,
+        views,
     ))
 
     # uint8,[n_pixels, 4]
