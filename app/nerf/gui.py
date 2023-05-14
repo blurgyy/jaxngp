@@ -22,6 +22,138 @@ from utils.types import (
     TransformJsonNGP
 )
 from models.nerfs import (NeRF,SkySphereBg)
+from scipy.spatial.transform import Rotation as R
+@dataclass
+class CameraPose():
+    # radius:float=0.4
+    # center:np.array=np.array([2.6,0.5,0],dtype=np.float32)
+    # rot:np.array=R.from_matrix(np.array([
+    #             [
+    #                 0.3681268095970154,
+    #                 0.2467726171016693,
+    #                 -0.8964295387268066,
+    #             ],
+    #             [
+    #                 -0.929775595664978,
+    #                 0.09770487248897552,
+    #                 -0.3549240529537201,
+    #             ],
+    #             [
+    #                 -7.450580596923828e-09,
+    #                 0.9641353487968445,
+    #                 0.02654109597206116,
+    #             ]]
+    #         ,dtype=np.float32))
+    # center:np.array=np.array([0,0,0],dtype=np.float32)
+    # rot:np.array=R.from_quat([1.0,0.0,0.0,0.0])
+    # rot:np.array=np.array([
+    #             [
+    #                 0.3681268095970154,
+    #                 0.2467726171016693,
+    #                 -0.8964295387268066,
+    #                 0
+    #             ],
+    #             [
+    #                 -0.929775595664978,
+    #                 0.09770487248897552,
+    #                 -0.3549240529537201,
+    #                 0
+    #             ],
+    #             [
+    #                 -7.450580596923828e-09,
+    #                 0.9641353487968445,
+    #                 0.2654109597206116,
+    #                 0
+    #             ],
+    #             [
+    #                 0.0,
+    #                 0.0,
+    #                 0.0,
+    #                 1.0
+    #             ]]
+    #         ,dtype=np.float32)
+    # up:np.array=np.array([0,1,0],dtype=np.float32)
+    theta:float=160.0
+    phi:float=30.0
+    radius:float=4.0
+    def pose_spherical(self,theta, phi, radius):
+        trans_t=lambda t: np.array([
+        [1,0,0,0],
+        [0,1,0,0],
+        [0,0,1,t],
+        [0,0,0,1]],np.float32)
+        rot_phi=lambda phi:np.array([
+            [1,0,0,0],
+            [0,np.cos(phi),-np.sin(phi),0],
+            [0,np.sin(phi),np.cos(phi),0], 
+            [0,0,0,1]],np.float32)
+        rot_theta= lambda theta:np.array([
+            [np.cos(theta),0,-np.sin(theta),0],
+            [0,1,0,0],
+            [np.sin(theta),0,np.cos(theta),0],
+            [0,0,0,1]],np.float32)
+        c2w=trans_t(radius)
+        c2w=np.matmul(rot_phi(phi/180.*np.pi),c2w)
+        c2w=np.matmul(rot_theta(theta/180.*np.pi),c2w)
+        c2w =np.matmul(np.array([[-1,0,0,0],[0,0,1,0],[0,1,0,0],[0,0,0,1]]) , c2w) 
+        return c2w
+    @property
+    def pose(self):
+        # res=np.eye(4,dtype=np.float32)
+        # res[2,3]-=self.radius
+        # rot=np.eye(4,dtype=np.float32)
+        # rot[:3,:3]=self.rot.as_matrix()
+        # res=rot@res
+        # res[:3,3]-=self.center
+        # return jnp.asarray(res)
+        return jnp.asarray(self.pose_spherical(self.theta,self.phi,self.radius))
+    def orbit(self,dx,dy):
+        # side=self.rot.as_matrix()[:3,0]
+        # rotvec_x=self.up*np.radians(-0.01*dx)
+        # rotvec_y=side*np.radians(-0.01*dy)
+        # self.rot=R.from_rotvec(rotvec_x)*R.from_rotvec(rotvec_y)
+        
+        return self.pose
+    
+    # camera_pose:jnp.array=jnp.asarray([
+    #             [
+    #                 0.3681268095970154,
+    #                 0.2467726171016693,
+    #                 -0.8964295387268066,
+    #                 -3.6136231422424316
+    #             ],
+    #             [
+    #                 -0.929775595664978,
+    #                 0.09770487248897552,
+    #                 -0.3549240529537201,
+    #                 -1.4307446479797363
+    #             ],
+    #             [
+    #                 -7.450580596923828e-09,
+    #                 0.9641353487968445,
+    #                 0.2654109597206116,
+    #                 1.0699057579040527
+    #             ],
+    #             [
+    #                 0.0,
+    #                 0.0,
+    #                 0.0,
+    #                 1.0
+    #             ]
+    #         ])
+    
+    # def _rotate(self,dx,dy):
+    #     rotate_x=lambda x:np.array([[1,0,0,0],
+    #                [0,np.cos(x),np.sin(x),0],
+    #                [0,-np.sin(x),np.cos(x),0],
+    #                [0,0,0,1]],dtype=np.float32)
+    #     rotate_y=lambda x:np.array([[np.cos(x),0,-np.sin(x),0],
+    #                [0,0,0,0],
+    #                [np.sin(x),0,np.cos(x),0],
+    #                [0,0,0,1]],dtype=np.float32)
+    #     Mx=rotate_x(np.radians(-0.1*dx))
+    #     My=rotate_y(np.radians(-0.1*dy))
+    #     self.camera_pose=np.matmul(Mx,np.matmul(My,self.camera_pose))
 @dataclass
 class Gui_trainer():
     KEY: jran.KeyArray
@@ -339,6 +471,8 @@ class TrainThread(threading.Thread):
                 return id
     def get_state(self):
         return self.trainer.state
+    def set_camera_pose(self,camera_pose):
+        self.trainer.camera_pose=camera_pose
 @dataclass
 class NeRFGUI():
     
@@ -356,8 +490,8 @@ class NeRFGUI():
     
     KEY: jran.KeyArray=None
     logger: logging.Logger=None
-    camera_pose:jnp.array=None
-    
+    #camera_pose:jnp.array=None
+    cameraPose:CameraPose=field(init=False)
     scale_slider:Union[int,str]=field(init=False)
     def init_HW(self):
         def try_image_extensions(
@@ -400,33 +534,34 @@ class NeRFGUI():
         dpg.create_context()
         self.ItemsLayout()
         self.train_thread=None
-        self.camera_pose=jnp.asarray([
-                [
-                    0.3681268095970154,
-                    0.2467726171016693,
-                    -0.8964295387268066,
-                    -3.6136231422424316
-                ],
-                [
-                    -0.929775595664978,
-                    0.09770487248897552,
-                    -0.3549240529537201,
-                    -1.4307446479797363
-                ],
-                [
-                    -7.450580596923828e-09,
-                    0.9641353487968445,
-                    0.2654109597206116,
-                    1.0699057579040527
-                ],
-                [
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0
-                ]
-            ])
-        
+        # self.camera_pose=jnp.asarray([
+        #         [
+        #             0.3681268095970154,
+        #             0.2467726171016693,
+        #             -0.8964295387268066,
+        #             -3.6136231422424316
+        #         ],
+        #         [
+        #             -0.929775595664978,
+        #             0.09770487248897552,
+        #             -0.3549240529537201,
+        #             -1.4307446479797363
+        #         ],
+        #         [
+        #             -7.450580596923828e-09,
+        #             0.9641353487968445,
+        #             0.2654109597206116,
+        #             1.0699057579040527
+        #         ],
+        #         [
+        #             0.0,
+        #             0.0,
+        #             0.0,
+        #             1.0
+        #         ]
+        #     ])
+        self.cameraPose=CameraPose()
+        self.logger.info("camera pose:{}".format(self.cameraPose.pose))
     def ItemsLayout(self):
         
         def callback_mouseDrag(sender,app_data):
@@ -436,6 +571,10 @@ class NeRFGUI():
             dy=app_data[2]
             
             self.logger.info("dx:{},dy:{}".format(dx,dy))
+            self.cameraPose.orbit(dx,dy)
+            #self.cameraPose._rotate(dx,dy)
+            if self.train_thread:
+                self.train_thread.set_camera_pose(self.cameraPose.pose)
             
         dpg.create_viewport(title='NeRf', width=self.W, height=self.H)
         with dpg.texture_registry(show=False):
@@ -484,7 +623,7 @@ class NeRFGUI():
                                 
                                 dpg.configure_item("_button_train", label="stop")
                                 self.need_train = True
-                                self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.camera_pose,step=5,H=self.H,W=self.W)
+                                self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.cameraPose.pose,step=5,H=self.H,W=self.W)
                                 self.train_thread.setDaemon(True)
                                 self.train_thread.start()
 
