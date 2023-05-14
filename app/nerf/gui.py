@@ -74,7 +74,7 @@ class CameraPose():
     #         ,dtype=np.float32)
     # up:np.array=np.array([0,1,0],dtype=np.float32)
     theta:float=160.0
-    phi:float=30.0
+    phi:float=-30.0
     radius:float=4.0
     def pose_spherical(self,theta, phi, radius):
         trans_t=lambda t: np.array([
@@ -288,6 +288,7 @@ class Gui_trainer():
         self.state=self.state.mark_untrained_density_grid()
         self.cur_step=0
     def render_frame(self):
+        self.logger.info("render_frame")
         #camera pose
         transform = RigidTransformation(rotation=self.camera_pose[:3, :3],
                                         translation=jnp.squeeze(self.camera_pose[:3, 3].reshape(-1,3),axis=0))
@@ -422,13 +423,16 @@ class Gui_trainer():
 class TrainThread(threading.Thread):
     def __init__(self,KEY,args,gui_args,logger,camera_pose,step,H,W):
         super(TrainThread,self).__init__()   
-        self.istraining=True
+        
         self.KEY=KEY
         self.args=args
         self.gui_args=gui_args
         self.logger=logger
         self.camera_pose=camera_pose
         self.scale=gui_args.resolution_scale
+        
+        self.istraining=True
+        self.needUpdate=True
         try:
            
             self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
@@ -440,9 +444,11 @@ class TrainThread(threading.Thread):
             self.logger.warning(e)
     def run(self):
         try:
-            while self.istraining and self.trainer.cur_step<self.gui_args.max_step:
-                _,self.framebuff,_=self.trainer.train_steps(self.step,self.scale)
-            self.logger.info("training finished")  
+            while self.needUpdate:
+                while self.istraining and self.trainer.cur_step<self.gui_args.max_step:
+                    _,self.framebuff,_=self.trainer.train_steps(self.step,self.scale)
+                _,self.framebuff,_=self.trainer.render_frame()
+                #self.logger.info("training finished")  
         except Exception as e:
             self.logger.warning(e)
     def render(self):
@@ -450,6 +456,7 @@ class TrainThread(threading.Thread):
 
     def stop(self):
         self.istraining=False
+        self.needUpdate=False
         self.trainer.stop_trainer()
         thread_id = self.get_id() 
         self.logger.warning("Throw training thread exit Exception")
@@ -477,7 +484,6 @@ class TrainThread(threading.Thread):
 class NeRFGUI():
     
     framebuff:Any= field(init=False)
-    state:NeRFState=None
     H:int= field(init=False)
     W:int= field(init=False)
     isTest:bool=False
@@ -610,25 +616,38 @@ class NeRFGUI():
             # train button
             if not self.isTest:
                 with dpg.collapsing_header(label="Train", default_open=True):
-                    # train / stop
+                    # train / stop/reset
                     with dpg.group(horizontal=True):
                         dpg.add_text("Train: ")
                         def callback_train(sender, app_data):
                             if self.need_train:
-                                self.logger.info("set need_train:{}".format(self.need_train))
                                 self.need_train = False
-                                self.train_thread.stop()
-                                dpg.configure_item("_button_train", label="start")
+                                if self.train_thread:
+                                    self.train_thread.istraining=False
+                                #self.train_thread.stop()
+                                _label="continue" if (self.train_thread!=None) else "start"
+                                dpg.configure_item("_button_train", label=_label)
                             else:
-                                
-                                dpg.configure_item("_button_train", label="stop")
+                                dpg.configure_item("_button_train", label="pause")
                                 self.need_train = True
-                                self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.cameraPose.pose,step=5,H=self.H,W=self.W)
-                                self.train_thread.setDaemon(True)
-                                self.train_thread.start()
+                                if self.train_thread:
+                                    self.train_thread.istraining=True
+                                else:
+                                    self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.cameraPose.pose,step=5,H=self.H,W=self.W)
+                                    self.train_thread.setDaemon(True)
+                                    self.train_thread.start()
 
                         dpg.add_button(label="start", tag="_button_train", callback=callback_train)
                         dpg.bind_item_theme("_button_train", theme_button)
+                        def callback_reset(sender, app_data):
+                            self.need_train=True
+                            if self.train_thread:
+                                self.train_thread.stop()
+                                dpg.configure_item("_button_train", label="start")
+                                self.train_thread=None
+                            self.framebuff=np.ones(shape=(self.H,self.W,3),dtype=np.float32)
+                        dpg.add_button(label="reset", tag="_button_reset", callback=callback_reset)
+                    
                     # save ckpt
                     with dpg.group(horizontal=True):
                         dpg.add_text("Checkpoint: ")
@@ -653,12 +672,11 @@ class NeRFGUI():
   
     def train_step(self):
         self.framebuff=self.train_thread.framebuff
-        dpg.set_value("_texture", self.framebuff)
-        self.state=self.train_thread.get_state()
+        #dpg.set_value("_texture", self.framebuff)
     def test_step(self):
         if self.train_thread:
             _,self.framebuff,_=self.train_thread.trainer.render_frame()   
-            dpg.set_value("_texture", self.framebuff)
+            #dpg.set_value("_texture", self.framebuff)
     def render(self):
         try:
             while dpg.is_dearpygui_running():
@@ -667,6 +685,7 @@ class NeRFGUI():
                         self.train_thread.set_scale(dpg.get_value(self.scale_slider))
                     if self.need_train: 
                         self.train_step()
+                dpg.set_value("_texture", self.framebuff)
                 dpg.render_dearpygui_frame()
         except KeyboardInterrupt:
             if self.train_thread:
