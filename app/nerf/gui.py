@@ -290,13 +290,15 @@ class Gui_trainer():
 class TrainThread(threading.Thread):
     def __init__(self,KEY,args,gui_args,logger,camera_pose,step,H,W):
         super(TrainThread,self).__init__()   
+        self.istraining=True
+        self.KEY=KEY
+        self.args=args
+        self.gui_args=gui_args
+        self.logger=logger
+        self.camera_pose=camera_pose
+        self.scale=gui_args.resolution_scale
         try:
-            self.istraining=True
-            self.KEY=KEY
-            self.args=args
-            self.gui_args=gui_args
-            self.logger=logger
-            self.camera_pose=camera_pose
+           
             self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
             self.step=step
             self.scale=gui_args.resolution_scale
@@ -426,6 +428,15 @@ class NeRFGUI():
             ])
         
     def ItemsLayout(self):
+        
+        def callback_mouseDrag(sender,app_data):
+            if not dpg.is_item_focused("_primary_window"):
+                return 
+            dx=app_data[1]
+            dy=app_data[2]
+            
+            self.logger.info("dx:{},dy:{}".format(dx,dy))
+            
         dpg.create_viewport(title='NeRf', width=self.W, height=self.H)
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb, tag="_texture")
@@ -493,8 +504,14 @@ class NeRFGUI():
             with dpg.group(horizontal=True):
                 dpg.add_text("resolution scale:")
                 self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,clamped=True,min_value=0.1,max_value=1.0)
+        #drag
+        with dpg.handler_registry():
+            dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseDrag)
         dpg.setup_dearpygui()
         dpg.show_viewport()
+        
+        
+  
     def train_step(self):
         self.framebuff=self.train_thread.framebuff
         dpg.set_value("_texture", self.framebuff)
