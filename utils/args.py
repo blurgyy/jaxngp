@@ -219,3 +219,5 @@ class GuiWindowArgs():
         random_bg=False,
     )
     max_step:int=100_000_000
+    
+    train_steps:int=5 #training steps before every rendering

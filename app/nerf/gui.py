@@ -70,9 +70,7 @@ class Gui_trainer():
     logger: common.Logger
     camera_pose:jnp.array
     gui_args:GuiWindowArgs
-    H:int
-    W:int
-    
+
     scene_train:SceneData=field(init=False)
     scene_val:SceneData=field(init=False)
     scene_meta:SceneMeta=field(init=False)
@@ -223,14 +221,12 @@ class Gui_trainer():
             state=self.state.replace(render=self.state.render.replace(random_bg=False)),
             camera_override=camera
         )
-        bg=self.get_npf32_image(bg)
-        rgb=self.get_npf32_image(rgb)
-        depth=self.get_npf32_image(depth)
+        bg=self.get_npf32_image(bg,W=_W,H=_H)
+        rgb=self.get_npf32_image(rgb,W=_W,H=_H)
+        depth=self.get_npf32_image(depth,W=_W,H=_H)
         return (bg, rgb, depth)
-    # def set_WH(self,W,H):
-    #     self.W=W
-    #     self.H=H
-    def train_steps(self,steps:int,_scale:float)->Tuple[np.array,np.array,np.array]:
+
+    def train_steps(self,steps:int)->Tuple[np.array,np.array,np.array]:
         gc.collect()
         
         if self.cur_step<self.gui_args.max_step and self.istraining:
@@ -249,10 +245,10 @@ class Gui_trainer():
         loss_db = data.linear_to_db(loss_log, maxval=1)
         self.logger.info("epoch#{:03d}: loss={:.2e}({:.2f}dB)".format(self.cur_step, loss_log, loss_db))
         #return self.render_frame(_scale)
-    def get_npf32_image(self,img:jnp.array)->np.array:
+    def get_npf32_image(self,img:jnp.array,W,H)->np.array:
         from PIL import Image
         img=Image.fromarray(np.array(img,dtype=np.uint8))
-        img=img.resize(size=(self.W,self.H), resample=1)
+        img=img.resize(size=(W,H), resample=1)
         img=np.array(img,dtype=np.float32)/255.
         return img    
         
@@ -339,7 +335,7 @@ class Gui_trainer():
     def stop_trainer(self):
         self.istraining=False
 class TrainThread(threading.Thread):
-    def __init__(self,KEY,args,gui_args,logger,camera_pose,step,H,W):
+    def __init__(self,KEY,args,gui_args,logger,camera_pose,step):
         super(TrainThread,self).__init__()   
         
         self.KEY=KEY
@@ -351,29 +347,33 @@ class TrainThread(threading.Thread):
         
         self.istraining=True
         self.needUpdate=True
-        self.framebuff=np.ones(shape=(H,W,3),dtype=np.float32)
         self.step=step
         self.scale=gui_args.resolution_scale
         
         self.H,self.W=self.gui_args.H,self.gui_args.W
+        self.framebuff=np.ones(shape=(self.H,self.W,3),dtype=np.float32)
+        self.trainer=None
         try:   
-            self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
+            pass
+            #self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
         except Exception as e:
             self.logger.warning(e)
     def run(self):
+        self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args)
         try:
             while self.needUpdate:
-                while self.istraining and self.trainer.cur_step<self.gui_args.max_step:
-                    self.trainer.train_steps(self.step,self.scale)
+                while self.istraining and self.trainer and self.trainer.cur_step<self.gui_args.max_step:
+                    self.trainer.train_steps(self.step)
                     _,self.framebuff,_=self.trainer.render_frame(self.scale,self.H,self.W)
                 _,self.framebuff,_=self.trainer.render_frame(self.scale,self.H,self.W)
         except Exception as e:
-            self.logger.warning(e)
+            self.logger.error(e)
 
     def stop(self):
         self.istraining=False
         self.needUpdate=False
-        self.trainer.stop_trainer()
+        if self.trainer:
+            self.trainer.stop_trainer()
         thread_id = self.get_id() 
         self.logger.warning("Throw training thread exit Exception")
         res = ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, 
@@ -471,13 +471,14 @@ class NeRFGUI():
                 self.train_thread.set_camera_pose(self.cameraPose.pose)
             
         dpg.create_viewport(title='NeRf', width=self.W+300, height=self.H+10,x_pos=0, y_pos=0)
-        with dpg.window(pos=[0, 0],width=self.W+300, height=self.H,
-                no_title_bar=True,autosize=True, no_collapse=True, no_resize=True, no_close=True, no_move=True,no_scrollbar=True) as main_window:
+        with dpg.window(tag="_main_window",pos=[0, 0],width=self.W+300, height=self.H,
+                no_title_bar=True,autosize=True, no_collapse=True, no_resize=False, no_close=True, no_move=True,no_scrollbar=True) as main_window:
             with dpg.group(horizontal=True):
                 with dpg.group(tag="_render_texture"):
                     with dpg.texture_registry(show=False):
                         dpg.add_raw_texture(width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb, tag="_texture")
-                    dpg.add_image("_texture")
+                    with dpg.child_window(tag="_primary_window", width=self.W, height=self.H,no_scrollbar=True):
+                        dpg.add_image("_texture",tag="_img",parent="_primary_window")
                 with dpg.child_window(tag="_control_window",height=self.H,autosize_x=True, autosize_y=True):
                 # button theme
                     with dpg.theme() as theme_button:
@@ -518,7 +519,7 @@ class NeRFGUI():
                                         if self.train_thread:
                                             self.train_thread.istraining=True
                                         else:
-                                            self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.cameraPose.pose,step=5,H=self.H,W=self.W)
+                                            self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.cameraPose.pose,step=self.gui_args.train_steps)
                                             self.train_thread.setDaemon(True)
                                             self.train_thread.start()
 
@@ -557,9 +558,34 @@ class NeRFGUI():
     def update_frame(self):
         self.framebuff=self.train_thread.framebuff
     def render(self):
+        
+        # W=View_W
+        # H=View_H
+        # with Image.open(filename) as img:
+        #     img = np.array(img.resize((W,H), PIL.Image.Resampling.BILINEAR),dtype=np.float)    
+        #     img=img/256. 
+        # dpg.set_item_width("_primary_window",W)
+        # dpg.set_item_height("_primary_window",H)
         try:
             while dpg.is_dearpygui_running():
+                ##resize
+                View_H=dpg.get_viewport_height()
+                View_W=dpg.get_viewport_width()
+                self.H,self.W=View_H,View_W-300
+                #self.logger.info("View_H:{},View_W:{}".format(View_H,View_W))
+                dpg.set_item_width("_main_window",View_W)
+                dpg.set_item_height("_main_window",View_H)
+                dpg.set_item_width("_primary_window",self.W)
+                dpg.set_item_height("_primary_window",self.H)
+                # with dpg.texture_registry(show=False):
+                #         dpg.add_raw_texture(width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb, tag="_texture")
+                dpg.delete_item("_img")
+                dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W, height=self.H)
+                dpg.configure_item("_texture",width=self.W, height=self.H)
+                # dpg.set_item_width("_texture",self.W)
+                # dpg.set_item_height("_texture",self.H)
                 if self.train_thread:
+                    self.train_thread.change_WH(self.W,self.H)
                     self.change_scale()
                     self.update_frame()
                 dpg.set_value("_texture", self.framebuff)

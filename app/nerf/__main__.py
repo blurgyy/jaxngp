@@ -37,8 +37,8 @@ MainArgsType = CmdTrain | CmdTest | CmdGui
 
 
 def main(args: MainArgsType):
-    # import os
-    # os.environ['CUDA_VISIBLE_DEVICES']='1'
+    import os
+    os.environ['CUDA_VISIBLE_DEVICES']='1'
     from utils import common
     
     logger = common.setup_logging("nerf")
