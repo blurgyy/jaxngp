@@ -221,3 +221,5 @@ class GuiWindowArgs():
     max_step:int=100_000_000
     
     train_steps:int=5 #training steps before every rendering
+    
+    control_window_width:int=300 

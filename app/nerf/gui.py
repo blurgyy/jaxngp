@@ -470,8 +470,8 @@ class NeRFGUI():
             if self.train_thread:
                 self.train_thread.set_camera_pose(self.cameraPose.pose)
             
-        dpg.create_viewport(title='NeRf', width=self.W+300, height=self.H+10,x_pos=0, y_pos=0)
-        with dpg.window(tag="_main_window",pos=[0, 0],width=self.W+300, height=self.H,
+        dpg.create_viewport(title='NeRf', width=self.W+self.gui_args.control_window_width, height=self.H+10,x_pos=0, y_pos=0)
+        with dpg.window(tag="_main_window",pos=[0, 0],width=self.W+self.gui_args.control_window_width, height=self.H,
                 no_title_bar=True,autosize=True, no_collapse=True, no_resize=False, no_close=True, no_move=True,no_scrollbar=True) as main_window:
             with dpg.group(horizontal=True):
                 with dpg.group(tag="_render_texture"):
@@ -519,7 +519,8 @@ class NeRFGUI():
                                         if self.train_thread:
                                             self.train_thread.istraining=True
                                         else:
-                                            self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.cameraPose.pose,step=self.gui_args.train_steps)
+                                            self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,
+                                                                          camera_pose=self.cameraPose.pose,step=self.gui_args.train_steps)
                                             self.train_thread.setDaemon(True)
                                             self.train_thread.start()
 
@@ -546,7 +547,8 @@ class NeRFGUI():
                                 dpg.add_text("", tag="_log_ckpt")
                     #resolution
                     dpg.add_text("resolution scale:")
-                    self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,clamped=True,min_value=0.1,max_value=1.0)
+                    self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,
+                                                           clamped=True,min_value=0.1,max_value=1.0)
         #drag
         with dpg.handler_registry():
             dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseDrag)
@@ -557,33 +559,21 @@ class NeRFGUI():
             self.train_thread.set_scale(dpg.get_value(self.scale_slider))
     def update_frame(self):
         self.framebuff=self.train_thread.framebuff
+    def adapt_size(self):
+            View_H=dpg.get_viewport_height()
+            View_W=dpg.get_viewport_width()
+            self.H,self.W=View_H,View_W-self.gui_args.control_window_width
+            dpg.set_item_width("_main_window",View_W)
+            dpg.set_item_height("_main_window",View_H)
+            dpg.set_item_width("_primary_window",self.W)
+            dpg.set_item_height("_primary_window",self.H) 
+            dpg.delete_item("_img")
+            dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W, height=self.H)
+            dpg.configure_item("_texture",width=self.W, height=self.H)
     def render(self):
-        
-        # W=View_W
-        # H=View_H
-        # with Image.open(filename) as img:
-        #     img = np.array(img.resize((W,H), PIL.Image.Resampling.BILINEAR),dtype=np.float)    
-        #     img=img/256. 
-        # dpg.set_item_width("_primary_window",W)
-        # dpg.set_item_height("_primary_window",H)
-        try:
+        try:       
             while dpg.is_dearpygui_running():
-                ##resize
-                View_H=dpg.get_viewport_height()
-                View_W=dpg.get_viewport_width()
-                self.H,self.W=View_H,View_W-300
-                #self.logger.info("View_H:{},View_W:{}".format(View_H,View_W))
-                dpg.set_item_width("_main_window",View_W)
-                dpg.set_item_height("_main_window",View_H)
-                dpg.set_item_width("_primary_window",self.W)
-                dpg.set_item_height("_primary_window",self.H)
-                # with dpg.texture_registry(show=False):
-                #         dpg.add_raw_texture(width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb, tag="_texture")
-                dpg.delete_item("_img")
-                dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W, height=self.H)
-                dpg.configure_item("_texture",width=self.W, height=self.H)
-                # dpg.set_item_width("_texture",self.W)
-                # dpg.set_item_height("_texture",self.H)
+                self.adapt_size()
                 if self.train_thread:
                     self.train_thread.change_WH(self.W,self.H)
                     self.change_scale()
