@@ -1,14 +1,13 @@
 import logging
-from pathlib import Path,PosixPath
+from pathlib import Path
 import numpy as np
-from typing import List, Literal, Optional,Any,Tuple,Union
+from typing import List,Any,Tuple,Union
 import jax.random as jran
 import jax.numpy as jnp
 from dataclasses import dataclass,field
 from tqdm import tqdm
 import threading
 import dearpygui.dearpygui as dpg
-from PIL import Image
 import ctypes
 from utils.args import GuiWindowArgs, NeRFTrainingArgs,GuiWindowArgs
 from .train import *
@@ -17,62 +16,14 @@ from utils.types import (
     SceneData,
     SceneMeta,
     ViewMetadata,
-    PinholeCamera,
     TransformJsonNeRFSynthetic,
     TransformJsonNGP
 )
 from models.nerfs import (NeRF,SkySphereBg)
-from scipy.spatial.transform import Rotation as R
+
+
 @dataclass
 class CameraPose():
-    # radius:float=0.4
-    # center:np.array=np.array([2.6,0.5,0],dtype=np.float32)
-    # rot:np.array=R.from_matrix(np.array([
-    #             [
-    #                 0.3681268095970154,
-    #                 0.2467726171016693,
-    #                 -0.8964295387268066,
-    #             ],
-    #             [
-    #                 -0.929775595664978,
-    #                 0.09770487248897552,
-    #                 -0.3549240529537201,
-    #             ],
-    #             [
-    #                 -7.450580596923828e-09,
-    #                 0.9641353487968445,
-    #                 0.02654109597206116,
-    #             ]]
-    #         ,dtype=np.float32))
-    # center:np.array=np.array([0,0,0],dtype=np.float32)
-    # rot:np.array=R.from_quat([1.0,0.0,0.0,0.0])
-    # rot:np.array=np.array([
-    #             [
-    #                 0.3681268095970154,
-    #                 0.2467726171016693,
-    #                 -0.8964295387268066,
-    #                 0
-    #             ],
-    #             [
-    #                 -0.929775595664978,
-    #                 0.09770487248897552,
-    #                 -0.3549240529537201,
-    #                 0
-    #             ],
-    #             [
-    #                 -7.450580596923828e-09,
-    #                 0.9641353487968445,
-    #                 0.2654109597206116,
-    #                 0
-    #             ],
-    #             [
-    #                 0.0,
-    #                 0.0,
-    #                 0.0,
-    #                 1.0
-    #             ]]
-    #         ,dtype=np.float32)
-    # up:np.array=np.array([0,1,0],dtype=np.float32)
     theta:float=160.0
     phi:float=-30.0
     radius:float=4.0
@@ -99,61 +50,13 @@ class CameraPose():
         return c2w
     @property
     def pose(self):
-        # res=np.eye(4,dtype=np.float32)
-        # res[2,3]-=self.radius
-        # rot=np.eye(4,dtype=np.float32)
-        # rot[:3,:3]=self.rot.as_matrix()
-        # res=rot@res
-        # res[:3,3]-=self.center
-        # return jnp.asarray(res)
         return jnp.asarray(self.pose_spherical(self.theta,self.phi,self.radius))
-    def orbit(self,dx,dy):
-        # side=self.rot.as_matrix()[:3,0]
-        # rotvec_x=self.up*np.radians(-0.01*dx)
-        # rotvec_y=side*np.radians(-0.01*dy)
-        # self.rot=R.from_rotvec(rotvec_x)*R.from_rotvec(rotvec_y)
-        
+    def move(self,dx,dy):
+        velocity=0.01
+        self.theta+=velocity*dx
+        self.phi-=velocity*dy
         return self.pose
     
-    # camera_pose:jnp.array=jnp.asarray([
-    #             [
-    #                 0.3681268095970154,
-    #                 0.2467726171016693,
-    #                 -0.8964295387268066,
-    #                 -3.6136231422424316
-    #             ],
-    #             [
-    #                 -0.929775595664978,
-    #                 0.09770487248897552,
-    #                 -0.3549240529537201,
-    #                 -1.4307446479797363
-    #             ],
-    #             [
-    #                 -7.450580596923828e-09,
-    #                 0.9641353487968445,
-    #                 0.2654109597206116,
-    #                 1.0699057579040527
-    #             ],
-    #             [
-    #                 0.0,
-    #                 0.0,
-    #                 0.0,
-    #                 1.0
-    #             ]
-    #         ])
-    
-    # def _rotate(self,dx,dy):
-    #     rotate_x=lambda x:np.array([[1,0,0,0],
-    #                [0,np.cos(x),np.sin(x),0],
-    #                [0,-np.sin(x),np.cos(x),0],
-    #                [0,0,0,1]],dtype=np.float32)
-    #     rotate_y=lambda x:np.array([[np.cos(x),0,-np.sin(x),0],
-    #                [0,0,0,0],
-    #                [np.sin(x),0,np.cos(x),0],
-    #                [0,0,0,1]],dtype=np.float32)
-    #     Mx=rotate_x(np.radians(-0.1*dx))
-    #     My=rotate_y(np.radians(-0.1*dy))
-    #     self.camera_pose=np.matmul(Mx,np.matmul(My,self.camera_pose))
 @dataclass
 class Gui_trainer():
     KEY: jran.KeyArray
@@ -496,7 +399,6 @@ class NeRFGUI():
     
     KEY: jran.KeyArray=None
     logger: logging.Logger=None
-    #camera_pose:jnp.array=None
     cameraPose:CameraPose=field(init=False)
     scale_slider:Union[int,str]=field(init=False)
     def init_HW(self):
@@ -532,42 +434,13 @@ class NeRFGUI():
                 [TransformJsonNeRFSynthetic, TransformJsonNGP],
             ))
     def __post_init__(self):
-        #self.scale_slider=dpg.generate_uuid()
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
         self.init_HW()
-        #self.H,self.W=self.gui_args.H,self.gui_args.W
         self.framebuff=np.ones(shape=(self.W,self.H,3),dtype=np.float32)#default background is white
         dpg.create_context()
         self.ItemsLayout()
         self.train_thread=None
-        # self.camera_pose=jnp.asarray([
-        #         [
-        #             0.3681268095970154,
-        #             0.2467726171016693,
-        #             -0.8964295387268066,
-        #             -3.6136231422424316
-        #         ],
-        #         [
-        #             -0.929775595664978,
-        #             0.09770487248897552,
-        #             -0.3549240529537201,
-        #             -1.4307446479797363
-        #         ],
-        #         [
-        #             -7.450580596923828e-09,
-        #             0.9641353487968445,
-        #             0.2654109597206116,
-        #             1.0699057579040527
-        #         ],
-        #         [
-        #             0.0,
-        #             0.0,
-        #             0.0,
-        #             1.0
-        #         ]
-        #     ])
         self.cameraPose=CameraPose()
-        self.logger.info("camera pose:{}".format(self.cameraPose.pose))
     def ItemsLayout(self):
         
         def callback_mouseDrag(sender,app_data):
@@ -577,8 +450,7 @@ class NeRFGUI():
             dy=app_data[2]
             
             self.logger.info("dx:{},dy:{}".format(dx,dy))
-            self.cameraPose.orbit(dx,dy)
-            #self.cameraPose._rotate(dx,dy)
+            self.cameraPose.move(dx,dy)
             if self.train_thread:
                 self.train_thread.set_camera_pose(self.cameraPose.pose)
             
@@ -667,24 +539,17 @@ class NeRFGUI():
             dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseDrag)
         dpg.setup_dearpygui()
         dpg.show_viewport()
-        
-        
-  
-    def train_step(self):
+    def change_scale(self):    
+        if dpg.get_value(self.scale_slider)!=self.train_thread.get_scale():
+            self.train_thread.set_scale(dpg.get_value(self.scale_slider))
+    def update_frame(self):
         self.framebuff=self.train_thread.framebuff
-        #dpg.set_value("_texture", self.framebuff)
-    def test_step(self):
-        if self.train_thread:
-            _,self.framebuff,_=self.train_thread.trainer.render_frame()   
-            #dpg.set_value("_texture", self.framebuff)
     def render(self):
         try:
             while dpg.is_dearpygui_running():
                 if self.train_thread:
-                    if dpg.get_value(self.scale_slider)!=self.train_thread.get_scale():
-                        self.train_thread.set_scale(dpg.get_value(self.scale_slider))
-                    if self.need_train: 
-                        self.train_step()
+                    self.change_scale()
+                    self.update_frame()
                 dpg.set_value("_texture", self.framebuff)
                 dpg.render_dearpygui_frame()
         except KeyboardInterrupt:
