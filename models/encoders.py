@@ -202,7 +202,6 @@ class HashGridEncoder(Encoder):
         )
         return indices, pos_scaled, vert_pos
 
-
     @staticmethod
     @jit_jaxfn_with(static_argnames=["dim", "res", "T"])
     @vmap_jaxfn_with(in_axes=(0, None, None, None))

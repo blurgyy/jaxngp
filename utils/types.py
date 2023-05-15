@@ -167,7 +167,7 @@ class PinholeCamera:
     cx: float
     cy: float
 
-    near: float=0.0
+    near: float=0.1
 
     @property
     def n_pixels(self) -> int:
