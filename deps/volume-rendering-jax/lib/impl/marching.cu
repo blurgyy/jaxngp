@@ -11,13 +11,13 @@ namespace volrendjax {
 namespace {
 
 // this is the same function as `calc_dt` in ngp_pl's implementation
-inline __device__ float calc_ds(float ray_t, float stepsize_portion, float bound, std::uint32_t grid_res, std::uint32_t diagonal_n_steps) {
+inline __device__ float calc_ds(float ray_t, float stepsize_portion, float bound, float inv_grid_res, std::uint32_t diagonal_n_steps) {
     // from appendix E.1 of the NGP paper (the paper sets stepsize_portion=0 for synthetic scenes
     // and 1/256 for others)
     return clampf(
         ray_t * stepsize_portion,
         2 * (float)SQRT3 * fminf(bound, 1.f) / diagonal_n_steps,
-        2 * (float)SQRT3 * bound / grid_res
+        2 * (float)SQRT3 * bound * inv_grid_res
     );
 }
 
@@ -110,18 +110,20 @@ __global__ void march_rays_kernel(
 
     // precompute
     std::uint32_t const G3 = G*G*G;
+    float const idx = 1.f / dx, idy = 1.f / dy, idz = 1.f / dz;
+    float const iG = 1.f / G;
 
     // actually march rays
     /// but not writing the samples to output!  Writing is done in another marching pass below
     std::uint32_t ray_n_samples = 0;
     float ray_t = ray_t_start;
-    ray_t += calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps) * ray_noise;
+    ray_t += calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps) * ray_noise;
     while (ray_n_samples < diagonal_n_steps * bound && ray_t < ray_t_end) {
         float const x = ox + ray_t * dx;
         float const y = oy + ray_t * dy;
         float const z = oz + ray_t * dz;
 
-        float const ds = calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps);
+        float const ds = calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps);
 
         // among the grids covering xyz, the finest one with cell side-length larger than Δ𝑡 is
         // queried.
@@ -145,15 +147,15 @@ __global__ void march_rays_kernel(
             ++ray_n_samples;
             ray_t += ds;
         } else {
-            float const tx = (((grid_x + .5f + .5f * signf(dx)) / G * 2 - 1) * mip_bound - x) / dx;
-            float const ty = (((grid_y + .5f + .5f * signf(dy)) / G * 2 - 1) * mip_bound - y) / dy;
-            float const tz = (((grid_z + .5f + .5f * signf(dz)) / G * 2 - 1) * mip_bound - z) / dz;
+            float const tx = (((grid_x + .5f + .5f * signf(dx)) * iG * 2 - 1) * mip_bound - x) * idx;
+            float const ty = (((grid_y + .5f + .5f * signf(dy)) * iG * 2 - 1) * mip_bound - y) * idy;
+            float const tz = (((grid_z + .5f + .5f * signf(dz)) * iG * 2 - 1) * mip_bound - z) * idz;
 
             // distance to next voxel
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
             // step until next voxel
             do { 
-                ray_t += calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps);
+                ray_t += calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps);
             } while (ray_t < tt);
         }
     }
@@ -179,7 +181,7 @@ __global__ void march_rays_kernel(
     // march rays again, this time write sampled points to output
     std::uint32_t steps = 0;
     ray_t = ray_t_start;
-    ray_t += calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps) * ray_noise;
+    ray_t += calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps) * ray_noise;
     // NOTE:
     //  we still need the condition (ray_t < ray_t_end) because if a ray never hits an occupied grid
     //  cell, its `steps` won't increment, adding this condition avoids infinite loops.
@@ -188,7 +190,7 @@ __global__ void march_rays_kernel(
         float const y = oy + ray_t * dy;
         float const z = oz + ray_t * dz;
 
-        float const ds = calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps);
+        float const ds = calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps);
 
         // among the grids covering xyz, the finest one with cell side-length larger than Δ𝑡 is
         // queried.
@@ -199,11 +201,12 @@ __global__ void march_rays_kernel(
 
         // the bound of this mip is [-mip_bound, mip_bound]
         float const mip_bound = fminf(scalbnf(1.f, cascade), bound);
+        float const imip_bound = 1.f / mip_bound;
 
         // round down
-        std::uint32_t const grid_x = clampi((int)(.5f * (x / mip_bound + 1) * G), 0, G-1);
-        std::uint32_t const grid_y = clampi((int)(.5f * (y / mip_bound + 1) * G), 0, G-1);
-        std::uint32_t const grid_z = clampi((int)(.5f * (z / mip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_x = clampi((int)(.5f * (x * imip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_y = clampi((int)(.5f * (y * imip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_z = clampi((int)(.5f * (z * imip_bound + 1) * G), 0, G-1);
 
         std::uint32_t const occupancy_grid_idx = cascade * G3 + __morton3D(grid_x, grid_y, grid_z);
         bool const occupied = occupancy_bitfield[occupancy_grid_idx >> 3] & (1 << (occupancy_grid_idx & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
@@ -221,15 +224,15 @@ __global__ void march_rays_kernel(
             ++steps;
             ray_t += ds;
         } else {
-            float const tx = (((grid_x + .5f + .5f * signf(dx)) / G * 2 - 1) * mip_bound - x) / dx;
-            float const ty = (((grid_y + .5f + .5f * signf(dy)) / G * 2 - 1) * mip_bound - y) / dy;
-            float const tz = (((grid_z + .5f + .5f * signf(dz)) / G * 2 - 1) * mip_bound - z) / dz;
+            float const tx = (((grid_x + .5f + .5f * signf(dx)) * iG * 2 - 1) * mip_bound - x) * idx;
+            float const ty = (((grid_y + .5f + .5f * signf(dy)) * iG * 2 - 1) * mip_bound - y) * idy;
+            float const tz = (((grid_z + .5f + .5f * signf(dz)) * iG * 2 - 1) * mip_bound - z) * idz;
 
             // distance to next voxel
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
             // step until next voxel
             do { 
-                ray_t += calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps);
+                ray_t += calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps);
             } while (ray_t < tt);
         }
     }
@@ -285,6 +288,8 @@ __global__ void march_rays_inference_kernel(
     float * const __restrict__ ray_z_vals = z_vals + i * march_steps_cap;
 
     std::uint32_t const G3 = G*G*G;
+    float const idx = 1.f / dx, idy = 1.f / dy, idz = 1.f / dz;
+    float const iG = 1.f / G;
 
     std::uint32_t steps = 0;
     float ray_t = ray_t_start;
@@ -293,7 +298,7 @@ __global__ void march_rays_inference_kernel(
         float const y = oy + ray_t * dy;
         float const z = oz + ray_t * dz;
 
-        float const ds = calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps);
+        float const ds = calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps);
 
         // among the grids covering xyz, the finest one with cell side-length larger than Δ𝑡 is
         // queried.
@@ -304,11 +309,12 @@ __global__ void march_rays_inference_kernel(
 
         // the bound of this mip is [-mip_bound, mip_bound]
         float const mip_bound = fminf(scalbnf(1.f, cascade), bound);
+        float const imip_bound = 1.f / mip_bound;
 
         // round down
-        std::uint32_t const grid_x = clampi((int)(.5f * (x / mip_bound + 1) * G), 0, G-1);
-        std::uint32_t const grid_y = clampi((int)(.5f * (y / mip_bound + 1) * G), 0, G-1);
-        std::uint32_t const grid_z = clampi((int)(.5f * (z / mip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_x = clampi((int)(.5f * (x * imip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_y = clampi((int)(.5f * (y * imip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_z = clampi((int)(.5f * (z * imip_bound + 1) * G), 0, G-1);
 
         std::uint32_t const occupancy_grid_idx = cascade * G3 + __morton3D(grid_x, grid_y, grid_z);
         bool const occupied = occupancy_bitfield[occupancy_grid_idx >> 3] & (1 << (occupancy_grid_idx & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
@@ -326,15 +332,15 @@ __global__ void march_rays_inference_kernel(
             ++steps;
             ray_t += ds;
         } else {
-            float const tx = (((grid_x + .5f + .5f * signf(dx)) / G * 2 - 1) * mip_bound - x) / dx;
-            float const ty = (((grid_y + .5f + .5f * signf(dy)) / G * 2 - 1) * mip_bound - y) / dy;
-            float const tz = (((grid_z + .5f + .5f * signf(dz)) / G * 2 - 1) * mip_bound - z) / dz;
+            float const tx = (((grid_x + .5f + .5f * signf(dx)) * iG * 2 - 1) * mip_bound - x) * idx;
+            float const ty = (((grid_y + .5f + .5f * signf(dy)) * iG * 2 - 1) * mip_bound - y) * idy;
+            float const tz = (((grid_z + .5f + .5f * signf(dz)) * iG * 2 - 1) * mip_bound - z) * idz;
 
             // distance to next voxel
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
             // step until next voxel
             do { 
-                ray_t += calc_ds(ray_t, stepsize_portion, bound, G, diagonal_n_steps);
+                ray_t += calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps);
             } while (ray_t < tt);
         }
     }

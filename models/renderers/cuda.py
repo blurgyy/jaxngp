@@ -16,6 +16,7 @@ from utils.common import jit_jaxfn_with
 from utils.types import (
     NeRFState,
     OccupancyDensityGrid,
+    PinholeCamera,
     RigidTransformation,
 )
 
@@ -275,7 +276,11 @@ def render_image_inference(
     KEY: jran.KeyArray,
     transform_cw: RigidTransformation,
     state: NeRFState,
+    camera_override: None | PinholeCamera=None,
 ):
+    if camera_override is not None:
+        state = state.replace(scene_meta=state.scene_meta.replace(camera=camera_override))
+
     o_world, d_world = make_rays_worldspace(camera=state.scene_meta.camera, transform_cw=transform_cw)
     t_starts, t_ends = make_near_far_from_bound(state.scene_meta.bound, o_world, d_world)
     rays_rgb = jnp.zeros((state.scene_meta.camera.n_pixels, 3), dtype=jnp.float32)
@@ -309,7 +314,7 @@ def render_image_inference(
 
     while n_rendered_rays < state.scene_meta.camera.n_pixels:
         iters = max(1, (state.scene_meta.camera.n_pixels - n_rendered_rays) // n_rays)
-        iters = 2 ** int(math.log2(iters))
+        iters = 2 ** int(math.log2(iters) + 1)
 
         terminate_cnt = 0
         for _ in range(iters):

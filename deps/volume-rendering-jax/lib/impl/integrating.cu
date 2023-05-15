@@ -91,11 +91,12 @@ __global__ void integrate_rays_kernel(
     // NOTE: `ray_transmittance` equals to `1 - ray_opacity`
     if (ray_transmittance < T_THRESHOLD){ 
         float const denom = ray_opacity;
-        depths[i] = ray_depth / denom;
+        float idenom = 1.f / denom;
+        depths[i] = ray_depth * idenom;
         opacities[i] = 1.f;
-        final_rgbs[i*3+0] = r / denom;
-        final_rgbs[i*3+1] = g / denom;
-        final_rgbs[i*3+2] = b / denom;
+        final_rgbs[i*3+0] = r * idenom;
+        final_rgbs[i*3+1] = g * idenom;
+        final_rgbs[i*3+2] = b * idenom;
     } else {
         depths[i] = ray_depth;
         opacities[i] = ray_opacity;
@@ -283,13 +284,14 @@ __global__ void integrate_rays_inference_kernel(
         }
 
         if (ray_T <= T_THRESHOLD) {
-            float const denom = 1 - ray_T;
+            float const denom = 1.f - ray_T;
+            float const idenom = 1.f / denom;
             terminated[i] = true;
-            rays_depth_out[i] = ray_depth / denom;
+            rays_depth_out[i] = ray_depth * idenom;
             rays_T_out[i] = 0.f;
-            rays_rgb_out[i*3+0] = r / denom;
-            rays_rgb_out[i*3+1] = g / denom;
-            rays_rgb_out[i*3+2] = b / denom;
+            rays_rgb_out[i*3+0] = r * idenom;
+            rays_rgb_out[i*3+1] = g * idenom;
+            rays_rgb_out[i*3+2] = b * idenom;
         } else {
             terminated[i] = ray_n_samples < march_steps_cap;
             rays_depth_out[i] = ray_depth;
