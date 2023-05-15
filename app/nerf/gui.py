@@ -17,7 +17,8 @@ from utils.types import (
     SceneMeta,
     ViewMetadata,
     TransformJsonNeRFSynthetic,
-    TransformJsonNGP
+    TransformJsonNGP,
+    PinholeCamera
 )
 from models.nerfs import (NeRF,SkySphereBg)
 # from guis import *
@@ -75,7 +76,6 @@ class Gui_trainer():
     scene_train:SceneData=field(init=False)
     scene_val:SceneData=field(init=False)
     scene_meta:SceneMeta=field(init=False)
-    test_scene_meta:SceneMeta=field(init=False)
     val_views:ViewMetadata=field(init=False)
     
     nerf_model:NeRF=field(init=False)
@@ -195,16 +195,23 @@ class Gui_trainer():
         )
         self.state=self.state.mark_untrained_density_grid()
         self.cur_step=0
-    def change_render_scale(self,_scale:float):
+
+    def set_render_camera(self,_scale,_H,_W)->PinholeCamera:
         _scene_meta = self.scene_meta
-        _camera=_scene_meta.camera.scale_resolution(_scale)
-        self.test_scene_meta=SceneMeta(bound=_scene_meta.bound,
-                                bg=_scene_meta.bg,
-                                camera=_camera,
-                                frames=_scene_meta.frames)
-    def render_frame(self,_scale:float):
-        self.logger.info("update frame which resolution scale is {}".format(_scale))
-        self.change_render_scale(_scale)
+        camera = PinholeCamera(
+            W=_H,
+            H=_W,
+            fx=_scene_meta.camera.fx,
+            fy=_scene_meta.camera.fy,
+            cx=_H/ 2,
+            cy=_W / 2
+        )
+        camera=camera.scale_resolution(_scale)
+        return camera
+        
+    def render_frame(self,_scale:float,_H:int,_W:int):
+        self.logger.info("update frame which resolution scale is {},resolution is H:{},W:{}".format(_scale,_H,_W))
+        camera=self.set_render_camera(_scale,_H,_W)
         #camera pose
         transform = RigidTransformation(rotation=self.camera_pose[:3, :3],
                                         translation=jnp.squeeze(self.camera_pose[:3, 3].reshape(-1,3),axis=0))
@@ -212,16 +219,17 @@ class Gui_trainer():
         bg, rgb, depth = render_image_inference(
             KEY=key,
             transform_cw=transform,
-            state=self.state.replace(render=self.state.render.replace(random_bg=False),
-                                     scene_meta=self.test_scene_meta)
+            # state=self.state.replace(render=self.state.render.replace(random_bg=False,bg=(1.0,0.0,0.0))),
+            state=self.state.replace(render=self.state.render.replace(random_bg=False)),
+            camera_override=camera
         )
         bg=self.get_npf32_image(bg)
         rgb=self.get_npf32_image(rgb)
         depth=self.get_npf32_image(depth)
         return (bg, rgb, depth)
-    def set_WH(self,W,H):
-        self.W=W
-        self.H=H
+    # def set_WH(self,W,H):
+    #     self.W=W
+    #     self.H=H
     def train_steps(self,steps:int,_scale:float)->Tuple[np.array,np.array,np.array]:
         gc.collect()
         
@@ -240,7 +248,7 @@ class Gui_trainer():
             self.loss_log=str(loss_log)
         loss_db = data.linear_to_db(loss_log, maxval=1)
         self.logger.info("epoch#{:03d}: loss={:.2e}({:.2f}dB)".format(self.cur_step, loss_log, loss_db))
-        return self.render_frame(_scale)
+        #return self.render_frame(_scale)
     def get_npf32_image(self,img:jnp.array)->np.array:
         from PIL import Image
         img=Image.fromarray(np.array(img,dtype=np.uint8))
@@ -356,12 +364,11 @@ class TrainThread(threading.Thread):
         try:
             while self.needUpdate:
                 while self.istraining and self.trainer.cur_step<self.gui_args.max_step:
-                    _,self.framebuff,_=self.trainer.train_steps(self.step,self.scale)
-                _,self.framebuff,_=self.trainer.render_frame(self.scale,)
+                    self.trainer.train_steps(self.step,self.scale)
+                    _,self.framebuff,_=self.trainer.render_frame(self.scale,self.H,self.W)
+                _,self.framebuff,_=self.trainer.render_frame(self.scale,self.H,self.W)
         except Exception as e:
             self.logger.warning(e)
-    def render(self):
-        self.trainer.render_frame()  
 
     def stop(self):
         self.istraining=False
