@@ -196,7 +196,7 @@ class HashGridEncoder(Encoder):
         vert_pos = pos_floored[..., None, :] + cell_vert_offsets[dim]
         # [..., 2**dim]
         indices = functools.reduce(
-            lambda prev, d: prev * res + vert_pos[..., d],
+            lambda prev, d: prev * (res + 1) + vert_pos[..., d],
             range(dim),
             0,
         )
