@@ -219,6 +219,9 @@ class Gui_trainer():
         rgb=self.get_npf32_image(rgb)
         depth=self.get_npf32_image(depth)
         return (bg, rgb, depth)
+    def set_WH(self,W,H):
+        self.W=W
+        self.H=H
     def train_steps(self,steps:int,_scale:float)->Tuple[np.array,np.array,np.array]:
         gc.collect()
         
@@ -343,6 +346,8 @@ class TrainThread(threading.Thread):
         self.framebuff=np.ones(shape=(H,W,3),dtype=np.float32)
         self.step=step
         self.scale=gui_args.resolution_scale
+        
+        self.H,self.W=self.gui_args.H,self.gui_args.W
         try:   
             self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
         except Exception as e:
@@ -352,7 +357,7 @@ class TrainThread(threading.Thread):
             while self.needUpdate:
                 while self.istraining and self.trainer.cur_step<self.gui_args.max_step:
                     _,self.framebuff,_=self.trainer.train_steps(self.step,self.scale)
-                _,self.framebuff,_=self.trainer.render_frame(self.scale)
+                _,self.framebuff,_=self.trainer.render_frame(self.scale,)
         except Exception as e:
             self.logger.warning(e)
     def render(self):
@@ -384,6 +389,9 @@ class TrainThread(threading.Thread):
         return self.trainer.state
     def set_camera_pose(self,camera_pose):
         self.trainer.camera_pose=camera_pose
+    def change_WH(self,W,H):
+        self.W=W
+        self.H=H
 @dataclass
 class NeRFGUI():
     
@@ -436,7 +444,8 @@ class NeRFGUI():
             ))
     def __post_init__(self):
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
-        self.init_HW()
+        #self.init_HW()
+        self.H,self.W=self.gui_args.H,self.gui_args.W
         self.framebuff=np.ones(shape=(self.W,self.H,3),dtype=np.float32)#default background is white
         dpg.create_context()
         self.ItemsLayout()
@@ -454,7 +463,7 @@ class NeRFGUI():
             if self.train_thread:
                 self.train_thread.set_camera_pose(self.cameraPose.pose)
             
-        dpg.create_viewport(title='NeRf', width=self.W+300, height=self.H,x_pos=0, y_pos=0)
+        dpg.create_viewport(title='NeRf', width=self.W+300, height=self.H+10,x_pos=0, y_pos=0)
         with dpg.window(pos=[0, 0],width=self.W+300, height=self.H,
                 no_title_bar=True,autosize=True, no_collapse=True, no_resize=True, no_close=True, no_move=True,no_scrollbar=True) as main_window:
             with dpg.group(horizontal=True):

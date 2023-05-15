@@ -191,8 +191,8 @@ class GuiWindowArgs():
     frames_train: tyro.conf.Positional[Tuple[Path, ...]]
     exp_dir: Path
     
-    # W:int=800 
-    # H:int=800
+    W:int=1024 
+    H:int=768
     resolution_scale=1.0
     common: CommonArgs=CommonArgs()
     scene: SceneOptions=SceneOptions(
