@@ -190,8 +190,16 @@ class Gui_trainer():
         )
         self.state=self.state.mark_untrained_density_grid()
         self.cur_step=0
-    def render_frame(self):
-        self.logger.info("render_frame")
+    def change_render_scale(self,_scale:float):
+        _scene_meta = self.scene_meta
+        _camera=_scene_meta.camera.scale_resolution(_scale)
+        self.test_scene_meta=SceneMeta(bound=_scene_meta.bound,
+                                bg=_scene_meta.bg,
+                                camera=_camera,
+                                frames=_scene_meta.frames)
+    def render_frame(self,_scale:float):
+        self.logger.info("update frame which resolution scale is {}".format(_scale))
+        self.change_render_scale(_scale)
         #camera pose
         transform = RigidTransformation(rotation=self.camera_pose[:3, :3],
                                         translation=jnp.squeeze(self.camera_pose[:3, 3].reshape(-1,3),axis=0))
@@ -210,15 +218,6 @@ class Gui_trainer():
         gc.collect()
         
         if self.cur_step<self.gui_args.max_step and self.istraining:
-            
-            _scene_meta = self.scene_meta
-            #_scale=self.gui_args.resolution_scale
-            _camera=_scene_meta.camera.scale_resolution(_scale)
-            self.test_scene_meta=SceneMeta(bound=_scene_meta.bound,
-                                    bg=_scene_meta.bg,
-                                    camera=_camera,
-                                    frames=_scene_meta.frames)
-            
             self.KEY, key = jran.split(self.KEY, 2)
             loss_log, self.state = self.gui_train_epoch(
                 KEY=key,
@@ -233,7 +232,7 @@ class Gui_trainer():
             self.loss_log=str(loss_log)
         loss_db = data.linear_to_db(loss_log, maxval=1)
         self.logger.info("epoch#{:03d}: loss={:.2e}({:.2f}dB)".format(self.cur_step, loss_log, loss_db))
-        return self.render_frame()
+        return self.render_frame(_scale)
     def get_npf32_image(self,img:jnp.array)->np.array:
         from PIL import Image
         img=Image.fromarray(np.array(img,dtype=np.uint8))
@@ -350,8 +349,7 @@ class TrainThread(threading.Thread):
             while self.needUpdate:
                 while self.istraining and self.trainer.cur_step<self.gui_args.max_step:
                     _,self.framebuff,_=self.trainer.train_steps(self.step,self.scale)
-                _,self.framebuff,_=self.trainer.render_frame()
-                #self.logger.info("training finished")  
+                _,self.framebuff,_=self.trainer.render_frame(self.scale)
         except Exception as e:
             self.logger.warning(e)
     def render(self):
