@@ -20,8 +20,13 @@ from utils.types import (
     TransformJsonNGP
 )
 from models.nerfs import (NeRF,SkySphereBg)
+# from guis import *
+def change_colors():
+    global snake_color, apple_color, burrow_color, snake, apple, burrow
 
-
+    dpg.configure_item(item=snake, color=dpg.get_value(item=snake_color))
+    dpg.configure_item(item=apple, color=dpg.get_value(item=apple_color), fill=dpg.get_value(item=apple_color))
+    dpg.configure_item(item=burrow, color=dpg.get_value(item=burrow_color), fill=dpg.get_value(item=burrow_color))
 @dataclass
 class CameraPose():
     theta:float=160.0
@@ -107,7 +112,7 @@ class Gui_trainer():
             scene_options=self.args.scene,
         )
         self.scene_meta=self.scene_train.meta
-        #self.scene_meta.camera=self.scene_meta.replace(camera=_camera)
+
         # model parameters
         self.nerf_model, self.init_input = (
             make_nerf_ngp(bound=self.scene_meta.bound),
@@ -335,13 +340,11 @@ class TrainThread(threading.Thread):
         
         self.istraining=True
         self.needUpdate=True
-        try:
-           
+        self.framebuff=np.ones(shape=(H,W,3),dtype=np.float32)
+        self.step=step
+        self.scale=gui_args.resolution_scale
+        try:   
             self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
-            self.step=step
-            self.scale=gui_args.resolution_scale
-            
-            self.framebuff=np.ones(shape=(H,W,3),dtype=np.float32)
         except Exception as e:
             self.logger.warning(e)
     def run(self):
@@ -440,9 +443,8 @@ class NeRFGUI():
         self.train_thread=None
         self.cameraPose=CameraPose()
     def ItemsLayout(self):
-        
         def callback_mouseDrag(sender,app_data):
-            if not dpg.is_item_focused("_primary_window"):
+            if dpg.is_item_focused("_control_window"):
                 return 
             dx=app_data[1]
             dy=app_data[2]
@@ -452,86 +454,82 @@ class NeRFGUI():
             if self.train_thread:
                 self.train_thread.set_camera_pose(self.cameraPose.pose)
             
-        dpg.create_viewport(title='NeRf', width=self.W, height=self.H)
-        with dpg.texture_registry(show=False):
-            dpg.add_raw_texture(width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb, tag="_texture")
-
-        with dpg.window(tag="_primary_window", width=self.W, height=self.H):
-            dpg.add_image("_texture")
-        dpg.set_primary_window("_primary_window", True)
-
-
-        #control
-        with dpg.window(label="Control", tag="_control_window", width=400, height=300):
-
-            # button theme
-            with dpg.theme() as theme_button:
-                with dpg.theme_component(dpg.mvButton):
-                    dpg.add_theme_color(dpg.mvThemeCol_Button, (23, 3, 18))
-                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (51, 3, 47))
-                    dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (83, 18, 83))
-                    dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
-                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 3, 3)
-            # time
-            if not self.isTest:
-                with dpg.group(horizontal=True):
-                    dpg.add_text("Train time: ")
-                    dpg.add_text("no data", tag="_log_train_time")
+        dpg.create_viewport(title='NeRf', width=self.W+300, height=self.H,x_pos=0, y_pos=0)
+        with dpg.window(pos=[0, 0],width=self.W+300, height=self.H,
+                no_title_bar=True,autosize=True, no_collapse=True, no_resize=True, no_close=True, no_move=True,no_scrollbar=True) as main_window:
             with dpg.group(horizontal=True):
-                dpg.add_text("Infer time: ")
-                dpg.add_text("no data", tag="_log_infer_time")
-            with dpg.group(horizontal=True):
-                dpg.add_text("SPP: ")
-                dpg.add_text("1", tag="_log_spp")
-            # train button
-            if not self.isTest:
-                with dpg.collapsing_header(label="Train", default_open=True):
-                    # train / stop/reset
+                with dpg.group(tag="_render_texture"):
+                    with dpg.texture_registry(show=False):
+                        dpg.add_raw_texture(width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb, tag="_texture")
+                    dpg.add_image("_texture")
+                with dpg.child_window(tag="_control_window",height=self.H,autosize_x=True, autosize_y=True):
+                # button theme
+                    with dpg.theme() as theme_button:
+                        with dpg.theme_component(dpg.mvButton):
+                            dpg.add_theme_color(dpg.mvThemeCol_Button, (23, 3, 18))
+                            dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (51, 3, 47))
+                            dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (83, 18, 83))
+                            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
+                            dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 3, 3)
+                    # time
+                    if not self.isTest:
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("Train time: ")
+                            dpg.add_text("no data", tag="_log_train_time")
                     with dpg.group(horizontal=True):
-                        dpg.add_text("Train: ")
-                        def callback_train(sender, app_data):
-                            if self.need_train:
-                                self.need_train = False
-                                if self.train_thread:
-                                    self.train_thread.istraining=False
-                                #self.train_thread.stop()
-                                _label="continue" if (self.train_thread!=None) else "start"
-                                dpg.configure_item("_button_train", label=_label)
-                            else:
-                                dpg.configure_item("_button_train", label="pause")
-                                self.need_train = True
-                                if self.train_thread:
-                                    self.train_thread.istraining=True
-                                else:
-                                    self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.cameraPose.pose,step=5,H=self.H,W=self.W)
-                                    self.train_thread.setDaemon(True)
-                                    self.train_thread.start()
-
-                        dpg.add_button(label="start", tag="_button_train", callback=callback_train)
-                        dpg.bind_item_theme("_button_train", theme_button)
-                        def callback_reset(sender, app_data):
-                            self.need_train=True
-                            if self.train_thread:
-                                self.train_thread.stop()
-                                dpg.configure_item("_button_train", label="start")
-                                self.train_thread=None
-                            self.framebuff=np.ones(shape=(self.H,self.W,3),dtype=np.float32)
-                        dpg.add_button(label="reset", tag="_button_reset", callback=callback_reset)
-                    
-                    # save ckpt
+                        dpg.add_text("Infer time: ")
+                        dpg.add_text("no data", tag="_log_infer_time")
                     with dpg.group(horizontal=True):
-                        dpg.add_text("Checkpoint: ")
+                        dpg.add_text("SPP: ")
+                        dpg.add_text("1", tag="_log_spp")
+                    # train button
+                    if not self.isTest:
+                        with dpg.collapsing_header(label="Train", default_open=True):
+                            # train / stop/reset
+                            with dpg.group(horizontal=True):
+                                dpg.add_text("Train: ")
+                                def callback_train(sender, app_data):
+                                    if self.need_train:
+                                        self.need_train = False
+                                        if self.train_thread:
+                                            self.train_thread.istraining=False
+                                        #self.train_thread.stop()
+                                        _label="continue" if (self.train_thread!=None) else "start"
+                                        dpg.configure_item("_button_train", label=_label)
+                                    else:
+                                        dpg.configure_item("_button_train", label="pause")
+                                        self.need_train = True
+                                        if self.train_thread:
+                                            self.train_thread.istraining=True
+                                        else:
+                                            self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,camera_pose=self.cameraPose.pose,step=5,H=self.H,W=self.W)
+                                            self.train_thread.setDaemon(True)
+                                            self.train_thread.start()
 
-                        def callback_save(sender, app_data):
-                            pass
-                        dpg.add_button(label="save", tag="_button_save", callback=callback_save)
-                        dpg.bind_item_theme("_button_save", theme_button)
+                                dpg.add_button(label="start", tag="_button_train", callback=callback_train)
+                                dpg.bind_item_theme("_button_train", theme_button)
+                                def callback_reset(sender, app_data):
+                                    self.need_train=True
+                                    if self.train_thread:
+                                        self.train_thread.stop()
+                                        dpg.configure_item("_button_train", label="start")
+                                        self.train_thread=None
+                                    self.framebuff=np.ones(shape=(self.H,self.W,3),dtype=np.float32)
+                                dpg.add_button(label="reset", tag="_button_reset", callback=callback_reset)
+                            
+                            # save ckpt
+                            with dpg.group(horizontal=True):
+                                dpg.add_text("Checkpoint: ")
 
-                        dpg.add_text("", tag="_log_ckpt")
-            #resolution
-            with dpg.group(horizontal=True):
-                dpg.add_text("resolution scale:")
-                self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,clamped=True,min_value=0.1,max_value=1.0)
+                                def callback_save(sender, app_data):
+                                    pass
+                                dpg.add_button(label="save", tag="_button_save", callback=callback_save)
+                                dpg.bind_item_theme("_button_save", theme_button)
+
+                                dpg.add_text("", tag="_log_ckpt")
+                    #resolution
+                    dpg.add_text("resolution scale:")
+                    self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,clamped=True,min_value=0.1,max_value=1.0)
         #drag
         with dpg.handler_registry():
             dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseDrag)
