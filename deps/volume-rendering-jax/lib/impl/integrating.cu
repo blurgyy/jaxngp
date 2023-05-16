@@ -129,7 +129,7 @@ __global__ void integrate_rays_backward_kernel(
     , float const * const __restrict__ dL_ddepths  // [n_rays]
 
     // output arrays
-    , float * const __restrict__ dL_dbgs  // [n_rays]
+    , float * const __restrict__ dL_dbgs  // [n_rays, 3]
     , float * const __restrict__ dL_dz_vals  // [total_samples]
     , float * const __restrict__ dL_ddensities  // [total_samples]
     , float * const __restrict__ dL_drgbs  // [total_samples, 3]
@@ -157,7 +157,7 @@ __global__ void integrate_rays_backward_kernel(
     float const ray_dL_ddepth = dL_ddepths[i];  // [] (a scalar has no shape)
 
     // outputs
-    float * const __restrict__ ray_dL_dbgs = dL_dbgs + i;  // [3]
+    float * const __restrict__ ray_dL_dbgs = dL_dbgs + i * 3;  // [3]
     float * const __restrict__ ray_dL_dz_vals = dL_dz_vals + start_idx;  // [n_samples]
     float * const __restrict__ ray_dL_ddensities = dL_ddensities + start_idx;  // [n_samples]
     float * const __restrict__ ray_dL_drgbs = dL_drgbs + start_idx * 3;  // [n_samples, 3]
