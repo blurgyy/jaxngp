@@ -62,7 +62,9 @@ class CameraPose():
         self.theta+=velocity*dx
         self.phi-=velocity*dy
         return self.pose
-    
+    def change_radius(self,rate):
+        self.radius*=1.1**(-rate)
+        return self.pose
 @dataclass
 class Gui_trainer():
     KEY: jran.KeyArray
@@ -460,7 +462,7 @@ class NeRFGUI():
         self.cameraPose=CameraPose()
     def ItemsLayout(self):
         def callback_mouseDrag(sender,app_data):
-            if dpg.is_item_focused("_control_window"):
+            if not dpg.is_item_focused("_primary_window"):
                 return 
             dx=app_data[1]
             dy=app_data[2]
@@ -469,7 +471,14 @@ class NeRFGUI():
             self.cameraPose.move(dx,dy)
             if self.train_thread:
                 self.train_thread.set_camera_pose(self.cameraPose.pose)
-            
+        def callback_mouseWheel(sender,app_data):
+            if not dpg.is_item_focused("_primary_window"):
+                return 
+            delta=app_data
+            self.cameraPose.change_radius(delta)
+            self.logger.info("self.cameraPose.radius:{}".format(self.cameraPose.radius))
+            if self.train_thread:
+                self.train_thread.set_camera_pose(self.cameraPose.pose)
         dpg.create_viewport(title='NeRf', width=self.W+self.gui_args.control_window_width, height=self.H+10,x_pos=0, y_pos=0)
         with dpg.window(tag="_main_window",pos=[0, 0],width=self.W+self.gui_args.control_window_width, height=self.H,
                 no_title_bar=True,autosize=True, no_collapse=True, no_resize=False, no_close=True, no_move=True,no_scrollbar=True) as main_window:
@@ -552,6 +561,7 @@ class NeRFGUI():
         #drag
         with dpg.handler_registry():
             dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseDrag)
+            dpg.add_mouse_wheel_handler(callback=callback_mouseWheel)
         dpg.setup_dearpygui()
         dpg.show_viewport()
     def change_scale(self):    
