@@ -12,6 +12,8 @@ from utils.types import NeRFState, SceneData
 
 __all__ = [
     "train_step",
+    "color_int2float",
+    "color_float2int"
 ]
 
 
@@ -102,3 +104,10 @@ def train_step(
     }
     return state, metrics
 
+
+def color_int2float(color_int):
+    color_float=(color_int[0]/255.,color_int[1]/255.,color_int[2]/255.)
+    return color_float
+def color_float2int(color_float):
+    color_int=(int(color_float[0]*255),int(color_float[1]*255),int(color_float[2]*255))
+    return color_int

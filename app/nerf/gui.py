@@ -20,14 +20,14 @@ from utils.types import (
     TransformJsonNGP,
     PinholeCamera
 )
+from ._utils import(
+    color_float2int,
+    color_int2float
+)
 from models.nerfs import (NeRF,SkySphereBg)
 # from guis import *
-def change_colors():
-    global snake_color, apple_color, burrow_color, snake, apple, burrow
+from PIL import Image
 
-    dpg.configure_item(item=snake, color=dpg.get_value(item=snake_color))
-    dpg.configure_item(item=apple, color=dpg.get_value(item=apple_color), fill=dpg.get_value(item=apple_color))
-    dpg.configure_item(item=burrow, color=dpg.get_value(item=burrow_color), fill=dpg.get_value(item=burrow_color))
 @dataclass
 class CameraPose():
     theta:float=160.0
@@ -90,6 +90,7 @@ class Gui_trainer():
     loss_log:str="--"
     
     istraining:bool=field(init=False)
+    back_color:Tuple[float,float,float]=(1.0,1.0,1.0)
     def __post_init__(self):
         
         self.istraining=True
@@ -219,8 +220,8 @@ class Gui_trainer():
         bg, rgb, depth = render_image_inference(
             KEY=key,
             transform_cw=transform,
-            # state=self.state.replace(render=self.state.render.replace(random_bg=False,bg=(1.0,0.0,0.0))),
-            state=self.state.replace(render=self.state.render.replace(random_bg=False)),
+            state=self.state.replace(render=self.state.render.replace(random_bg=False,bg=self.back_color)),
+            #state=self.state.replace(render=self.state.render.replace(random_bg=False)),
             camera_override=camera
         )
         bg=self.get_npf32_image(bg,W=_W,H=_H)
@@ -248,7 +249,6 @@ class Gui_trainer():
         self.logger.info("epoch#{:03d}: loss={:.2e}({:.2f}dB)".format(self.cur_step, loss_log, loss_db))
         #return self.render_frame(_scale)
     def get_npf32_image(self,img:jnp.array,W,H)->np.array:
-        from PIL import Image
         img=Image.fromarray(np.array(img,dtype=np.uint8))
         img=img.resize(size=(W,H), resample=1)
         img=np.array(img,dtype=np.float32)/255.
@@ -336,8 +336,12 @@ class Gui_trainer():
         return total_loss / n_processed_rays, state
     def stop_trainer(self):
         self.istraining=False
+    
+    def setBackColor(self,color:Tuple[float,float,float]):
+        self.back_color=color
+        
 class TrainThread(threading.Thread):
-    def __init__(self,KEY,args,gui_args,logger,camera_pose,step):
+    def __init__(self,KEY,args,gui_args,logger,camera_pose,step,back_color):
         super(TrainThread,self).__init__()   
         
         self.KEY=KEY
@@ -353,15 +357,25 @@ class TrainThread(threading.Thread):
         self.scale=gui_args.resolution_scale
         
         self.H,self.W=self.gui_args.H,self.gui_args.W
-        self.framebuff=np.ones(shape=(self.H,self.W,3),dtype=np.float32)
+        self.back_color=back_color
+        self.framebuff=None
         self.trainer=None
+        self.initFrame()
         try:   
             pass
             #self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
         except Exception as e:
             self.logger.warning(e)
+    def initFrame(self):
+        img=Image.new("RGB",(self.W,self.H),color_float2int(self.back_color))
+        self.framebuff=np.array(img,dtype=np.float32)/255.
+        
+    def setBackColor(self,color:Tuple[float,float,float]):
+        self.back_color=color
+        if self.trainer:
+            self.trainer.setBackColor(self.back_color)
     def run(self):
-        self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args)
+        self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,back_color=self.back_color)
         try:
             while self.needUpdate:
                 while self.istraining and self.trainer and self.trainer.cur_step<self.gui_args.max_step:
@@ -419,38 +433,39 @@ class NeRFGUI():
     logger: logging.Logger=None
     cameraPose:CameraPose=field(init=False)
     scale_slider:Union[int,str]=field(init=False)
-    def init_HW(self):
-        def try_image_extensions(
-            file_path: str,
-            extensions: List[str]=["png", "jpg", "jpeg"],) -> Path:
-            if "" not in extensions:
-                extensions = [""] + list(extensions)
-            for ext in extensions:
-                if len(ext) > 0 and ext[0] != ".":
-                    ext = "." + ext
-                p = Path(file_path + ext)
-                if p.exists():
-                    return p
-            raise FileNotFoundError(
-                "could not find a file at {} with any extension of {}".format(file_path, extensions)
-            )
-        srcs = list(map(Path, self.train_args.frames_train))
-        transforms = merge_transforms(map(load_transform_json_recursive, srcs))
-        if transforms is None:
-            raise FileNotFoundError("could not find any valid transforms in {}".format(srcs))
-        if len(transforms.frames) == 0:
-            raise ValueError("could not find any frame in {}".format(srcs))
-        if isinstance(transforms, TransformJsonNeRFSynthetic):
-            from PIL import Image
-            _img = Image.open(try_image_extensions(transforms.frames[0].file_path))
-            self.W, self.H = _img.width, _img.height
-        elif isinstance(transforms, TransformJsonNGP):
-            self.W,self.H=transforms.w,transforms.h
-        else:
-            raise TypeError("unexpected type for transforms: {}, expected one of {}".format(
-                type(transforms),
-                [TransformJsonNeRFSynthetic, TransformJsonNGP],
-            ))
+    back_color:Tuple[float,float,float]=(1.0,1.0,1.0)
+    scale:float=1.0
+    # def init_HW(self):
+    #     def try_image_extensions(
+    #         file_path: str,
+    #         extensions: List[str]=["png", "jpg", "jpeg"],) -> Path:
+    #         if "" not in extensions:
+    #             extensions = [""] + list(extensions)
+    #         for ext in extensions:
+    #             if len(ext) > 0 and ext[0] != ".":
+    #                 ext = "." + ext
+    #             p = Path(file_path + ext)
+    #             if p.exists():
+    #                 return p
+    #         raise FileNotFoundError(
+    #             "could not find a file at {} with any extension of {}".format(file_path, extensions)
+    #         )
+    #     srcs = list(map(Path, self.train_args.frames_train))
+    #     transforms = merge_transforms(map(load_transform_json_recursive, srcs))
+    #     if transforms is None:
+    #         raise FileNotFoundError("could not find any valid transforms in {}".format(srcs))
+    #     if len(transforms.frames) == 0:
+    #         raise ValueError("could not find any frame in {}".format(srcs))
+    #     if isinstance(transforms, TransformJsonNeRFSynthetic):
+    #         _img = Image.open(try_image_extensions(transforms.frames[0].file_path))
+    #         self.W, self.H = _img.width, _img.height
+    #     elif isinstance(transforms, TransformJsonNGP):
+    #         self.W,self.H=transforms.w,transforms.h
+    #     else:
+    #         raise TypeError("unexpected type for transforms: {}, expected one of {}".format(
+    #             type(transforms),
+    #             [TransformJsonNeRFSynthetic, TransformJsonNGP],
+    #         ))
     def __post_init__(self):
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
         #self.init_HW()
@@ -461,6 +476,9 @@ class NeRFGUI():
         self.train_thread=None
         self.cameraPose=CameraPose()
     def ItemsLayout(self):
+        def callback_backgroundColor():
+            self.back_color= color_int2float(dpg.get_value("_BackColor"))
+            self.logger.info("get color:{}".format(color_int2float(dpg.get_value("_BackColor"))))
         def callback_mouseDrag(sender,app_data):
             if not dpg.is_item_focused("_primary_window"):
                 return 
@@ -508,6 +526,8 @@ class NeRFGUI():
                     with dpg.group(horizontal=True):
                         dpg.add_text("SPP: ")
                         dpg.add_text("1", tag="_log_spp")
+                    dpg.add_color_edit(tag="_BackColor",label="Background color", default_value=[255, 255, 255], no_alpha=True,
+                                                         width=130, callback=callback_backgroundColor)
                     # train button
                     if not self.isTest:
                         with dpg.collapsing_header(label="Train", default_open=True):
@@ -529,7 +549,7 @@ class NeRFGUI():
                                             self.train_thread.istraining=True
                                         else:
                                             self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,
-                                                                          camera_pose=self.cameraPose.pose,step=self.gui_args.train_steps)
+                                                                          camera_pose=self.cameraPose.pose,step=self.gui_args.train_steps,back_color=self.back_color)
                                             self.train_thread.setDaemon(True)
                                             self.train_thread.start()
 
@@ -565,8 +585,9 @@ class NeRFGUI():
         dpg.setup_dearpygui()
         dpg.show_viewport()
     def change_scale(self):    
-        if dpg.get_value(self.scale_slider)!=self.train_thread.get_scale():
-            self.train_thread.set_scale(dpg.get_value(self.scale_slider))
+        if dpg.get_value(self.scale_slider)!=self.scale:
+            self.scale=dpg.get_value(self.scale_slider)
+            self.train_thread.set_scale(self.scale)
     def update_frame(self):
         self.framebuff=self.train_thread.framebuff
     def adapt_size(self):
@@ -580,10 +601,18 @@ class NeRFGUI():
             dpg.delete_item("_img")
             dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W, height=self.H)
             dpg.configure_item("_texture",width=self.W, height=self.H)
+    def setFrameColor(self):
+        if self.train_thread and self.train_thread.trainer:
+            self.train_thread.setBackColor(self.back_color)
+        else:              
+            img=Image.new("RGB",(self.W,self.H),color_float2int(self.back_color))
+            self.framebuff=np.array(img,dtype=np.float32)/255.
+        dpg.set_value("_texture", self.framebuff)
     def render(self):
         try:       
             while dpg.is_dearpygui_running():
                 self.adapt_size()
+                self.setFrameColor()
                 if self.train_thread:
                     self.train_thread.change_WH(self.W,self.H)
                     self.change_scale()
