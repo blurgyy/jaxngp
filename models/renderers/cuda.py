@@ -231,7 +231,7 @@ def march_and_integrate_inference(
     rays_T: jax.Array,
     rays_depth: jax.Array,
 ):
-    counter, indices, n_samples, t_starts, xyzdirs, dss, z_vals = march_rays_inference(
+    counter, indices, n_samples, t_starts, xyzs, dss, z_vals = march_rays_inference(
         diagonal_n_steps=state.raymarch.diagonal_n_steps,
         K=state.scene_meta.cascades,
         G=state.raymarch.density_grid_res,
@@ -248,11 +248,11 @@ def march_and_integrate_inference(
         indices=indices,
     )
 
-    xyzdirs = jax.lax.stop_gradient(xyzdirs)
+    xyzs = jax.lax.stop_gradient(xyzs)
     densities, rgbs = state.nerf_fn(
         {"params": state.locked_params["nerf"]},
-        xyzdirs[..., :3],
-        xyzdirs[..., 3:],
+        xyzs,
+        jnp.broadcast_to(rays_d[indices, None, :], xyzs.shape),
     )
 
     terminate_cnt, terminated, rays_rgb, rays_T, rays_depth = integrate_rays_inference(

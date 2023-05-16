@@ -261,7 +261,7 @@ __global__ void march_rays_inference_kernel(
     , std::uint32_t * const __restrict__ indices_out  // [n_rays]
     , std::uint32_t * const __restrict__ n_samples  // [n_rays]
     , float * const __restrict__ t_starts_out  // [n_rays]
-    , float * const __restrict__ xyzdirs  // [n_rays, march_steps_cap, 6]
+    , float * const __restrict__ xyzs  // [n_rays, march_steps_cap, 3]
     , float * const __restrict__ dss  // [n_rays, march_steps_cap]
     , float * const __restrict__ z_vals  // [n_rays, march_steps_cap]
 ) {
@@ -283,7 +283,7 @@ __global__ void march_rays_inference_kernel(
 
     if (ray_t_end <= ray_t_start) { return; }
 
-    float * const __restrict__ ray_xyzdirs = xyzdirs + i * march_steps_cap * 6;
+    float * const __restrict__ ray_xyzs = xyzs + i * march_steps_cap * 3;
     float * const __restrict__ ray_dss = dss + i * march_steps_cap;
     float * const __restrict__ ray_z_vals = z_vals + i * march_steps_cap;
 
@@ -320,12 +320,9 @@ __global__ void march_rays_inference_kernel(
         bool const occupied = occupancy_bitfield[occupancy_grid_idx >> 3] & (1 << (occupancy_grid_idx & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
 
         if (occupied) {
-            ray_xyzdirs[steps * 6 + 0] = x;
-            ray_xyzdirs[steps * 6 + 1] = y;
-            ray_xyzdirs[steps * 6 + 2] = z;
-            ray_xyzdirs[steps * 6 + 3] = dx;
-            ray_xyzdirs[steps * 6 + 4] = dy;
-            ray_xyzdirs[steps * 6 + 5] = dz;
+            ray_xyzs[steps * 3 + 0] = x;
+            ray_xyzs[steps * 3 + 1] = y;
+            ray_xyzs[steps * 3 + 2] = z;
             ray_dss[steps] = ds;
             ray_z_vals[steps] = ray_t;
 
@@ -496,7 +493,7 @@ void march_rays_inference_launcher(cudaStream_t stream, void **buffers, char con
     std::uint32_t * const __restrict__ indices_out = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     std::uint32_t * const __restrict__ n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     float * const __restrict__ t_starts_out = static_cast<float *>(next_buffer());  // [n_rays]
-    float * const __restrict__ xyzdirs = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap, 6]
+    float * const __restrict__ xyzs = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap, 3]
     float * const __restrict__ dss = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap]
     float * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap]
 
@@ -508,7 +505,7 @@ void march_rays_inference_launcher(cudaStream_t stream, void **buffers, char con
     CUDA_CHECK_THROW(cudaMemsetAsync(indices_out, 0x00, n_rays * sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(n_samples, 0x00, n_rays * sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(t_starts_out, 0x00, n_rays * sizeof(float), stream));
-    CUDA_CHECK_THROW(cudaMemsetAsync(xyzdirs, 0x00, n_rays * march_steps_cap * 6 * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(xyzs, 0x00, n_rays * march_steps_cap * 3 * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(dss, 0x00, n_rays * march_steps_cap * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(z_vals, 0x00, n_rays * march_steps_cap * sizeof(float), stream));
 
@@ -537,7 +534,7 @@ void march_rays_inference_launcher(cudaStream_t stream, void **buffers, char con
         , indices_out
         , n_samples
         , t_starts_out
-        , xyzdirs
+        , xyzs
         , dss
         , z_vals
     );

@@ -135,12 +135,11 @@ def march_rays_inference(
         indices `uint32` `[n_rays]`: for use in the integrate_rays_inference immediately after
         n_samples `uint32` `[n_rays]`: number of generated samples of each ray in question
         t_starts `float` `[n_rays]`: advanced values of `t` for use in next iteration
-        xyzdirs `float` `[n_rays, march_steps_cap, 6]`: each sample's coordinates and their viewing
-                                                        directions
+        xyzs `float` `[n_rays, march_steps_cap, 3]`: each sample's XYZ coordinate
         dss `float` `[n_rays, march_steps_cap]`: `ds` of each sample
         z_vals `float` `[n_rays, march_steps_cap]`: distance of each sample to their ray origins
     """
-    counter, indices, n_samples, t_starts_out, xyzdirs, dss, z_vals = impl.march_rays_inference_p.bind(
+    counter, indices, n_samples, t_starts_out, xyzs, dss, z_vals = impl.march_rays_inference_p.bind(
         rays_o,
         rays_d,
         t_starts,
@@ -158,4 +157,4 @@ def march_rays_inference(
         stepsize_portion=stepsize_portion,
     )
     t_starts = t_starts.at[indices].set(t_starts_out)
-    return counter, indices, n_samples, t_starts, xyzdirs, dss, z_vals
+    return counter, indices, n_samples, t_starts, xyzs, dss, z_vals

@@ -92,7 +92,7 @@ def march_rays_inference_abstract(
         "indices_out": (n_rays,),
         "n_samples": (n_rays,),
         "t_starts": (n_rays,),
-        "xyzdirs": (n_rays, march_steps_cap, 6),
+        "xyzs": (n_rays, march_steps_cap, 3),
         "dss": (n_rays, march_steps_cap),
         "z_vals": (n_rays, march_steps_cap),
     }
@@ -102,7 +102,7 @@ def march_rays_inference_abstract(
         jax.ShapedArray(shape=out_shapes["indices_out"], dtype=jnp.uint32),
         jax.ShapedArray(shape=out_shapes["n_samples"], dtype=jnp.uint32),
         jax.ShapedArray(shape=out_shapes["t_starts"], dtype=jnp.float32),
-        jax.ShapedArray(shape=out_shapes["xyzdirs"], dtype=jnp.float32),
+        jax.ShapedArray(shape=out_shapes["xyzs"], dtype=jnp.float32),
         jax.ShapedArray(shape=out_shapes["dss"], dtype=jnp.float32),
         jax.ShapedArray(shape=out_shapes["z_vals"], dtype=jnp.float32),
     )
