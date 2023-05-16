@@ -149,11 +149,19 @@ __global__ void integrate_rays_backward_kernel(
     float const * const __restrict__ ray_rgbs = rgbs + start_idx * 3;  // [n_samples, 3]
 
     /// original outputs
-    float const * const __restrict__ ray_final_rgb = final_rgbs + i * 3;  // [3]
+    float const ray_final_rgb[3] = {
+        final_rgbs[i * 3 + 0],
+        final_rgbs[i * 3 + 1],
+        final_rgbs[i * 3 + 2],
+    };
     float const ray_depth = depths[i];  // [] (a scalar has no shape)
 
     /// gradient inputs
-    float const * const __restrict__ ray_dL_dfinal_rgb = dL_dfinal_rgbs + i * 3;  // [3]
+    float const ray_dL_dfinal_rgb[3] = {
+        dL_dfinal_rgbs[i * 3 + 0],
+        dL_dfinal_rgbs[i * 3 + 1],
+        dL_dfinal_rgbs[i * 3 + 2],
+    };
     float const ray_dL_ddepth = dL_ddepths[i];  // [] (a scalar has no shape)
 
     // outputs
