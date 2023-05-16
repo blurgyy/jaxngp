@@ -69,6 +69,31 @@ def integrate_rays_inference(
     densities: jax.Array,
     rgbs: jax.Array,
 ):
+    """
+    Inputs:
+        rays_bg `float` `[n_total_rays, 3]`: normalized background color of each ray in question
+        rays_rgb `float` `[n_total_rays, 3]`: target array to write rendered colors to
+        rays_T `float` `[n_total_rays]`: accumulated transmittance of each ray
+        rays_depth `float` `[n_total_rays]`: accumulated depth of each ray
+
+        n_samples `uint32` `[n_rays]`: output of ray marching, specifies how many samples are
+                                        generated for this ray at this iteration
+        indices `uint32` `[n_rays]`: values are in range [0, n_total_rays), specifies the location
+                                     in `rays_bg`, `rays_rgb`, `rays_T`, and `rays_depth`
+                                     corresponding to this ray
+        dss `float` `[n_rays, march_steps_cap]`: each sample's `ds`
+        z_vals `float` `[n_rays, march_steps_cap]`: each sample's distance to its ray origin
+        densities `float` `[n_rays, march_steps_cap]`: predicted density values from a NeRF model
+        rgbs `float` `[n_rays, march_steps_cap, 3]`: predicted RGB values from a NeRF model
+
+    Returns:
+        terminate_cnt `uint32`: number of rays that terminated this iteration
+        terminated `bool` `[n_rays]`: a binary mask, the i-th location being True means the i-th ray
+                                       has terminated
+        rays_rgb `float` `[n_total_rays, 3]`: the input `rays_rgb` with ray colors updated
+        rays_T `float` `[n_total_rays]`: the input `rays_rgb` with transmittance values updated
+        rays_depth `float``[n_total_rays]`: the input `rays_rgb` with depth values updated
+    """
     terminate_cnt, terminated, rays_rgb_out, rays_T_out, rays_depth_out = impl.integrate_rays_inference_p.bind(
         rays_bg,
         rays_rgb,
