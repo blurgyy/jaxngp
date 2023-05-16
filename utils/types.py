@@ -540,9 +540,9 @@ class SceneMeta:
     @property
     def stepsize_portion(self) -> float:
         if self.bound >= 64:
-            return 1e-2
-        elif self.bound >= 16:
             return 1/128
+        elif self.bound >= 16:
+            return 6e-3
         elif self.bound >= 4:
             return 5e-3
         elif self.bound > 1:
