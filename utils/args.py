@@ -192,7 +192,7 @@ class NeRFTestingArgs(NeRFArgsBase):
         camera_near=0.1,
     )
     
-@dataclass(frozen=True,kw_only=True)
+@dataclass
 class GuiWindowArgs():
     # directories or transform.json files containing data for training
     frames_train: tyro.conf.Positional[Tuple[Path, ...]]
@@ -223,3 +223,7 @@ class GuiWindowArgs():
     train_steps:int=5 #training steps before every rendering
     
     control_window_width:int=300 
+    # batch size
+    bs: int=25_0000
+    # number of latest checkpoints to keep
+    keep: int=1

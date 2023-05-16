@@ -27,6 +27,7 @@ from ._utils import(
 from models.nerfs import (NeRF,SkySphereBg)
 # from guis import *
 from PIL import Image
+import time
 
 @dataclass
 class CameraPose():
@@ -86,12 +87,14 @@ class Gui_trainer():
     optimizer: Any=field(init=False)
     
     state:NeRFState=field(init=False)
-    cur_step:int=field(init=False)
+    cur_step:int=0
+    log_step:int=0
     loss_log:str="--"
     
     istraining:bool=field(init=False)
     back_color:Tuple[float,float,float]=(1.0,1.0,1.0)
     def __post_init__(self):
+        self.cur_step=0
         
         self.istraining=True
         logs_dir = self.args.exp_dir.joinpath("logs")
@@ -195,7 +198,7 @@ class Gui_trainer():
             tx=self.optimizer,
         )
         self.state=self.state.mark_untrained_density_grid()
-        self.cur_step=0
+        
 
     def set_render_camera(self,_scale,_H,_W)->PinholeCamera:
         _scene_meta = self.scene_meta
@@ -239,7 +242,8 @@ class Gui_trainer():
                 state=self.state,
                 scene=self.scene_train,
                 n_batches=steps,
-                total_samples=self.args.train.bs,
+                total_samples=self.gui_args.bs,
+                #total_samples=self.args.train.bs,
                 cur_steps=self.cur_step,
                 logger=self.logger,
             )
@@ -266,7 +270,7 @@ class Gui_trainer():
     ):
         n_processed_rays = 0
         total_loss = 0
-        
+        self.log_step=0
         for _ in (pbar := tqdm(range(n_batches), desc="Training epoch#{:03d}".format(cur_steps), bar_format=common.tqdm_format)):
             if not self.istraining:
                 logger.warn("aborted at step {}".format(cur_steps))
@@ -285,6 +289,7 @@ class Gui_trainer():
                 scene=scene,
                 perm=perm,
             )
+            self.log_step+=1
             cur_steps=cur_steps+1
             n_processed_rays += state.batch_config.n_rays
             total_loss += metrics["loss"]
@@ -339,7 +344,12 @@ class Gui_trainer():
     
     def setBackColor(self,color:Tuple[float,float,float]):
         self.back_color=color
-        
+    def get_currentStep(self):
+        return self.cur_step
+    def get_logStep(self):
+        return self.log_step
+    def get_state(self):
+        return self.state
 class TrainThread(threading.Thread):
     def __init__(self,KEY,args,gui_args,logger,camera_pose,step,back_color):
         super(TrainThread,self).__init__()   
@@ -361,6 +371,8 @@ class TrainThread(threading.Thread):
         self.framebuff=None
         self.trainer=None
         self.initFrame()
+        self.train_infer_time=-1
+        self.render_infer_time=-1
         try:   
             pass
             #self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
@@ -379,12 +391,30 @@ class TrainThread(threading.Thread):
         try:
             while self.needUpdate:
                 while self.istraining and self.trainer and self.trainer.cur_step<self.gui_args.max_step:
+                    start_time=time.time()
                     self.trainer.train_steps(self.step)
+                    end_time=time.time()
+                    self.train_infer_time=end_time-start_time
+                    start_time=time.time()
                     _,self.framebuff,_=self.trainer.render_frame(self.scale,self.H,self.W)
+                    end_time=time.time()
+                    self.render_infer_time=end_time-start_time
+                start_time=time.time()    
                 _,self.framebuff,_=self.trainer.render_frame(self.scale,self.H,self.W)
+                end_time=time.time()
+                self.render_infer_time=end_time-start_time
         except Exception as e:
             self.logger.error(e)
-
+    def get_TrainInferTime(self):
+        if self.train_infer_time!=-1:
+            return "{:.6f}".format(self.train_infer_time)
+        else:
+            return "no data"
+    def get_RenderInferTime(self):
+        if self.render_infer_time!=-1:
+            return "{:.6f}".format(self.render_infer_time)
+        else:
+            return "no data"
     def stop(self):
         self.istraining=False
         self.needUpdate=False
@@ -409,12 +439,20 @@ class TrainThread(threading.Thread):
             if thread is self: 
                 return id
     def get_state(self):
-        return self.trainer.state
+        return self.trainer.get_state()
     def set_camera_pose(self,camera_pose):
         self.trainer.camera_pose=camera_pose
     def change_WH(self,W,H):
         self.W=W
         self.H=H
+    def get_logStep(self):
+        if self.trainer:
+            return self.trainer.get_logStep()
+        return 0
+    def get_currentStep(self):
+        if self.trainer:
+            return self.trainer.get_currentStep()
+        return 0
 @dataclass
 class NeRFGUI():
     
@@ -435,40 +473,10 @@ class NeRFGUI():
     scale_slider:Union[int,str]=field(init=False)
     back_color:Tuple[float,float,float]=(1.0,1.0,1.0)
     scale:float=1.0
-    # def init_HW(self):
-    #     def try_image_extensions(
-    #         file_path: str,
-    #         extensions: List[str]=["png", "jpg", "jpeg"],) -> Path:
-    #         if "" not in extensions:
-    #             extensions = [""] + list(extensions)
-    #         for ext in extensions:
-    #             if len(ext) > 0 and ext[0] != ".":
-    #                 ext = "." + ext
-    #             p = Path(file_path + ext)
-    #             if p.exists():
-    #                 return p
-    #         raise FileNotFoundError(
-    #             "could not find a file at {} with any extension of {}".format(file_path, extensions)
-    #         )
-    #     srcs = list(map(Path, self.train_args.frames_train))
-    #     transforms = merge_transforms(map(load_transform_json_recursive, srcs))
-    #     if transforms is None:
-    #         raise FileNotFoundError("could not find any valid transforms in {}".format(srcs))
-    #     if len(transforms.frames) == 0:
-    #         raise ValueError("could not find any frame in {}".format(srcs))
-    #     if isinstance(transforms, TransformJsonNeRFSynthetic):
-    #         _img = Image.open(try_image_extensions(transforms.frames[0].file_path))
-    #         self.W, self.H = _img.width, _img.height
-    #     elif isinstance(transforms, TransformJsonNGP):
-    #         self.W,self.H=transforms.w,transforms.h
-    #     else:
-    #         raise TypeError("unexpected type for transforms: {}, expected one of {}".format(
-    #             type(transforms),
-    #             [TransformJsonNeRFSynthetic, TransformJsonNGP],
-    #         ))
+ 
     def __post_init__(self):
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
-        #self.init_HW()
+
         self.H,self.W=self.gui_args.H,self.gui_args.W
         self.framebuff=np.ones(shape=(self.W,self.H,3),dtype=np.float32)#default background is white
         dpg.create_context()
@@ -497,7 +505,7 @@ class NeRFGUI():
             self.logger.info("self.cameraPose.radius:{}".format(self.cameraPose.radius))
             if self.train_thread:
                 self.train_thread.set_camera_pose(self.cameraPose.pose)
-        dpg.create_viewport(title='NeRf', width=self.W+self.gui_args.control_window_width, height=self.H+10,x_pos=0, y_pos=0)
+        dpg.create_viewport(title='NeRf', width=self.W+self.gui_args.control_window_width, height=self.H+12,x_pos=0, y_pos=0)
         with dpg.window(tag="_main_window",pos=[0, 0],width=self.W+self.gui_args.control_window_width, height=self.H,
                 no_title_bar=True,autosize=True, no_collapse=True, no_resize=False, no_close=True, no_move=True,no_scrollbar=True) as main_window:
             with dpg.group(horizontal=True):
@@ -515,11 +523,13 @@ class NeRFGUI():
                             dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (83, 18, 83))
                             dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
                             dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 3, 3)
-                    # time
-                    if not self.isTest:
-                        with dpg.group(horizontal=True):
-                            dpg.add_text("Train time: ")
-                            dpg.add_text("no data", tag="_log_train_time")
+                            
+                    with dpg.group(horizontal=True):
+                        dpg.add_text("Current training step: ")
+                        dpg.add_text("no data", tag="_cur_train_step")
+                    with dpg.group(horizontal=True):
+                        dpg.add_text("Train time: ")
+                        dpg.add_text("no data", tag="_log_train_time")
                     with dpg.group(horizontal=True):
                         dpg.add_text("Infer time: ")
                         dpg.add_text("no data", tag="_log_infer_time")
@@ -569,11 +579,25 @@ class NeRFGUI():
                                 dpg.add_text("Checkpoint: ")
 
                                 def callback_save(sender, app_data):
-                                    pass
+                                    if self.train_thread and self.train_thread.trainer:
+                                        self.logger.info("saving training state ... ")
+                                        ckpt_name = checkpoints.save_checkpoint(
+                                            self.gui_args.exp_dir,
+                                            self.train_thread.get_state(),
+                                            step=self.train_thread.get_currentStep(),
+                                            overwrite=True,
+                                            keep=self.gui_args.keep,
+                                        )
+                                        #self.gui_args.keep+=1
+                                        dpg.set_value("_log_ckpt", "Checkpoint saved path: {}".format(ckpt_name))
+                                        self.logger.info("training state of step {} saved to: {}".format(self.train_thread.get_logStep(), ckpt_name))
+                                    else:
+                                        dpg.set_value("_log_ckpt", "Checkpoint save path: failed ,cause no training")
+                                        self.logger.info("saving training state failed ,cause no training")
                                 dpg.add_button(label="save", tag="_button_save", callback=callback_save)
                                 dpg.bind_item_theme("_button_save", theme_button)
 
-                                dpg.add_text("", tag="_log_ckpt")
+                            dpg.add_text("", tag="_log_ckpt",wrap=self.gui_args.control_window_width-40)
                     #resolution
                     dpg.add_text("resolution scale:")
                     self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,
@@ -608,6 +632,12 @@ class NeRFGUI():
             img=Image.new("RGB",(self.W,self.H),color_float2int(self.back_color))
             self.framebuff=np.array(img,dtype=np.float32)/255.
         dpg.set_value("_texture", self.framebuff)
+    def update_panel(self):
+        dpg.set_value("_cur_train_step","{} (+{}/{})".format(self.train_thread.get_currentStep(),
+                                                             self.train_thread.get_logStep(),
+                                                             self.gui_args.train_steps))
+        dpg.set_value("_log_train_time","{}".format(self.train_thread.get_TrainInferTime()))
+        dpg.set_value("_log_infer_time","{}".format(self.train_thread.get_RenderInferTime()))
     def render(self):
         try:       
             while dpg.is_dearpygui_running():
@@ -617,8 +647,10 @@ class NeRFGUI():
                     self.train_thread.change_WH(self.W,self.H)
                     self.change_scale()
                     self.update_frame()
+                    self.update_panel()
                 dpg.set_value("_texture", self.framebuff)
                 dpg.render_dearpygui_frame()
+                
         except KeyboardInterrupt:
             if self.train_thread:
                 self.train_thread.stop()
