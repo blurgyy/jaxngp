@@ -68,7 +68,7 @@ class CreateDataset:
     camera_scale: float=dataclasses.field(default_factory=lambda: 1/3, kw_only=True)
 
     # should the scene be modeled with a background that is not part of the scene geometry?
-    bg: bool=dataclasses.field(default_factory=lambda: True, kw_only=True)
+    bg: bool=dataclasses.field(default_factory=False, kw_only=True)
 
     # how many frames to extract per second, only used when src is a video
     fps: int
