@@ -5,6 +5,7 @@ import functools
 import json
 from pathlib import Path
 from typing import List, Literal, Sequence, Tuple
+import warnings
 
 from PIL import Image
 import chex
@@ -19,7 +20,6 @@ import numpy as np
 from . import sfm
 from .common import jit_jaxfn_with, mkValueError, tqdm
 from .types import (
-    CameraOverrideOptions,
     ColmapMatcherType,
     ImageMetadata,
     OrbitTrajectoryOptions,
@@ -260,11 +260,11 @@ def create_dataset_from_single_camera_image_collection(
     if len(maps) == 0:
         raise RuntimeError("mapping with colmap failed")
     elif len(maps) > 1:
-        raise RuntimeError("colmap reconstructed more than 1 maps")
+        warnings.warn("colmap reconstructed more than 1 maps")
 
     sfm.undistort(
         images_dir=raw_images_dir,
-        sparse_reconstruction_dir=sparse_reconstruction_dir.joinpath("0"),
+        sparse_reconstruction_dir=sparse_reconstruction_dir.joinpath("0"),  # just use the first map reconstructed by colmap
         undistorted_images_dir=undistorted_images_dir,
     )
 
