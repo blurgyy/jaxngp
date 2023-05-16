@@ -194,7 +194,7 @@ def render_rays_train(
         ray_dirs,
     )
 
-    effective_samples, opacities, final_rgbs, depths = integrate_rays(
+    effective_samples, final_rgbs, depths = integrate_rays(
         rays_sample_startidx=rays_sample_startidx,
         rays_n_samples=rays_n_samples,
         bgs=bg,
@@ -209,7 +209,7 @@ def render_rays_train(
         "measured_batch_size": jnp.where(effective_samples > 0, effective_samples, 0).sum(),
     }
 
-    return batch_metrics, opacities, final_rgbs, depths
+    return batch_metrics, final_rgbs, depths
 
 
 @jit_jaxfn_with(static_argnames=["march_steps_cap"])

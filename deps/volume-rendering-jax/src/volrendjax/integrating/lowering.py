@@ -47,7 +47,6 @@ def integrate_rays_lowering_rule(
 
         "helper.counter": (1,),
 
-        "out.opacities": (n_rays,),
         "out.final_rgbs": (n_rays, 3),
         "out.depths": (n_rays,),
     }
@@ -56,7 +55,6 @@ def integrate_rays_lowering_rule(
         call_target_name="integrate_rays",
         out_types=[
             ir.RankedTensorType.get(shapes["helper.counter"], ir.IntegerType.get_unsigned(32)),
-            ir.RankedTensorType.get(shapes["out.opacities"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.final_rgbs"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.depths"], ir.F32Type.get()),
         ],
@@ -81,7 +79,6 @@ def integrate_rays_lowering_rule(
         ),
         result_layouts=default_layouts(
             shapes["helper.counter"],
-            shapes["out.opacities"],
             shapes["out.final_rgbs"],
             shapes["out.depths"],
         ),
@@ -102,12 +99,10 @@ def integrate_rays_backward_lowring_rule(
     rgbs: ir.Value,
 
     # original outputs
-    opacities: ir.Value,
     final_rgbs: ir.Value,
     depths: ir.Value,
 
     # gradient inputs
-    dL_dopacities: ir.Value,
     dL_dfinal_rgbs: ir.Value,
     dL_ddepths: ir.Value,
 ):
@@ -126,11 +121,9 @@ def integrate_rays_backward_lowring_rule(
         "in.densities": (total_samples, 1),
         "in.rgbs": (total_samples, 3),
 
-        "in.opacities": (n_rays,),
         "in.final_rgbs": (n_rays, 3),
         "in.depths": (n_rays,),
 
-        "in.dL_dopacities": (n_rays,),
         "in.dL_dfinal_rgbs": (n_rays, 3),
         "in.dL_ddepths": (n_rays,),
 
@@ -158,11 +151,9 @@ def integrate_rays_backward_lowring_rule(
             densities,
             rgbs,
 
-            opacities,
             final_rgbs,
             depths,
 
-            dL_dopacities,
             dL_dfinal_rgbs,
             dL_ddepths
         ],
@@ -176,11 +167,9 @@ def integrate_rays_backward_lowring_rule(
             shapes["in.densities"],
             shapes["in.rgbs"],
 
-            shapes["in.opacities"],
             shapes["in.final_rgbs"],
             shapes["in.depths"],
 
-            shapes["in.dL_dopacities"],
             shapes["in.dL_dfinal_rgbs"],
             shapes["in.dL_ddepths"],
         ),

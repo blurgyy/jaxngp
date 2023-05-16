@@ -39,7 +39,6 @@ __global__ void integrate_rays_kernel(
     , std::uint32_t * const __restrict__ counter  // [1]
 
     // output arrays (4)
-    , float * const __restrict__ opacities  // [n_rays]
     , float * const __restrict__ final_rgbs  // [n_rays]
     , float * const __restrict__ depths  // [n_rays]
 ) {
@@ -58,7 +57,6 @@ __global__ void integrate_rays_kernel(
 
     // front-to-back composition, with early stop
     std::uint32_t sample_idx = 0;
-    float ray_opacity = 0.f;
     float ray_depth = 0.f;
     float ray_transmittance = 1.f;
     float r = 0.f, g = 0.f, b = 0.f;
@@ -68,10 +66,6 @@ __global__ void integrate_rays_kernel(
         float const alpha = 1.f - __expf(-ray_densities[sample_idx] * delta_t);
 
         float const weight = ray_transmittance * alpha;
-
-        // set outputs
-        /// accumulate opacity
-        ray_opacity += weight;
 
         /// composite colors
         r += weight * ray_rgbs[sample_idx * 3 + 0];
@@ -88,18 +82,15 @@ __global__ void integrate_rays_kernel(
     // write to global memory at last
     // stop ray marching and **set the remaining contribution to zero** as soon as the transmittance
     // of the ray drops below a threshold
-    // NOTE: `ray_transmittance` equals to `1 - ray_opacity`
     if (ray_transmittance < T_THRESHOLD){ 
-        float const denom = ray_opacity;
+        float const denom = 1 - ray_transmittance;
         float idenom = 1.f / denom;
         depths[i] = ray_depth * idenom;
-        opacities[i] = 1.f;
         final_rgbs[i*3+0] = r * idenom;
         final_rgbs[i*3+1] = g * idenom;
         final_rgbs[i*3+2] = b * idenom;
     } else {
         depths[i] = ray_depth;
-        opacities[i] = ray_opacity;
         final_rgbs[i*3+0] = r + ray_transmittance * ray_bgs[0];
         final_rgbs[i*3+1] = g + ray_transmittance * ray_bgs[1];
         final_rgbs[i*3+2] = b + ray_transmittance * ray_bgs[2];
@@ -130,12 +121,10 @@ __global__ void integrate_rays_backward_kernel(
     , float const * const __restrict__ rgbs  // [total_samples, 3]
 
     /// original outputs
-    , float const * const __restrict__ opacities  // [n_rays]
     , float const * const __restrict__ final_rgbs  // [n_rays, 3]
     , float const * const __restrict__ depths  // [n_rays]
 
     /// gradient inputs
-    , float const * const __restrict__ dL_dopacities  // [n_rays]
     , float const * const __restrict__ dL_dfinal_rgbs  // [n_rays, 3]
     , float const * const __restrict__ dL_ddepths  // [n_rays]
 
@@ -160,12 +149,10 @@ __global__ void integrate_rays_backward_kernel(
     float const * const __restrict__ ray_rgbs = rgbs + start_idx * 3;  // [n_samples, 3]
 
     /// original outputs
-    float const ray_opacity = opacities[i];  // [] (a scalar has no shape)
     float const * const __restrict__ ray_final_rgb = final_rgbs + i * 3;  // [3]
     float const ray_depth = depths[i];  // [] (a scalar has no shape)
 
     /// gradient inputs
-    float const ray_dL_dopacity = dL_dopacities[i];  // [] (a scalar has no shape)
     float const * const __restrict__ ray_dL_dfinal_rgb = dL_dfinal_rgbs + i * 3;  // [3]
     float const ray_dL_ddepth = dL_ddepths[i];  // [] (a scalar has no shape)
 
@@ -174,12 +161,6 @@ __global__ void integrate_rays_backward_kernel(
     float * const __restrict__ ray_dL_dz_vals = dL_dz_vals + start_idx;  // [n_samples]
     float * const __restrict__ ray_dL_ddensities = dL_ddensities + start_idx;  // [n_samples]
     float * const __restrict__ ray_dL_drgbs = dL_drgbs + start_idx * 3;  // [n_samples, 3]
-
-    // gradients for background colors
-    // NOTE: `ray_transmittance` equals to `1 - ray_opacity`
-    ray_dL_dbgs[0] = (1.f - ray_opacity) * ray_dL_dfinal_rgb[0];
-    ray_dL_dbgs[1] = (1.f - ray_opacity) * ray_dL_dfinal_rgb[1];
-    ray_dL_dbgs[2] = (1.f - ray_opacity) * ray_dL_dfinal_rgb[2];
 
     // front-to-back composition, with early stop
     float transmittance = 1.f;
@@ -220,8 +201,6 @@ __global__ void integrate_rays_backward_kernel(
             + ray_dL_dfinal_rgb[2] * (transmittance * ray_rgbs[sample_idx * 3 + 2] - (ray_final_rgb[2] - cur_rgb[2]))
             //// gradients from depth
             + ray_dL_ddepth * (transmittance * ray_z_vals[sample_idx] - (ray_depth - cur_depth))
-            //// gradients from opacity
-            + ray_dL_dopacity * (1.f - ray_opacity)
         );
 
         /// color gradients
@@ -229,6 +208,11 @@ __global__ void integrate_rays_backward_kernel(
         ray_dL_drgbs[sample_idx * 3 + 1] = weight * ray_dL_dfinal_rgb[1];
         ray_dL_drgbs[sample_idx * 3 + 2] = weight * ray_dL_dfinal_rgb[2];
     }
+
+    // gradients for background colors
+    ray_dL_dbgs[0] = transmittance * ray_dL_dfinal_rgb[0];
+    ray_dL_dbgs[1] = transmittance * ray_dL_dfinal_rgb[1];
+    ray_dL_dbgs[2] = transmittance * ray_dL_dfinal_rgb[2];
 }
 
 __global__ void integrate_rays_inference_kernel(
@@ -340,13 +324,11 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
     std::uint32_t * const __restrict__ counter = static_cast<std::uint32_t *>(next_buffer());  // [1]
 
     // outputs
-    float * const __restrict__ opacities = static_cast<float *>(next_buffer());  // [n_rays]
     float * const __restrict__ final_rgbs = static_cast<float *>(next_buffer());  // [n_rays, 3]
     float * const __restrict__ depths = static_cast<float *>(next_buffer());  // [n_rays]
 
     // reset all outputs to zero
     CUDA_CHECK_THROW(cudaMemsetAsync(counter, 0x00, sizeof(std::uint32_t), stream));
-    CUDA_CHECK_THROW(cudaMemsetAsync(opacities, 0x00, n_rays * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(final_rgbs, 0x00, n_rays * 3 * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(depths, 0x00, n_rays * sizeof(float), stream));
 
@@ -366,8 +348,7 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
         , rgbs
         // helper counter
         , counter
-        // output arrays (3)
-        , opacities
+        // output arrays (2)
         , final_rgbs
         , depths
     );
@@ -398,11 +379,9 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
     float const * const __restrict__ densities = static_cast<float *>(next_buffer());  // [total_samples]
     float const * const __restrict__ rgbs = static_cast<float *>(next_buffer());  // [total_samples, 3]
     //// original outputs
-    float const * const __restrict__ opacities = static_cast<float *>(next_buffer());  // [n_rays]
     float const * const __restrict__ final_rgbs = static_cast<float *>(next_buffer());  // [n_rays, 3]
     float const * const __restrict__ depths = static_cast<float *>(next_buffer());  // [n_rays]
     //// gradient inputs
-    float const * const __restrict__ dL_dopacities = static_cast<float *>(next_buffer());  // [n_rays]
     float const * const __restrict__ dL_dfinal_rgbs = static_cast<float *>(next_buffer());  // [n_rays, 3]
     float const * const __restrict__ dL_ddepths = static_cast<float *>(next_buffer());  // [n_rays]
 
@@ -435,11 +414,9 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
         , densities
         , rgbs
         /// original outputs
-        , opacities
         , final_rgbs
         , depths
         /// gradient inputs
-        , dL_dopacities
         , dL_dfinal_rgbs
         , dL_ddepths
 
