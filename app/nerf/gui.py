@@ -631,7 +631,14 @@ class NeRFGUI():
                         dpg.add_plot_axis(dpg.mvYAxis, label="loss(db)", tag="y_axis")
                         # series belong to a y axis
                         dpg.add_line_series(self.data_step, self.data_loss, label="loss(db)", parent="y_axis",tag="_plot")
-        #drag
+                    with dpg.collapsing_header(label="Tips", default_open=True):
+                        tip1="* Drag the left mouse button to change the camera perspective\n"
+                        tip2="* The mouse wheel zooms the distance between the camera and the object\n"
+                        tip3="* Drag the window to resize\n"
+                        dpg.add_text(tip1,wrap=self.gui_args.control_window_width-40)
+                        dpg.add_text(tip2,wrap=self.gui_args.control_window_width-40)
+                        dpg.add_text(tip3,wrap=self.gui_args.control_window_width-40)
+        #drag       
         with dpg.handler_registry():
             dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseDrag)
             dpg.add_mouse_wheel_handler(callback=callback_mouseWheel)
