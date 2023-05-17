@@ -35,8 +35,6 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
             scene_options=args.scene,
             orbit_options=args.orbit,
         )
-        if args.camera_override.enabled:
-            scene_meta = scene_meta.replace(camera=args.camera_override.camera)
         logger.info("generated {} camera transforms for testing".format(len(scene_meta.frames)))
     elif args.trajectory == "loaded":
         logger.debug("loading testing frames from {}".format(args.frames))
@@ -83,6 +81,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
                 KEY=key,
                 transform_cw=transform,
                 state=state,
+                camera_override=args.camera_override.camera if args.camera_override.enabled else None,
             )
             rendered_images.append(RenderedImage(
                 bg=data.to_cpu(bg),
@@ -93,21 +92,24 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         logger.warn("keyboard interrupt, tested {} images".format(len(rendered_images)))
 
     if args.trajectory == "loaded":
-        gt_rgbs_f32 = map(
-            lambda test_view, rendered_image: data.blend_rgba_image_array(
-                test_view.image_rgba_u8.astype(jnp.float32) / 255,
-                rendered_image.bg,
-            ),
-            test_views,
-            rendered_images,
-        )
-        logger.debug("calculating psnr")
-        mean_psnr = sum(map(
-            data.psnr,
-            map(data.f32_to_u8, gt_rgbs_f32),
-            map(lambda ri: ri.rgb, rendered_images),
-        )) / len(rendered_images)
-        logger.info("tested {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
+        if args.camera_override.enabled:
+            logger.info("camera is overridden, not calculating psnr")
+        else:
+            gt_rgbs_f32 = map(
+                lambda test_view, rendered_image: data.blend_rgba_image_array(
+                    test_view.image_rgba_u8.astype(jnp.float32) / 255,
+                    rendered_image.bg,
+                ),
+                test_views,
+                rendered_images,
+            )
+            logger.debug("calculating psnr")
+            mean_psnr = sum(map(
+                data.psnr,
+                map(data.f32_to_u8, gt_rgbs_f32),
+                map(lambda ri: ri.rgb, rendered_images),
+            )) / len(rendered_images)
+            logger.info("tested {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
 
     elif args.trajectory == "orbit":
         logger.debug("using generated orbiting trajectory, not calculating psnr")
