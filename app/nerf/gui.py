@@ -537,17 +537,65 @@ class NeRFGUI():
             self.logger.info("self.cameraPose.radius:{}".format(self.cameraPose.radius))
             if self.train_thread:
                 self.train_thread.set_camera_pose(self.cameraPose.pose)
-        dpg.create_viewport(title='NeRf', width=self.W+self.gui_args.control_window_width, height=self.H+12,x_pos=0, y_pos=0)
+        def callback_train(sender, app_data):
+            if self.need_train:
+                self.need_train = False
+                if self.train_thread:
+                    self.train_thread.istraining=False
+                #self.train_thread.stop()
+                _label="continue" if (self.train_thread!=None) else "start"
+                dpg.configure_item("_button_train", label=_label)
+            else:
+                dpg.configure_item("_button_train", label="pause")
+                self.need_train = True
+                if self.train_thread:
+                    self.train_thread.istraining=True
+                else:
+                    self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,
+                                                    camera_pose=self.cameraPose.pose,step=self.gui_args.train_steps,back_color=self.back_color)
+                    self.train_thread.setDaemon(True)
+                    self.train_thread.start()
+        def callback_save(sender, app_data):
+            if self.train_thread and self.train_thread.trainer:
+                self.logger.info("saving training state ... ")
+                ckpt_name = checkpoints.save_checkpoint(
+                    self.gui_args.exp_dir,
+                    self.train_thread.get_state(),
+                    step=self.train_thread.get_currentStep(),
+                    overwrite=True,
+                    keep=self.gui_args.keep,
+                )
+                #self.gui_args.keep+=1
+                dpg.set_value("_log_ckpt", "Checkpoint saved path: {}".format(ckpt_name))
+                self.logger.info("training state of step {} saved to: {}".format(self.train_thread.get_logStep(), ckpt_name))
+            else:
+                dpg.set_value("_log_ckpt", "Checkpoint save path: failed ,cause no training")
+                self.logger.info("saving training state failed ,cause no training")
+        def callback_reset(sender, app_data):
+            self.need_train=True
+            if self.train_thread:
+                self.train_thread.stop()
+                dpg.configure_item("_button_train", label="start")
+                self.train_thread=None
+            self.framebuff=np.ones(shape=(self.H,self.W,3),dtype=np.float32) 
+            self.data_step.clear()
+            self.data_loss.clear() 
+            self.update_plot()        
+                  
+                  
+        dpg.create_viewport(title='NeRF', width=self.W+self.gui_args.control_window_width, height=self.H+12,x_pos=0, y_pos=0)
         with dpg.window(tag="_main_window",pos=[0, 0],width=self.W+self.gui_args.control_window_width, height=self.H,
                 no_title_bar=True,autosize=True, no_collapse=True, no_resize=False, no_close=True, no_move=True,no_scrollbar=True) as main_window:
             with dpg.group(horizontal=True):
+                #texture
                 with dpg.group(tag="_render_texture"):
                     with dpg.texture_registry(show=False):
                         dpg.add_raw_texture(width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb, tag="_texture")
                     with dpg.child_window(tag="_primary_window", width=self.W, height=self.H,no_scrollbar=True):
                         dpg.add_image("_texture",tag="_img",parent="_primary_window")
+                #control panel
                 with dpg.child_window(tag="_control_window",height=self.H,autosize_x=True, autosize_y=True):
-                # button theme
+                    # button theme
                     with dpg.theme() as theme_button:
                         with dpg.theme_component(dpg.mvButton):
                             dpg.add_theme_color(dpg.mvThemeCol_Button, (23, 3, 18))
@@ -555,102 +603,55 @@ class NeRFGUI():
                             dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (83, 18, 83))
                             dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
                             dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 3, 3)
-                            
-                    with dpg.group(horizontal=True):
-                        dpg.add_text("Current training step: ")
-                        dpg.add_text("no data", tag="_cur_train_step")
-                    with dpg.group(horizontal=True):
-                        dpg.add_text("Train time: ")
-                        dpg.add_text("no data", tag="_log_train_time")
-                    with dpg.group(horizontal=True):
-                        dpg.add_text("Infer time: ")
-                        dpg.add_text("no data", tag="_log_infer_time")
-                    with dpg.group(horizontal=True):
-                        dpg.add_text("SPP: ")
-                        dpg.add_text("1", tag="_log_spp")
-                    with dpg.group(horizontal=True):
-                        dpg.add_text("Mean samples/ray: ")
-                        dpg.add_text("no data", tag="_samples")
-                    with dpg.group(horizontal=True):
-                        dpg.add_text("Mean effective samples/ray: ")
-                        dpg.add_text("no data", tag="_effective_samples")
-                    dpg.add_color_edit(tag="_BackColor",label="Background color", default_value=[255, 255, 255], no_alpha=True,
-                                                         width=130, callback=callback_backgroundColor)
-                    # train button
-                    if not self.isTest:
-                        with dpg.collapsing_header(label="Train", default_open=True):
-                            # train / stop/reset
-                            with dpg.group(horizontal=True):
-                                dpg.add_text("Train: ")
-                                def callback_train(sender, app_data):
-                                    if self.need_train:
-                                        self.need_train = False
-                                        if self.train_thread:
-                                            self.train_thread.istraining=False
-                                        #self.train_thread.stop()
-                                        _label="continue" if (self.train_thread!=None) else "start"
-                                        dpg.configure_item("_button_train", label=_label)
-                                    else:
-                                        dpg.configure_item("_button_train", label="pause")
-                                        self.need_train = True
-                                        if self.train_thread:
-                                            self.train_thread.istraining=True
-                                        else:
-                                            self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,
-                                                                          camera_pose=self.cameraPose.pose,step=self.gui_args.train_steps,back_color=self.back_color)
-                                            self.train_thread.setDaemon(True)
-                                            self.train_thread.start()
+                    #control
+                    with dpg.collapsing_header(label="Control Panel", default_open=True):
+                        # train / stop/reset
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("Train: ")
+                            dpg.add_button(label="start", tag="_button_train", callback=callback_train)
+                            dpg.bind_item_theme("_button_train", theme_button)
+                            dpg.add_button(label="reset", tag="_button_reset", callback=callback_reset)            
+                        # save ckpt
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("Checkpoint: ")
+                            dpg.add_button(label="save", tag="_button_save", callback=callback_save)
+                            dpg.bind_item_theme("_button_save", theme_button)
+                        dpg.add_text("", tag="_log_ckpt",wrap=self.gui_args.control_window_width-40)     
+                        #resolution
+                        dpg.add_text("resolution scale:")
+                        self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,
+                                                            clamped=True,min_value=0.1,max_value=1.0,width=self.gui_args.control_window_width-40)
+                        dpg.add_color_edit(tag="_BackColor",label="Background color", default_value=[255, 255, 255], no_alpha=True,
+                                                         width=self.gui_args.control_window_width-40, callback=callback_backgroundColor)
+                    with dpg.collapsing_header(label="Parameter Monitor", default_open=True):
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("Current training step: ")
+                            dpg.add_text("no data", tag="_cur_train_step")
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("Train time: ")
+                            dpg.add_text("no data", tag="_log_train_time")
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("Infer time: ")
+                            dpg.add_text("no data", tag="_log_infer_time")
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("SPP: ")
+                            dpg.add_text("1", tag="_log_spp")
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("Mean samples/ray: ")
+                            dpg.add_text("no data", tag="_samples")
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("Mean effective samples/ray: ")
+                            dpg.add_text("no data", tag="_effective_samples")
+                        # create plot
+                        with dpg.plot(label="Loss(db)", height=self.gui_args.control_window_width-40, width=self.gui_args.control_window_width-40):
+                            # optionally create legend
+                            dpg.add_plot_legend()
 
-                                dpg.add_button(label="start", tag="_button_train", callback=callback_train)
-                                dpg.bind_item_theme("_button_train", theme_button)
-                                def callback_reset(sender, app_data):
-                                    self.need_train=True
-                                    if self.train_thread:
-                                        self.train_thread.stop()
-                                        dpg.configure_item("_button_train", label="start")
-                                        self.train_thread=None
-                                    self.framebuff=np.ones(shape=(self.H,self.W,3),dtype=np.float32)
-                                dpg.add_button(label="reset", tag="_button_reset", callback=callback_reset)
-                            
-                            # save ckpt
-                            with dpg.group(horizontal=True):
-                                dpg.add_text("Checkpoint: ")
-
-                                def callback_save(sender, app_data):
-                                    if self.train_thread and self.train_thread.trainer:
-                                        self.logger.info("saving training state ... ")
-                                        ckpt_name = checkpoints.save_checkpoint(
-                                            self.gui_args.exp_dir,
-                                            self.train_thread.get_state(),
-                                            step=self.train_thread.get_currentStep(),
-                                            overwrite=True,
-                                            keep=self.gui_args.keep,
-                                        )
-                                        #self.gui_args.keep+=1
-                                        dpg.set_value("_log_ckpt", "Checkpoint saved path: {}".format(ckpt_name))
-                                        self.logger.info("training state of step {} saved to: {}".format(self.train_thread.get_logStep(), ckpt_name))
-                                    else:
-                                        dpg.set_value("_log_ckpt", "Checkpoint save path: failed ,cause no training")
-                                        self.logger.info("saving training state failed ,cause no training")
-                                dpg.add_button(label="save", tag="_button_save", callback=callback_save)
-                                dpg.bind_item_theme("_button_save", theme_button)
-
-                            dpg.add_text("", tag="_log_ckpt",wrap=self.gui_args.control_window_width-40)
-                    #resolution
-                    dpg.add_text("resolution scale:")
-                    self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,
-                                                           clamped=True,min_value=0.1,max_value=1.0)
-
-                    # create plot
-                    with dpg.plot(label="Loss(db)", height=self.gui_args.control_window_width-40, width=self.gui_args.control_window_width-40):
-                        # optionally create legend
-                        dpg.add_plot_legend()
-
-                        # REQUIRED: create x and y axes
-                        dpg.add_plot_axis(dpg.mvXAxis, label="step",tag="x_axis")
-                        dpg.add_plot_axis(dpg.mvYAxis, label="loss(db)", tag="y_axis")
-                        # series belong to a y axis
-                        dpg.add_line_series(self.data_step, self.data_loss, label="loss(db)", parent="y_axis",tag="_plot")
+                            # REQUIRED: create x and y axes
+                            dpg.add_plot_axis(dpg.mvXAxis, label="step",tag="x_axis")
+                            dpg.add_plot_axis(dpg.mvYAxis, label="loss(db)", tag="y_axis")
+                            # series belong to a y axis
+                            dpg.add_line_series(self.data_step, self.data_loss, label="loss(db)", parent="y_axis",tag="_plot")
                     with dpg.collapsing_header(label="Tips", default_open=True):
                         tip1="* Drag the left mouse button to change the camera perspective\n"
                         tip2="* The mouse wheel zooms the distance between the camera and the object\n"
@@ -688,13 +689,11 @@ class NeRFGUI():
             img=Image.new("RGB",(self.W,self.H),color_float2int(self.back_color))
             self.framebuff=np.array(img,dtype=np.float32)/255.
         dpg.set_value("_texture", self.framebuff)
+    def update_plot(self):
+        dpg.set_value('_plot', [self.data_step,self.data_loss])
+        dpg.fit_axis_data("y_axis")
+        dpg.fit_axis_data("x_axis") 
     def update_panel(self):
-        def update_plot():
-            self.data_step,self.data_loss=self.train_thread.get_plotData()
-            dpg.set_value('_plot', [self.data_step,self.data_loss])
-            dpg.fit_axis_data("y_axis")
-            dpg.fit_axis_data("x_axis") 
-        
         dpg.set_value("_cur_train_step","{} (+{}/{})".format(self.train_thread.get_currentStep(),
                                                              self.train_thread.get_logStep(),
                                                              self.gui_args.train_steps))
@@ -702,7 +701,8 @@ class NeRFGUI():
         dpg.set_value("_log_infer_time","{}".format(self.train_thread.get_RenderInferTime()))
         dpg.set_value("_samples","{}".format(self.train_thread.get_samples_nums()))
         dpg.set_value("_effective_samples","{}".format(self.train_thread.get_effective_samples_nums()))
-        update_plot()
+        self.data_step,self.data_loss=self.train_thread.get_plotData()
+        self.update_plot()
     
     def render(self):
         try:       
