@@ -326,7 +326,7 @@ class ImageMetadata:
 
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonFrame:
-    file_path: str | None
+    file_path: Path | None
     transform_matrix: Matrix4x4
 
     # unused, kept for compatibility with the original nerf_synthetic dataset
@@ -401,7 +401,7 @@ class TransformJsonBase:
                     f,
                     file_path=(
                         f.file_path
-                        if Path(f.file_path).is_absolute()
+                        if f.file_path.is_absolute()
                         else parent_dir.joinpath(f.file_path).absolute().as_posix()
                     ),
                 ),

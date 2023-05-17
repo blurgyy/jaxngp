@@ -558,6 +558,28 @@ def load_transform_json_recursive(src: Path | str) -> TransformJsonNGP | Transfo
     return transforms
 
 
+def try_image_extensions(
+    file_path: Path,
+    extensions: List[str]=["png", "jpg", "jpeg"],
+) -> Path | None:
+    if "" not in extensions:
+        extensions = [""] + list(extensions)
+    for ext in extensions:
+        if len(ext) > 0 and ext[0] != ".":
+            ext = "." + ext
+        p = Path(file_path.as_posix() + ext)
+        if p.exists():
+            return p
+        p = Path(file_path.with_suffix(ext))
+        if p.exists():
+            return p
+    warnings.warn(
+        "could not find a file at '{}' with any extension of {}".format(file_path, extensions),
+        RuntimeWarning,
+    )
+    return None
+
+
 def load_scene(
     srcs: Sequence[Path | str],
     scene_options: SceneOptions,
@@ -570,6 +592,16 @@ def load_scene(
     srcs = list(map(Path, srcs))
 
     transforms = merge_transforms(map(load_transform_json_recursive, srcs))
+    transforms = dataclasses.replace(
+        transforms,
+        frames=list(filter(
+            lambda f: f.file_path is not None,
+            map(
+                lambda f: dataclasses.replace(f, file_path=try_image_extensions(f.file_path)),
+                transforms.frames,
+            ),
+        ))
+    )
     if sort_frames:
         transforms = dataclasses.replace(
             transforms,
@@ -580,23 +612,6 @@ def load_scene(
         raise FileNotFoundError("could not find any valid transforms in {}".format(srcs))
     if len(transforms.frames) == 0:
         raise ValueError("could not find any frame in {}".format(srcs))
-
-    def try_image_extensions(
-        file_path: str,
-        extensions: List[str]=["png", "jpg", "jpeg"],
-    ) -> Path | None:
-        if "" not in extensions:
-            extensions = [""] + list(extensions)
-        for ext in extensions:
-            if len(ext) > 0 and ext[0] != ".":
-                ext = "." + ext
-            p = Path(file_path + ext)
-            if p.exists():
-                return p
-        # raise FileNotFoundError(
-        #     "could not find a file at {} with any extension of {}".format(file_path, extensions)
-        # )
-        return None
 
     # shared camera model
     if isinstance(transforms, TransformJsonNeRFSynthetic):
@@ -642,20 +657,16 @@ def load_scene(
     if orbit_options is not None:
         return scene_meta.make_frames_with_orbiting_trajectory(orbit_options)
 
-    views = map(
+    views = tuple(map(
         lambda frame: ViewMetadata(
             scale=scene_options.resolution_scale,
             transform=RigidTransformation(
                 rotation=frame.transform_matrix_numpy[:3, :3],
                 translation=frame.transform_matrix_numpy[:3, 3],
             ),
-            file=try_image_extensions(frame.file_path),
+            file=frame.file_path,
         ),
         transforms.frames,
-    )
-    views = list(filter(
-        lambda view: view.file is not None,
-        views,
     ))
 
     # uint8,[n_pixels, 4]
