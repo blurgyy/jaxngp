@@ -361,6 +361,10 @@ class Gui_trainer():
         return self.state
     def get_plotData(self):
         return(self.data_step,self.data_loss)
+    def get_effective_samples_nums(self):
+        return self.get_state().batch_config.running_mean_effective_samples_per_ray
+    def get_samples_nums(self):
+        return self.get_state().batch_config.running_mean_samples_per_ray
 class TrainThread(threading.Thread):
     def __init__(self,KEY,args,gui_args,logger,camera_pose,step,back_color):
         super(TrainThread,self).__init__()   
@@ -470,6 +474,16 @@ class TrainThread(threading.Thread):
         if self.trainer:
             self.data_step,self.data_loss=self.trainer.get_plotData()
         return(self.data_step,self.data_loss)
+    def get_effective_samples_nums(self):
+        if self.trainer:
+            return "{:.3f}".format(self.get_state().batch_config.running_mean_effective_samples_per_ray)
+        else :
+            return "no data"
+    def get_samples_nums(self):
+        if self.trainer:
+            return "{:.3f}".format(self.get_state().batch_config.running_mean_samples_per_ray)
+        else :
+            return "no data"
 @dataclass
 class NeRFGUI():
     
@@ -554,6 +568,12 @@ class NeRFGUI():
                     with dpg.group(horizontal=True):
                         dpg.add_text("SPP: ")
                         dpg.add_text("1", tag="_log_spp")
+                    with dpg.group(horizontal=True):
+                        dpg.add_text("Mean samples/ray: ")
+                        dpg.add_text("no data", tag="_samples")
+                    with dpg.group(horizontal=True):
+                        dpg.add_text("Mean effective samples/ray: ")
+                        dpg.add_text("no data", tag="_effective_samples")
                     dpg.add_color_edit(tag="_BackColor",label="Background color", default_value=[255, 255, 255], no_alpha=True,
                                                          width=130, callback=callback_backgroundColor)
                     # train button
@@ -680,6 +700,8 @@ class NeRFGUI():
                                                              self.gui_args.train_steps))
         dpg.set_value("_log_train_time","{}".format(self.train_thread.get_TrainInferTime()))
         dpg.set_value("_log_infer_time","{}".format(self.train_thread.get_RenderInferTime()))
+        dpg.set_value("_samples","{}".format(self.train_thread.get_samples_nums()))
+        dpg.set_value("_effective_samples","{}".format(self.train_thread.get_effective_samples_nums()))
         update_plot()
     
     def render(self):
