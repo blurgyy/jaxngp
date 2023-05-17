@@ -37,7 +37,7 @@ from .types import (
 )
 
 
-def to_cpu(array: jnp.DeviceArray) -> jnp.DeviceArray:
+def to_cpu(array: jax.Array) -> jax.Array:
     return jax.device_put(array, device=jax.devices("cpu")[0])
 
 

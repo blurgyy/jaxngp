@@ -63,7 +63,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     )
     # WARN:
     #   flax.checkpoints.restore_checkpoint() returns a pytree with all arrays of numpy's array type,
-    #   which slows down inference.  use jax.device_put() to convert them to jax's DeviceArray type.
+    #   which slows down inference.  use jax.device_put() to move them to jax's default device.
     # REF: <https://github.com/google/flax/discussions/1199#discussioncomment-635132>
     state = jax.device_put(state)
     logger.info("checkpoint loaded from '{}'".format(args.ckpt))
