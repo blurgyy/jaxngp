@@ -143,9 +143,9 @@ __global__ void march_rays_kernel(
         std::uint32_t const occupancy_grid_idx = cascade * G3 + __morton3D(grid_x, grid_y, grid_z);
         bool const occupied = occupancy_bitfield[occupancy_grid_idx >> 3] & (1 << (occupancy_grid_idx & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
 
+        ray_t += ds;
         if (occupied) {
             ++ray_n_samples;
-            ray_t += ds;
         } else {
             float const tx = (((grid_x + .5f + .5f * signf(dx)) * iG * 2 - 1) * mip_bound - x) * idx;
             float const ty = (((grid_y + .5f + .5f * signf(dy)) * iG * 2 - 1) * mip_bound - y) * idy;
@@ -154,9 +154,9 @@ __global__ void march_rays_kernel(
             // distance to next voxel
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
             // step until next voxel
-            do { 
+            while (ray_t < tt) { 
                 ray_t += calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps);
-            } while (ray_t < tt);
+            } 
         }
     }
 
@@ -211,6 +211,7 @@ __global__ void march_rays_kernel(
         std::uint32_t const occupancy_grid_idx = cascade * G3 + __morton3D(grid_x, grid_y, grid_z);
         bool const occupied = occupancy_bitfield[occupancy_grid_idx >> 3] & (1 << (occupancy_grid_idx & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
 
+        ray_t += ds;
         if (occupied) {
             ray_xyzs[steps * 3 + 0] = x;
             ray_xyzs[steps * 3 + 1] = y;
@@ -222,7 +223,6 @@ __global__ void march_rays_kernel(
             ray_z_vals[steps] = ray_t;
 
             ++steps;
-            ray_t += ds;
         } else {
             float const tx = (((grid_x + .5f + .5f * signf(dx)) * iG * 2 - 1) * mip_bound - x) * idx;
             float const ty = (((grid_y + .5f + .5f * signf(dy)) * iG * 2 - 1) * mip_bound - y) * idy;
@@ -231,9 +231,9 @@ __global__ void march_rays_kernel(
             // distance to next voxel
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
             // step until next voxel
-            do { 
+            while (ray_t < tt) { 
                 ray_t += calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps);
-            } while (ray_t < tt);
+            }
         }
     }
 }
@@ -319,6 +319,7 @@ __global__ void march_rays_inference_kernel(
         std::uint32_t const occupancy_grid_idx = cascade * G3 + __morton3D(grid_x, grid_y, grid_z);
         bool const occupied = occupancy_bitfield[occupancy_grid_idx >> 3] & (1 << (occupancy_grid_idx & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
 
+        ray_t += ds;
         if (occupied) {
             ray_xyzs[steps * 3 + 0] = x;
             ray_xyzs[steps * 3 + 1] = y;
@@ -327,7 +328,6 @@ __global__ void march_rays_inference_kernel(
             ray_z_vals[steps] = ray_t;
 
             ++steps;
-            ray_t += ds;
         } else {
             float const tx = (((grid_x + .5f + .5f * signf(dx)) * iG * 2 - 1) * mip_bound - x) * idx;
             float const ty = (((grid_y + .5f + .5f * signf(dy)) * iG * 2 - 1) * mip_bound - y) * idy;
@@ -336,9 +336,9 @@ __global__ void march_rays_inference_kernel(
             // distance to next voxel
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
             // step until next voxel
-            do { 
+            while (ray_t < tt) { 
                 ray_t += calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps);
-            } while (ray_t < tt);
+            }
         }
     }
     n_samples[i] = steps;
