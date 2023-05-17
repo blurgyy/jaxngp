@@ -209,12 +209,12 @@ class Gui_trainer():
     def set_render_camera(self,_scale,_H,_W)->PinholeCamera:
         _scene_meta = self.scene_meta
         camera = PinholeCamera(
-            W=_H,
-            H=_W,
+            W=_W,
+            H=_H,
             fx=_scene_meta.camera.fx,
             fy=_scene_meta.camera.fy,
-            cx=_H/ 2,
-            cy=_W / 2
+            cx=_W/ 2,
+            cy=_H / 2
         )
         camera=camera.scale_resolution(_scale)
         return camera
@@ -260,7 +260,7 @@ class Gui_trainer():
         #return self.render_frame(_scale)
     def get_npf32_image(self,img:jnp.array,W,H)->np.array:
         img=Image.fromarray(np.array(img,dtype=np.uint8))
-        img=img.resize(size=(W,H), resample=1)
+        img=img.resize(size=(W,H), resample=Image.NEAREST)
         img=np.array(img,dtype=np.float32)/255.
         return img    
         
@@ -675,8 +675,8 @@ class NeRFGUI():
             dpg.set_item_height("_main_window",View_H)
             dpg.set_item_width("_primary_window",self.W)
             dpg.set_item_height("_primary_window",self.H) 
-            dpg.delete_item("_img")
-            dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W, height=self.H)
+            # dpg.delete_item("_img")
+            # dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W, height=self.H)
             dpg.configure_item("_texture",width=self.W, height=self.H)
     def setFrameColor(self):
         if self.train_thread and self.train_thread.trainer:
@@ -710,6 +710,13 @@ class NeRFGUI():
                     self.change_scale()
                     self.update_frame()
                     self.update_panel()
+                
+                img=Image.fromarray(np.array(self.framebuff*255,dtype=np.uint8))
+                img=img.resize(size=(self.W,self.H),resample=Image.BILINEAR)
+                self.framebuff=np.array(img,dtype=np.float32)/255.
+                self.logger.info("self. W:{},H:{}".format(self.W,self.H))
+                self.logger.info("self.framebuff W:{},H:{}".format(self.framebuff.shape[1],self.framebuff.shape[0]))
+                self.logger.info("texture W:{},H:{}".format(dpg.get_item_width("_texture"),dpg.get_item_height("_texture")))
                 dpg.set_value("_texture", self.framebuff)
                 dpg.render_dearpygui_frame()
                 
