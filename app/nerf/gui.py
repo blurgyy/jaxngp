@@ -93,7 +93,13 @@ class Gui_trainer():
     
     istraining:bool=field(init=False)
     back_color:Tuple[float,float,float]=(1.0,1.0,1.0)
+    
+    data_step:List[int]=field(default_factory=list,init=False)
+    data_loss:List[float]=field(default_factory=list,init=False)
+    
     def __post_init__(self):
+        self.data_step=[]
+        self.data_loss=[]
         self.cur_step=0
         
         self.istraining=True
@@ -296,7 +302,10 @@ class Gui_trainer():
             loss_log = metrics["loss"] / state.batch_config.n_rays
 
             loss_db = data.linear_to_db(loss_log, maxval=1)
-            
+            self.data_step.append(self.log_step+self.cur_step)
+            temp_db=float(loss_db)
+            # temp_db=np.array(loss_db,dtype=np.float32)
+            self.data_loss.append(temp_db)
             pbar.set_description_str(
                 desc="Training step#{:03d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss={:.3e}({:.2f}dB)".format(
                     cur_steps,
@@ -350,6 +359,8 @@ class Gui_trainer():
         return self.log_step
     def get_state(self):
         return self.state
+    def get_plotData(self):
+        return(self.data_step,self.data_loss)
 class TrainThread(threading.Thread):
     def __init__(self,KEY,args,gui_args,logger,camera_pose,step,back_color):
         super(TrainThread,self).__init__()   
@@ -373,6 +384,8 @@ class TrainThread(threading.Thread):
         self.initFrame()
         self.train_infer_time=-1
         self.render_infer_time=-1
+        self.data_step=[]
+        self.data_loss=[]
         try:   
             pass
             #self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
@@ -453,6 +466,10 @@ class TrainThread(threading.Thread):
         if self.trainer:
             return self.trainer.get_currentStep()
         return 0
+    def get_plotData(self):
+        if self.trainer:
+            self.data_step,self.data_loss=self.trainer.get_plotData()
+        return(self.data_step,self.data_loss)
 @dataclass
 class NeRFGUI():
     
@@ -473,7 +490,8 @@ class NeRFGUI():
     scale_slider:Union[int,str]=field(init=False)
     back_color:Tuple[float,float,float]=(1.0,1.0,1.0)
     scale:float=1.0
- 
+    data_step:List[int]=field(default_factory=list,init=False)
+    data_loss:List[float]=field(default_factory=list,init=False)
     def __post_init__(self):
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
 
@@ -602,6 +620,17 @@ class NeRFGUI():
                     dpg.add_text("resolution scale:")
                     self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,
                                                            clamped=True,min_value=0.1,max_value=1.0)
+
+                    # create plot
+                    with dpg.plot(label="Loss(db)", height=self.gui_args.control_window_width-40, width=self.gui_args.control_window_width-40):
+                        # optionally create legend
+                        dpg.add_plot_legend()
+
+                        # REQUIRED: create x and y axes
+                        dpg.add_plot_axis(dpg.mvXAxis, label="step",tag="x_axis")
+                        dpg.add_plot_axis(dpg.mvYAxis, label="loss(db)", tag="y_axis")
+                        # series belong to a y axis
+                        dpg.add_line_series(self.data_step, self.data_loss, label="loss(db)", parent="y_axis",tag="_plot")
         #drag
         with dpg.handler_registry():
             dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseDrag)
@@ -633,11 +662,19 @@ class NeRFGUI():
             self.framebuff=np.array(img,dtype=np.float32)/255.
         dpg.set_value("_texture", self.framebuff)
     def update_panel(self):
+        def update_plot():
+            self.data_step,self.data_loss=self.train_thread.get_plotData()
+            dpg.set_value('_plot', [self.data_step,self.data_loss])
+            dpg.fit_axis_data("y_axis")
+            dpg.fit_axis_data("x_axis") 
+        
         dpg.set_value("_cur_train_step","{} (+{}/{})".format(self.train_thread.get_currentStep(),
                                                              self.train_thread.get_logStep(),
                                                              self.gui_args.train_steps))
         dpg.set_value("_log_train_time","{}".format(self.train_thread.get_TrainInferTime()))
         dpg.set_value("_log_infer_time","{}".format(self.train_thread.get_RenderInferTime()))
+        update_plot()
+    
     def render(self):
         try:       
             while dpg.is_dearpygui_running():
