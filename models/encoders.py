@@ -1,4 +1,3 @@
-import functools
 import math
 
 import chex
@@ -195,11 +194,13 @@ class HashGridEncoder(Encoder):
         # [..., 2**dim, dim]
         vert_pos = pos_floored[..., None, :] + cell_vert_offsets[dim]
         # [..., 2**dim]
-        indices = functools.reduce(
-            lambda prev, d: prev * (res + 1) + vert_pos[..., d],
-            range(dim),
-            0,
-        )
+        if dim == 2:
+            strides = jnp.asarray([(res + 1), 1], dtype=jnp.uint32)
+        elif dim == 3:
+            strides = jnp.asarray([(res + 1) ** 2, (res + 1), 1], dtype=jnp.uint32)
+        else:
+            raise NotImplementedError("{} is only implemented for 2D and 3D data".format(__class__.__name__))
+        indices = jnp.sum(strides[None, :] * vert_pos, axis=-1)
         return indices, pos_scaled, vert_pos
 
     @staticmethod
@@ -228,17 +229,14 @@ class HashGridEncoder(Encoder):
         vert_pos = pos_floored[..., None, :] + cell_vert_offsets[dim]
         vert_pos = vert_pos.astype(jnp.uint32)
         # use primes as reported in the paper
-        primes = jax.tree_util.tree_map(lambda x: jnp.asarray(x, dtype=jnp.uint32), (
-            1,
-            2_654_435_761,
-            805_459_861,
-        ))
+        primes = jnp.asarray([1, 2_654_435_761, 805_459_861], dtype=jnp.uint32)
         # [..., 2**dim]
-        indices = functools.reduce(
-            lambda prev, d: jnp.bitwise_xor(prev, vert_pos[..., d] * primes[d]),
-            range(dim),
-            jnp.asarray(0, dtype=jnp.uint32),
-        )
+        if dim == 2:
+            indices = vert_pos[..., 0] ^ (vert_pos[..., 1] * primes[1])
+        elif dim == 3:
+            indices = vert_pos[..., 0] ^ (vert_pos[..., 1] * primes[1]) ^ (vert_pos[..., 2] * primes[2])
+        else:
+            raise NotImplementedError("{} is only implemented for 2D and 3D data".format(__class__.__name__))
         return jnp.mod(indices, T), pos_scaled, vert_pos
 
 
