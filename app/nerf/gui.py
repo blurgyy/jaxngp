@@ -595,27 +595,21 @@ class NeRFGUI():
                         dpg.add_image("_texture",tag="_img",parent="_primary_window")
                 #control panel
                 with dpg.child_window(tag="_control_window",height=self.H,autosize_x=True, autosize_y=True):
-                    # button theme
-                    with dpg.theme() as theme_button:
-                        with dpg.theme_component(dpg.mvButton):
-                            dpg.add_theme_color(dpg.mvThemeCol_Button, (23, 3, 18))
-                            dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (51, 3, 47))
-                            dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (83, 18, 83))
-                            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
-                            dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 3, 3)
+                    with dpg.theme() as theme_head:
+                        with dpg.theme_component(dpg.mvAll):
+                            dpg.add_theme_color(dpg.mvThemeCol_Header, (0,62,89))
                     #control
-                    with dpg.collapsing_header(label="Control Panel", default_open=True):
+                    with dpg.collapsing_header(tag="_conrol_panel",label="Control Panel", default_open=True):
+                        dpg.bind_item_theme("_conrol_panel", theme_head)
                         # train / stop/reset
                         with dpg.group(horizontal=True):
                             dpg.add_text("Train: ")
                             dpg.add_button(label="start", tag="_button_train", callback=callback_train)
-                            dpg.bind_item_theme("_button_train", theme_button)
                             dpg.add_button(label="reset", tag="_button_reset", callback=callback_reset)            
                         # save ckpt
                         with dpg.group(horizontal=True):
                             dpg.add_text("Checkpoint: ")
                             dpg.add_button(label="save", tag="_button_save", callback=callback_save)
-                            dpg.bind_item_theme("_button_save", theme_button)
                         dpg.add_text("", tag="_log_ckpt",wrap=self.gui_args.control_window_width-40)     
                         #resolution
                         dpg.add_text("resolution scale:")
@@ -623,7 +617,8 @@ class NeRFGUI():
                                                             clamped=True,min_value=0.1,max_value=1.0,width=self.gui_args.control_window_width-40)
                         dpg.add_color_edit(tag="_BackColor",label="Background color", default_value=[255, 255, 255], no_alpha=True,
                                                          width=self.gui_args.control_window_width-40, callback=callback_backgroundColor)
-                    with dpg.collapsing_header(label="Parameter Monitor", default_open=True):
+                    with dpg.collapsing_header(tag="_para_panel",label="Parameter Monitor", default_open=True):
+                        dpg.bind_item_theme("_para_panel", theme_head)
                         with dpg.group(horizontal=True):
                             dpg.add_text("Current training step: ")
                             dpg.add_text("no data", tag="_cur_train_step")
@@ -652,7 +647,8 @@ class NeRFGUI():
                             dpg.add_plot_axis(dpg.mvYAxis, label="loss(db)", tag="y_axis")
                             # series belong to a y axis
                             dpg.add_line_series(self.data_step, self.data_loss, label="loss(db)", parent="y_axis",tag="_plot")
-                    with dpg.collapsing_header(label="Tips", default_open=True):
+                    with dpg.collapsing_header(tag="_tip_panel",label="Tips", default_open=True):
+                        dpg.bind_item_theme("_tip_panel", theme_head)
                         tip1="* Drag the left mouse button to change the camera perspective\n"
                         tip2="* The mouse wheel zooms the distance between the camera and the object\n"
                         tip3="* Drag the window to resize\n"
