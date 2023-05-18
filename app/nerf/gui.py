@@ -432,6 +432,15 @@ class TrainThread(threading.Thread):
             return "{:.6f}".format(self.render_infer_time)
         else:
             return "no data"
+    def get_Fps(self):
+        if self.train_infer_time==-1 and self.render_infer_time==-1:
+            return "no data"
+        elif self.render_infer_time==-1 :
+            return "{:.3f}".format(1.0/(self.train_infer_time))
+        elif self.train_infer_time==-1 or not self.istraining:
+            return "{:.3f}".format(1.0/(self.render_infer_time))
+        else:
+            return "{:.3f}".format(1.0/(self.render_infer_time+self.train_infer_time))
     def stop(self):
         self.istraining=False
         self.needUpdate=False
@@ -634,6 +643,9 @@ class NeRFGUI():
                             dpg.add_text("Infer time: ")
                             dpg.add_text("no data", tag="_log_infer_time")
                         with dpg.group(horizontal=True):
+                            dpg.add_text("FPS: ")
+                            dpg.add_text("no data", tag="_fps")
+                        with dpg.group(horizontal=True):
                             dpg.add_text("SPP: ")
                             dpg.add_text("1", tag="_log_spp")
                         with dpg.group(horizontal=True):
@@ -682,7 +694,7 @@ class NeRFGUI():
             dpg.set_item_height("_primary_window",self.H) 
             dpg.delete_item("_img")
             dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W, height=self.H)
-            #dpg.configure_item("_texture",width=self.W, height=self.H)
+            #dpg.configure_item("_texture",width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb)
     def setFrameColor(self):
         if self.train_thread and self.train_thread.trainer:
             self.train_thread.setBackColor(self.back_color)
@@ -700,6 +712,7 @@ class NeRFGUI():
                                                              self.gui_args.train_steps))
         dpg.set_value("_log_train_time","{}".format(self.train_thread.get_TrainInferTime()))
         dpg.set_value("_log_infer_time","{}".format(self.train_thread.get_RenderInferTime()))
+        dpg.set_value("_fps","{}".format(self.train_thread.get_Fps()))
         dpg.set_value("_samples","{}".format(self.train_thread.get_samples_nums()))
         dpg.set_value("_effective_samples","{}".format(self.train_thread.get_effective_samples_nums()))
         self.data_step,self.data_loss=self.train_thread.get_plotData()
