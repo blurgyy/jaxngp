@@ -307,7 +307,7 @@ class Gui_trainer():
 
             loss_db = data.linear_to_db(loss_log, maxval=1)
             self.data_step.append(self.log_step+self.cur_step)
-            temp_db=float(loss_db)
+            temp_db=float(loss_log)
             # temp_db=np.array(loss_db,dtype=np.float32)
             self.data_loss.append(temp_db)
             pbar.set_description_str(
@@ -736,15 +736,15 @@ class NeRFGUI():
                             dpg.add_text("number of rays: ")
                             dpg.add_text("no data", tag="_rays_num")
                         # create plot
-                        with dpg.plot(label="Loss(db)", height=self.gui_args.control_window_width-40, width=self.gui_args.control_window_width-40):
+                        with dpg.plot(label="Loss", height=self.gui_args.control_window_width-40, width=self.gui_args.control_window_width-40):
                             # optionally create legend
                             dpg.add_plot_legend()
 
                             # REQUIRED: create x and y axes
                             dpg.add_plot_axis(dpg.mvXAxis, label="step",tag="x_axis")
-                            dpg.add_plot_axis(dpg.mvYAxis, label="loss(db)", tag="y_axis")
+                            dpg.add_plot_axis(dpg.mvYAxis, label="loss", tag="y_axis")
                             # series belong to a y axis
-                            dpg.add_line_series(self.data_step, self.data_loss, label="loss(db)", parent="y_axis",tag="_plot")
+                            dpg.add_line_series(self.data_step, self.data_loss, label="loss", parent="y_axis",tag="_plot")
                     with dpg.collapsing_header(tag="_tip_panel",label="Tips", default_open=True):
                         dpg.bind_item_theme("_tip_panel", theme_head)
                         tip1="* Drag the left mouse button to change the camera perspective\n"
