@@ -36,11 +36,7 @@ CmdGui = Annotated[
 MainArgsType = CmdTrain | CmdTest | CmdGui
 
 
-def main(args: MainArgsType):
-    import os
-    os.environ['CUDA_VISIBLE_DEVICES']='1'
-    from utils import common
-    
+def main(args: MainArgsType):    
     logger = common.setup_logging("nerf")
     KEY = common.set_deterministic(args.common.seed)
 

@@ -233,9 +233,9 @@ class Gui_trainer():
             #state=self.state.replace(render=self.state.render.replace(random_bg=False)),
             camera_override=camera
         )
-        bg=self.get_npf32_image(bg,W=_W,H=_H)
-        rgb=self.get_npf32_image(rgb,W=_W,H=_H)
-        depth=self.get_npf32_image(depth,W=_W,H=_H)
+        bg=self.get_npf32_image(bg,W=self.gui_args.W,H=self.gui_args.H)
+        rgb=self.get_npf32_image(rgb,W=self.gui_args.W,H=self.gui_args.H)
+        depth=self.get_npf32_image(depth,W=self.gui_args.W,H=self.gui_args.H)
         return (bg, rgb, depth)
 
     def train_steps(self,steps:int)->Tuple[np.array,np.array,np.array]:
@@ -724,7 +724,7 @@ class NeRFGUI():
                 self.adapt_size()
                 self.setFrameColor()
                 if self.train_thread:
-                    self.train_thread.change_WH(self.texture_W,self.texture_H)
+                    self.train_thread.change_WH(self.W,self.H)
                     self.change_scale()
                     self.update_frame()
                     self.update_panel()
