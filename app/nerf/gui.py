@@ -594,21 +594,18 @@ class NeRFGUI():
             dy=app_data[2]
             if self.dx!=dx or self.dy!=dy:
                 self.dx,self.dy=dx,dy
-                self.logger.info("Drag app_data:{}".format(app_data))
                 self.logger.info("dx:{},dy:{}".format(dx,dy))
                 self.cameraPose.move(dx,dy)
                 if self.train_thread:
                     self.train_thread.set_camera_pose(self.cameraPose.pose)
                     self.train_thread.test()
               
-        def callback_mouseDown(sender,app_data):
-            self.logger.info("Down app_data:{}".format(app_data))
+
         def callback_mouseRelease(sender,app_data):
             if not dpg.is_item_focused("_primary_window"):
                 return 
     
             self.dx,self.dy=0.0,0.0
-            self.logger.info("Release app_data:{}".format(app_data))
             
         def callback_mouseWheel(sender,app_data):
             if not dpg.is_item_focused("_primary_window"):
@@ -757,7 +754,6 @@ class NeRFGUI():
         #drag       
         with dpg.handler_registry():
             dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseDrag)
-            dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseDown)
             dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseRelease)
             dpg.add_mouse_wheel_handler(callback=callback_mouseWheel)
         dpg.setup_dearpygui()
