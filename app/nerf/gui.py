@@ -728,9 +728,6 @@ class NeRFGUI():
                     self.change_scale()
                     self.update_frame()
                     self.update_panel()
-                self.logger.info("self. W:{},H:{}".format(self.W,self.H))
-                self.logger.info("self.framebuff W:{},H:{}".format(self.framebuff.shape[1],self.framebuff.shape[0]))
-                self.logger.info("texture W:{},H:{}".format(dpg.get_item_width("_texture"),dpg.get_item_height("_texture")))
                 dpg.set_value("_texture", self.framebuff)
                 dpg.render_dearpygui_frame()
                 
