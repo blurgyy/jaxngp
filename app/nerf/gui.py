@@ -623,20 +623,21 @@ class NeRFGUI():
             self.data_loss.clear() 
             self.update_plot()        
                   
-        self.View_W,self.View_H=self.W+self.gui_args.control_window_width,self.H+12
+        self.View_W,self.View_H=self.W+self.gui_args.control_window_width,self.H
         dpg.create_viewport(title='NeRF', width=self.View_W, height=self.View_H,
                             min_width=250+self.gui_args.control_window_width,min_height=250,x_pos=0, y_pos=0)
-        with dpg.window(tag="_main_window",pos=[0, 0],width=self.W+self.gui_args.control_window_width, height=self.H,
-                no_title_bar=True,autosize=True, no_collapse=True, no_resize=False, no_close=True, no_move=True,no_scrollbar=True) as main_window:
+        with dpg.window(tag="_main_window",
+               ) as main_window:
+            dpg.set_primary_window("_main_window", True)
             with dpg.group(horizontal=True):
                 #texture
                 with dpg.group(tag="_render_texture"):
                     with dpg.texture_registry(show=False):
                         dpg.add_raw_texture(width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb, tag="_texture")
-                    with dpg.child_window(tag="_primary_window", width=self.W, height=self.H,no_scrollbar=True):
+                    with dpg.child_window(tag="_primary_window", width=self.W,no_scrollbar=True):
                         dpg.add_image("_texture",tag="_img",parent="_primary_window")
                 #control panel
-                with dpg.child_window(tag="_control_window",height=self.H,autosize_x=True, autosize_y=True):
+                with dpg.child_window(tag="_control_window"):
                     with dpg.theme() as theme_head:
                         with dpg.theme_component(dpg.mvAll):
                             dpg.add_theme_color(dpg.mvThemeCol_Header, (0,62,89))
@@ -721,8 +722,8 @@ class NeRFGUI():
             self.View_H=dpg.get_viewport_height()
             self.View_W=dpg.get_viewport_width()
             self.H,self.W=self.View_H,self.View_W-self.gui_args.control_window_width
-            dpg.set_item_width("_main_window",self.View_W)
-            dpg.set_item_height("_main_window",self.View_H)
+            # dpg.set_item_width("_main_window",self.View_W)
+            # dpg.set_item_height("_main_window",self.View_H)
             dpg.set_item_width("_primary_window",self.W)
             dpg.set_item_height("_primary_window",self.H) 
             dpg.delete_item("_img")
