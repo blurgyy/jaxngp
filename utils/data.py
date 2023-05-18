@@ -1,6 +1,5 @@
 import collections
 from concurrent.futures import ThreadPoolExecutor
-import dataclasses
 import functools
 import json
 from pathlib import Path
@@ -172,7 +171,7 @@ def write_transforms_json(
     R[-1, -1] = 1
 
     for i, f in enumerate(frames):
-        frames[i] = dataclasses.replace(f, transform_matrix=np.matmul(R, f.transform_matrix_numpy).tolist())
+        frames[i] = f.replace(transform_matrix=np.matmul(R, f.transform_matrix_numpy).tolist())
 
     # find a central point they are all looking at
     totw = 0.0
@@ -192,7 +191,7 @@ def write_transforms_json(
     for i, f in enumerate(frames):
         new_m = f.transform_matrix_numpy
         new_m[0:3,3] -= totp
-        frames[i] = dataclasses.replace(f, transform_matrix=new_m.tolist())
+        frames[i] = f.replace(transform_matrix=new_m.tolist())
 
     avglen = 0.
     for f in frames:
@@ -203,7 +202,7 @@ def write_transforms_json(
         # scale to "nerf sized"
         new_m = f.transform_matrix_numpy
         new_m[0:3, 3] *= 4.0 / avglen
-        frames[i] = dataclasses.replace(f, transform_matrix=new_m.tolist())
+        frames[i] = f.replace(transform_matrix=new_m.tolist())
 
     print("scene bound (i.e. half width of scene's aabb):", bound)
     all_transform_json = TransformJsonNGP(
@@ -216,14 +215,13 @@ def write_transforms_json(
         h=camera.H,
         aabb_scale=bound,
     )
-    all_transform_json: TransformJsonNGP = dataclasses.replace(
-        all_transform_json,
+    all_transform_json: TransformJsonNGP = all_transform_json.replace(
         scale=camera_scale,
         bg=bg,
     ).scale_camera_positions()
-    train_tj = dataclasses.replace(all_transform_json, frames=frames[:len(frames) // 2])
-    val_tj = dataclasses.replace(all_transform_json, frames=frames[len(frames) // 2:len(frames) // 2 + len(frames) // 4])
-    test_tj = dataclasses.replace(all_transform_json, frames=frames[len(frames) // 2 + len(frames) // 4:])
+    train_tj = all_transform_json.replace(frames=frames[:len(frames) // 2])
+    val_tj = all_transform_json.replace(frames=frames[len(frames) // 2:len(frames) // 2 + len(frames) // 4])
+    test_tj = all_transform_json.replace(frames=frames[len(frames) // 2 + len(frames) // 4:])
     train_tj.save(dataset_root_dir.joinpath("transforms_train.json"))
     val_tj.save(dataset_root_dir.joinpath("transforms_val.json"))
     test_tj.save(dataset_root_dir.joinpath("transforms_test.json"))
@@ -592,19 +590,17 @@ def load_scene(
     srcs = list(map(Path, srcs))
 
     transforms = merge_transforms(map(load_transform_json_recursive, srcs))
-    transforms = dataclasses.replace(
-        transforms,
+    transforms = transforms.replace(
         frames=list(filter(
             lambda f: f.file_path is not None,
             map(
-                lambda f: dataclasses.replace(f, file_path=try_image_extensions(f.file_path)),
+                lambda f: f.replace(file_path=try_image_extensions(f.file_path)),
                 transforms.frames,
             ),
         ))
     )
     if sort_frames:
-        transforms = dataclasses.replace(
-            transforms,
+        transforms = transforms.replace(
             frames=natsorted(transforms.frames, key=lambda f: f.file_path),
         )
 

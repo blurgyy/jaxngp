@@ -3,7 +3,7 @@ import functools
 import json
 import math
 from pathlib import Path
-from typing import Callable, List, Literal, Tuple
+from typing import Callable, List, Literal, Tuple, Type
 
 from PIL import Image
 import chex
@@ -60,6 +60,23 @@ def empty_impl(clz):
         return cls(**kwargs)
 
     setattr(clz, "empty", classmethod(empty_fn))
+    return clz
+
+
+def replace_impl(clz):
+    if "__dataclass_fields__" not in clz.__dict__:
+        raise TypeError("class `{}` is not a dataclass".format(clz.__name__))
+
+    fields = clz.__dict__["__dataclass_fields__"]
+
+    def replace_fn(self, /, **kwargs) -> Type[clz]:
+        for k in kwargs.keys():
+            if k not in fields:
+                raise RuntimeError("class `{}` does not have a field with name '{}'".format(clz.__name__, k))
+        ret = dataclasses.replace(self, **kwargs)
+        return ret
+
+    setattr(clz, "replace", replace_fn)
     return clz
 
 
@@ -244,6 +261,7 @@ class RenderingOptions:
 
 
 @empty_impl
+@replace_impl
 @pydantic.dataclasses.dataclass(frozen=True)
 class CameraOverrideOptions:
     width: int | None=None
@@ -293,6 +311,7 @@ class CameraOverrideOptions:
 
 
 @empty_impl
+@replace_impl
 @pydantic.dataclasses.dataclass(frozen=True)
 class SceneOptions:
     # scale both the scene's camera positions and bounding box with this factor
@@ -324,6 +343,7 @@ class ImageMetadata:
     rgbs: jax.Array  # float,[H*W, 3]: normalized rgb values in range [0, 1]
 
 
+@replace_impl
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonFrame:
     file_path: Path | None
@@ -346,12 +366,12 @@ class TransformJsonFrame:
     def scale_camera_positions(self, scale: float) -> "TransformJsonFrame":
         new_transform_matrix = self.transform_matrix_numpy
         new_transform_matrix[:3, 3] *= scale
-        return dataclasses.replace(
-            self,
+        return self.replace(
             transform_matrix=new_transform_matrix.tolist(),
         )
 
 
+@replace_impl
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonBase:
     frames: Tuple[TransformJsonFrame, ...]
@@ -369,8 +389,7 @@ class TransformJsonBase:
     bg: bool=dataclasses.field(default_factory=lambda: False, kw_only=True)
 
     def scale_camera_positions(self) -> "TransformJsonBase":
-        return dataclasses.replace(
-            self,
+        return self.replace(
             frames=tuple(map(lambda f: f.scale_camera_positions(self.scale), self.frames)),
         )
 
@@ -387,18 +406,13 @@ class TransformJsonBase:
                 if field != "frames"
             )
         )
-        return dataclasses.replace(
-            self,
-            frames=self.frames + rhs.frames,
-        )
+        return self.replace(frames=self.frames + rhs.frames)
 
     def make_absolute(self, parent_dir: Path | str) -> "TransformJsonBase":
         parent_dir = Path(parent_dir)
-        return dataclasses.replace(
-            self,
+        return self.replace(
             frames=tuple(map(
-                lambda f: dataclasses.replace(
-                    f,
+                lambda f: f.replace(
                     file_path=(
                         f.file_path
                         if f.file_path.is_absolute()
@@ -426,11 +440,13 @@ class TransformJsonBase:
         return cls.from_json(path.read_text())
 
 
+@replace_impl
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonNeRFSynthetic(TransformJsonBase):
     camera_angle_x: float
 
 
+@replace_impl
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonNGP(TransformJsonBase):
     fl_x: float
