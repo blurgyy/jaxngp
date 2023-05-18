@@ -637,7 +637,7 @@ class NeRFGUI():
                     with dpg.child_window(tag="_primary_window", width=self.W,no_scrollbar=True):
                         dpg.add_image("_texture",tag="_img",parent="_primary_window")
                 #control panel
-                with dpg.child_window(tag="_control_window"):
+                with dpg.child_window(tag="_control_window",no_scrollbar=True):
                     with dpg.theme() as theme_head:
                         with dpg.theme_component(dpg.mvAll):
                             dpg.add_theme_color(dpg.mvThemeCol_Header, (0,62,89))
