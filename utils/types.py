@@ -658,8 +658,8 @@ class NeRFState(TrainState):
         n_grids = aligned_indices.shape[0]
 
         decay = .95
-        cas_density_grid = self.ogrid.density[cas_slice] * decay
         cas_occ_mask = self.ogrid.occ_mask[cas_slice]
+        cas_density_grid = self.ogrid.density[cas_slice].at[aligned_indices].set(self.ogrid.density[cas_slice][aligned_indices] * decay)
 
         if update_all:
             # During the first 256 training steps, we sample 𝑀 = 𝐾 · 128^{3} cells uniformly without
