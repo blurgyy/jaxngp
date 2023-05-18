@@ -136,7 +136,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             srcs=args.frames_val,
             scene_options=args.scene,
         )
-        assert scene_train.meta == scene_val.meta
+        assert scene_train.meta.replace(frames=None) == scene_val.meta.replace(frames=None)
     else:
         logger.warn("got empty validation set, this run will not do validation")
 
