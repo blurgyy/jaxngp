@@ -59,7 +59,7 @@ class CameraPose():
     def pose(self):
         return jnp.asarray(self.pose_spherical(self.theta,self.phi,self.radius))
     def move(self,dx,dy):
-        velocity=0.01
+        velocity=0.08
         self.theta+=velocity*dx
         self.phi-=velocity*dy
         return self.pose
@@ -378,6 +378,7 @@ class TrainThread(threading.Thread):
         
         self.istraining=True
         self.needUpdate=True
+        self.istesting=False
         self.step=step
         self.scale=gui_args.resolution_scale
         
@@ -407,19 +408,22 @@ class TrainThread(threading.Thread):
         self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,back_color=self.back_color)
         try:
             while self.needUpdate:
-                while self.istraining and self.trainer and self.trainer.cur_step<self.gui_args.max_step:
+                if self.istraining and self.trainer and self.trainer.cur_step<self.gui_args.max_step:
                     start_time=time.time()
                     self.trainer.train_steps(self.step)
                     end_time=time.time()
                     self.train_infer_time=end_time-start_time
-                    start_time=time.time()
+                    self.test()
+                    # start_time=time.time()
+                    # _,self.framebuff,_=self.trainer.render_frame(self.scale,self.H,self.W)
+                    # end_time=time.time()
+                    # self.render_infer_time=end_time-start_time
+                if self.istesting:
+                    start_time=time.time()    
                     _,self.framebuff,_=self.trainer.render_frame(self.scale,self.H,self.W)
                     end_time=time.time()
                     self.render_infer_time=end_time-start_time
-                start_time=time.time()    
-                _,self.framebuff,_=self.trainer.render_frame(self.scale,self.H,self.W)
-                end_time=time.time()
-                self.render_infer_time=end_time-start_time
+                    self.istesting=False
         except Exception as e:
             self.logger.error(e)
     def get_TrainInferTime(self):
@@ -467,7 +471,8 @@ class TrainThread(threading.Thread):
     def get_state(self):
         return self.trainer.get_state()
     def set_camera_pose(self,camera_pose):
-        self.trainer.camera_pose=camera_pose
+        if self.trainer:
+            self.trainer.camera_pose=camera_pose
     def change_WH(self,W,H):
         self.W=W
         self.H=H
@@ -493,15 +498,17 @@ class TrainThread(threading.Thread):
             return "{:.3f}".format(self.get_state().batch_config.running_mean_samples_per_ray)
         else :
             return "no data"
+    def test(self):
+        self.istesting=True
 @dataclass
 class NeRFGUI():
     
     framebuff:Any= field(init=False)
     H:int= field(init=False)
     W:int= field(init=False)
-    isTest:bool=False
+
     need_train:bool=False
-    need_update:bool=False
+    istesting:bool=False
     train_thread:TrainThread= field(init=False)
     
     train_args: NeRFTrainingArgs= field(init=False)
@@ -518,6 +525,11 @@ class NeRFGUI():
     
     texture_H:int= field(init=False)
     texture_W:int= field(init=False)
+    View_H:int= field(init=False)
+    View_W:int= field(init=False)
+    dx:float=0.0
+    dy:float=0.0
+
     def __post_init__(self):
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
 
@@ -532,16 +544,30 @@ class NeRFGUI():
         def callback_backgroundColor():
             self.back_color= color_int2float(dpg.get_value("_BackColor"))
             self.logger.info("get color:{}".format(color_int2float(dpg.get_value("_BackColor"))))
+            self.setFrameColor()
         def callback_mouseDrag(sender,app_data):
             if not dpg.is_item_focused("_primary_window"):
                 return 
             dx=app_data[1]
             dy=app_data[2]
+            if self.dx!=dx or self.dy!=dy:
+                self.dx,self.dy=dx,dy
+                self.logger.info("Drag app_data:{}".format(app_data))
+                self.logger.info("dx:{},dy:{}".format(dx,dy))
+                self.cameraPose.move(dx,dy)
+                if self.train_thread:
+                    self.train_thread.set_camera_pose(self.cameraPose.pose)
+                    self.train_thread.test()
+              
+        def callback_mouseDown(sender,app_data):
+            self.logger.info("Down app_data:{}".format(app_data))
+        def callback_mouseRelease(sender,app_data):
+            if not dpg.is_item_focused("_primary_window"):
+                return 
+    
+            self.dx,self.dy=0.0,0.0
+            self.logger.info("Release app_data:{}".format(app_data))
             
-            self.logger.info("dx:{},dy:{}".format(dx,dy))
-            self.cameraPose.move(dx,dy)
-            if self.train_thread:
-                self.train_thread.set_camera_pose(self.cameraPose.pose)
         def callback_mouseWheel(sender,app_data):
             if not dpg.is_item_focused("_primary_window"):
                 return 
@@ -550,9 +576,11 @@ class NeRFGUI():
             self.logger.info("self.cameraPose.radius:{}".format(self.cameraPose.radius))
             if self.train_thread:
                 self.train_thread.set_camera_pose(self.cameraPose.pose)
+                self.train_thread.test()
         def callback_train(sender, app_data):
             if self.need_train:
                 self.need_train = False
+                self.istesting=True
                 if self.train_thread:
                     self.train_thread.istraining=False
                 #self.train_thread.stop()
@@ -595,8 +623,8 @@ class NeRFGUI():
             self.data_loss.clear() 
             self.update_plot()        
                   
-                  
-        dpg.create_viewport(title='NeRF', width=self.W+self.gui_args.control_window_width, height=self.H+12,
+        self.View_W,self.View_H=self.W+self.gui_args.control_window_width,self.H+12
+        dpg.create_viewport(title='NeRF', width=self.View_W, height=self.View_H,
                             min_width=250+self.gui_args.control_window_width,min_height=250,x_pos=0, y_pos=0)
         with dpg.window(tag="_main_window",pos=[0, 0],width=self.W+self.gui_args.control_window_width, height=self.H,
                 no_title_bar=True,autosize=True, no_collapse=True, no_resize=False, no_close=True, no_move=True,no_scrollbar=True) as main_window:
@@ -672,9 +700,12 @@ class NeRFGUI():
                         dpg.add_text(tip1,wrap=self.gui_args.control_window_width-40)
                         dpg.add_text(tip2,wrap=self.gui_args.control_window_width-40)
                         dpg.add_text(tip3,wrap=self.gui_args.control_window_width-40)
+        
         #drag       
         with dpg.handler_registry():
             dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseDrag)
+            dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseDown)
+            dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseRelease)
             dpg.add_mouse_wheel_handler(callback=callback_mouseWheel)
         dpg.setup_dearpygui()
         dpg.show_viewport()
@@ -682,22 +713,27 @@ class NeRFGUI():
         if dpg.get_value(self.scale_slider)!=self.scale:
             self.scale=dpg.get_value(self.scale_slider)
             self.train_thread.set_scale(self.scale)
+            self.train_thread.test()
     def update_frame(self):
         self.framebuff=self.train_thread.framebuff
     def adapt_size(self):
-            View_H=dpg.get_viewport_height()
-            View_W=dpg.get_viewport_width()
-            self.H,self.W=View_H,View_W-self.gui_args.control_window_width
-            dpg.set_item_width("_main_window",View_W)
-            dpg.set_item_height("_main_window",View_H)
+        if self.View_H!=dpg.get_viewport_height() or self.View_W!=dpg.get_viewport_width():
+            self.View_H=dpg.get_viewport_height()
+            self.View_W=dpg.get_viewport_width()
+            self.H,self.W=self.View_H,self.View_W-self.gui_args.control_window_width
+            dpg.set_item_width("_main_window",self.View_W)
+            dpg.set_item_height("_main_window",self.View_H)
             dpg.set_item_width("_primary_window",self.W)
             dpg.set_item_height("_primary_window",self.H) 
             dpg.delete_item("_img")
             dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W, height=self.H)
+            if self.train_thread:
+                self.train_thread.test()
             #dpg.configure_item("_texture",width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb)
     def setFrameColor(self):
         if self.train_thread and self.train_thread.trainer:
             self.train_thread.setBackColor(self.back_color)
+            self.train_thread.test()
         else:              
             img=Image.new("RGB",(self.texture_W,self.texture_H),color_float2int(self.back_color))
             self.framebuff=np.array(img,dtype=np.float32)/255.
@@ -722,10 +758,12 @@ class NeRFGUI():
         try:       
             while dpg.is_dearpygui_running():
                 self.adapt_size()
-                self.setFrameColor()
+                #self.setFrameColor()
                 if self.train_thread:
                     self.train_thread.change_WH(self.W,self.H)
                     self.change_scale()
+                    # if self.istesting:
+                    #     self.train_thread.test()
                     self.update_frame()
                     self.update_panel()
                 dpg.set_value("_texture", self.framebuff)
