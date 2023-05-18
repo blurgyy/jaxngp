@@ -13,6 +13,7 @@ import imageio
 import jax
 import jax.numpy as jnp
 import jax.random as jran
+from matplotlib import pyplot as plt
 from natsort import natsorted
 import numpy as np
 
@@ -45,9 +46,8 @@ def f32_to_u8(img: jax.Array) -> jax.Array:
     return jnp.clip(jnp.round(img * 255), 0, 255).astype(jnp.uint8)
 
 
-@jax.jit
-def mono_to_rgb(img: jax.Array) -> jax.Array:
-    return jnp.tile(img[..., None], (1, 1, 3))
+def mono_to_rgb(img: jax.Array, cm: Literal["inferno", "jet", "turbo"]="inferno") -> jax.Array:
+    return plt.get_cmap(cm)(img)
 
 
 def video_to_images(
@@ -326,9 +326,13 @@ def side_by_side(
     chex.assert_scalar_non_negative(vertical)
     chex.assert_type([lhs, rhs], jnp.uint8)
     if len(lhs.shape) == 2 or lhs.shape[-1] == 1:
-        lhs = mono_to_rgb(lhs)
+        lhs = jnp.tile(lhs[..., None], (1, 1, 3))
     if len(rhs.shape) == 2 or rhs.shape[-1] == 1:
-        rhs = mono_to_rgb(rhs)
+        rhs = jnp.tile(rhs[..., None], (1, 1, 3))
+    if rhs.shape[-1] == 3:
+        rhs = jnp.concatenate([rhs, 255 * jnp.ones_like(rhs[..., -1:], dtype=jnp.uint8)], axis=-1)
+    if lhs.shape[-1] == 3:
+        lhs = jnp.concatenate([lhs, 255 * jnp.ones_like(lhs[..., -1:], dtype=jnp.uint8)], axis=-1)
     if vertical:
         chex.assert_axis_dimension(lhs, 1, W)
         chex.assert_axis_dimension(rhs, 1, W)
@@ -337,8 +341,8 @@ def side_by_side(
         chex.assert_axis_dimension(rhs, 0, H)
     concat_axis = 0 if vertical else 1
     if gap > 0:
-        gap_color = jnp.asarray(gap_color, dtype=jnp.uint8)
-        gap = jnp.broadcast_to(gap_color, (gap, W, 3) if vertical else (H, gap, 3))
+        gap_color = jnp.asarray(gap_color + (0xff,), dtype=jnp.uint8)
+        gap = jnp.broadcast_to(gap_color, (gap, W, 4) if vertical else (H, gap, 4))
         return jnp.concatenate([lhs, gap, rhs], axis=concat_axis)
     else:
         return jnp.concatenate([lhs, rhs], axis=concat_axis)
@@ -351,14 +355,14 @@ def add_border(
     color: RGBColorU8=(0xfe, 0xdc, 0xba)
 ) -> jax.Array:
     chex.assert_rank(img, 3)
-    chex.assert_axis_dimension(img, -1, 3)
+    chex.assert_axis_dimension(img, -1, 4)
     chex.assert_scalar_non_negative(width)
     chex.assert_type(img, jnp.uint8)
-    color = jnp.asarray(color, dtype=jnp.uint8)
+    color = jnp.asarray(color + (0xff,), dtype=jnp.uint8)
     H, W = img.shape[:2]
-    leftright = jnp.broadcast_to(color, (H, width, 3))
+    leftright = jnp.broadcast_to(color, (H, width, 4))
     img = jnp.concatenate([leftright, img, leftright], axis=1)
-    topbottom = jnp.broadcast_to(color, (width, W+2*width, 3))
+    topbottom = jnp.broadcast_to(color, (width, W+2*width, 4))
     img = jnp.concatenate([topbottom, img, topbottom], axis=0)
     return img
 
@@ -420,28 +424,27 @@ def alternate_color(KEY: jran.KeyArray, bg: RGBColor, n_pixels: int, dtype) -> j
     return jran.choice(key_choice, alternate_options, shape=(n_pixels,))
 
 
-def blend_rgba_image_array(imgarr, bg: RGBColor):
+def blend_rgba_image_array(imgarr, bg: jax.Array):
     """
     Blend the given background color according to the given alpha channel from `imgarr`.
     WARN: this function SHOULD NOT be used for blending background colors into volume-rendered
           pixels because the colors of volume-rendered pixels already have the alpha channel
           factored-in.  To blend background for volume-rendered pixels, directly add the scaled
           background color.
-          E.g.: `final_color = ray_accumulated_color + (1 - ray_opacity) * bg_color`
+          E.g.: `final_color = ray_accumulated_color + (1 - ray_opacity) * bg`
     """
     if isinstance(imgarr, Image.Image):
         imgarr = np.asarray(imgarr)
     chex.assert_shape(imgarr, [..., 4])
     chex.assert_type(imgarr, bg.dtype)
     rgbs, alpha = imgarr[..., :-1], imgarr[..., -1:]
-    bg_color = jnp.asarray(bg)
-    bg_color = jnp.broadcast_to(bg_color, rgbs.shape)
+    bg = jnp.broadcast_to(bg, rgbs.shape)
     if imgarr.dtype == jnp.uint8:
         rgbs, alpha = rgbs.astype(float) / 255, alpha.astype(float) / 255
-        rgbs = rgbs * alpha + bg_color * (1 - alpha)
+        rgbs = rgbs * alpha + bg * (1 - alpha)
         rgbs = jnp.clip(jnp.round(rgbs * 255), 0, 255).astype(jnp.uint8)
     else:
-        rgbs = rgbs * alpha + bg_color * (1 - alpha)
+        rgbs = rgbs * alpha + bg * (1 - alpha)
     return rgbs
 
 

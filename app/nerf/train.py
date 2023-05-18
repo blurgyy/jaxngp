@@ -289,11 +289,11 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
                     transform_cw=val_transform,
                     state=state_eval,
                 )
-                rendered_images.append(RenderedImage(
-                    bg=data.to_cpu(bg),
-                    rgb=data.to_cpu(rgb),
-                    depth=data.to_cpu(depth),
-                ))
+                rendered_images.append(data.to_cpu(RenderedImage(
+                    bg=bg,
+                    rgb=rgb,
+                    depth=common.compose(data.mono_to_rgb, data.f32_to_u8)(depth),
+                )))
             val_end_time = time.time()
             logger.write_scalar(
                 tag="validation/↓rendering time (ms) per image",

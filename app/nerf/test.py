@@ -135,7 +135,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         logger.debug("saving predicted depths as a video at '{}'".format(dest_depth_video))
         data.write_video(
             save_dest.joinpath("depth.mp4"),
-            map(lambda img: img.depth, rendered_images),
+            map(lambda img: common.compose(data.mono_to_rgb, data.f32_to_u8)(img.depth), rendered_images),
         )
 
     if "image" in args.save_as:
@@ -147,5 +147,13 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
 
         logger.debug("saving as images")
         for save_i, img in enumerate(common.tqdm(rendered_images, desc="saving images")):
-            Image.fromarray(np.asarray(img.rgb)).save(dest_rgb.joinpath("{:03d}.png".format(save_i)))
-            Image.fromarray(np.asarray(img.depth)).save(dest_depth.joinpath("{:03d}.png".format(save_i)))
+            common.compose(
+                np.asarray,
+                Image.fromarray
+            )(img.rgb).save(dest_rgb.joinpath("{:03d}.png".format(save_i)))
+            common.compose(
+                data.mono_to_rgb,
+                data.f32_to_u8,
+                np.asarray,
+                Image.fromarray
+            )(img.depth).save(dest_depth.joinpath("{:03d}.png".format(save_i)))
