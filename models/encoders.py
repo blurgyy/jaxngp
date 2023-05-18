@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 import chex
 import flax.linen as nn
@@ -167,26 +168,23 @@ class HashGridEncoder(Encoder):
         # [L, ..., 2**dim]
         return jnp.prod(widths, axis=-1)
 
-
     @staticmethod
-    @jit_jaxfn_with(static_argnames=["dim", "res", "T"])
+    @jit_jaxfn_with(static_argnames=["dim", "res"])
     @vmap_jaxfn_with(in_axes=(0, None, None, None))
-    def onebyone(pos: jax.Array, dim: int, res: int, T: int):
+    def onebyone(pos: jax.Array, dim: int, res: int, _: Any):
         """
         Inputs:
-            res int: resolution of the hierarchy in question
-            pos [..., dim]: spatial positions of the query points
+            pos `[..., dim]`: spatial positions of the query points
+            dim `int`: dimension of input data
+            res `int`: resolution of the hierarchy in question
 
         Returns:
             indices [..., 2**dim]: indices of the grid cell's vertices in the hash table
             pos_scaled [..., dim]: query points' coordinates scaled to each hierarchies (float)
             vert_pos [..., 2**dim, dim]: positions of the grid cell's vertices in the input space
         """
-        chex.assert_type([pos, dim, res, T], [float, int, int, int])
+        chex.assert_type(pos, float)
         chex.assert_axis_dimension(pos, -1, dim)
-        chex.assert_scalar(dim)
-        chex.assert_scalar(res)
-        chex.assert_scalar(T)
         # [..., dim]
         pos_scaled = pos * res
         # [..., dim]
@@ -209,18 +207,16 @@ class HashGridEncoder(Encoder):
     def hashing(pos: jax.Array, dim: int, res: int, T: int):
         """
         Inputs:
-            res int: resolution of the hierarchy in question
             pos [..., dim]: spatial positions of the query points
+            dim `int`: dimension of input data
+            res int: resolution of the hierarchy in question
 
         Returns:
             indices [..., 2**dim]: indices of the grid cell's vertices in the hash table
             vert_pos [..., 2**dim, dim]: positions of the grid cell's vertices in the input space
         """
-        chex.assert_type([pos, dim, res, T], [float, int, int, int])
+        chex.assert_type(pos, float)
         chex.assert_axis_dimension(pos, -1, dim)
-        chex.assert_scalar(dim)
-        chex.assert_scalar(res)
-        chex.assert_scalar(T)
         # [..., dim]
         pos_scaled = pos * res
         # [..., dim]
