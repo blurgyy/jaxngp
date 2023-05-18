@@ -506,10 +506,14 @@ class NeRFGUI():
     scale:float=1.0
     data_step:List[int]=field(default_factory=list,init=False)
     data_loss:List[float]=field(default_factory=list,init=False)
+    
+    texture_H:int= field(init=False)
+    texture_W:int= field(init=False)
     def __post_init__(self):
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
 
         self.H,self.W=self.gui_args.H,self.gui_args.W
+        self.texture_H,self.texture_W=self.H,self.W
         self.framebuff=np.ones(shape=(self.W,self.H,3),dtype=np.float32)#default background is white
         dpg.create_context()
         self.ItemsLayout()
@@ -577,13 +581,14 @@ class NeRFGUI():
                 self.train_thread.stop()
                 dpg.configure_item("_button_train", label="start")
                 self.train_thread=None
-            self.framebuff=np.ones(shape=(self.H,self.W,3),dtype=np.float32) 
+            self.framebuff=np.ones(shape=(self.texture_H,self.texture_W,3),dtype=np.float32) 
             self.data_step.clear()
             self.data_loss.clear() 
             self.update_plot()        
                   
                   
-        dpg.create_viewport(title='NeRF', width=self.W+self.gui_args.control_window_width, height=self.H+12,x_pos=0, y_pos=0)
+        dpg.create_viewport(title='NeRF', width=self.W+self.gui_args.control_window_width, height=self.H+12,
+                            min_width=250+self.gui_args.control_window_width,min_height=250,x_pos=0, y_pos=0)
         with dpg.window(tag="_main_window",pos=[0, 0],width=self.W+self.gui_args.control_window_width, height=self.H,
                 no_title_bar=True,autosize=True, no_collapse=True, no_resize=False, no_close=True, no_move=True,no_scrollbar=True) as main_window:
             with dpg.group(horizontal=True):
@@ -675,14 +680,14 @@ class NeRFGUI():
             dpg.set_item_height("_main_window",View_H)
             dpg.set_item_width("_primary_window",self.W)
             dpg.set_item_height("_primary_window",self.H) 
-            # dpg.delete_item("_img")
-            # dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W, height=self.H)
-            dpg.configure_item("_texture",width=self.W, height=self.H)
+            dpg.delete_item("_img")
+            dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W, height=self.H)
+            #dpg.configure_item("_texture",width=self.W, height=self.H)
     def setFrameColor(self):
         if self.train_thread and self.train_thread.trainer:
             self.train_thread.setBackColor(self.back_color)
         else:              
-            img=Image.new("RGB",(self.W,self.H),color_float2int(self.back_color))
+            img=Image.new("RGB",(self.texture_W,self.texture_H),color_float2int(self.back_color))
             self.framebuff=np.array(img,dtype=np.float32)/255.
         dpg.set_value("_texture", self.framebuff)
     def update_plot(self):
@@ -706,14 +711,10 @@ class NeRFGUI():
                 self.adapt_size()
                 self.setFrameColor()
                 if self.train_thread:
-                    self.train_thread.change_WH(self.W,self.H)
+                    self.train_thread.change_WH(self.texture_W,self.texture_H)
                     self.change_scale()
                     self.update_frame()
                     self.update_panel()
-                
-                img=Image.fromarray(np.array(self.framebuff*255,dtype=np.uint8))
-                img=img.resize(size=(self.W,self.H),resample=Image.BILINEAR)
-                self.framebuff=np.array(img,dtype=np.float32)/255.
                 self.logger.info("self. W:{},H:{}".format(self.W,self.H))
                 self.logger.info("self.framebuff W:{},H:{}".format(self.framebuff.shape[1],self.framebuff.shape[0]))
                 self.logger.info("texture W:{},H:{}".format(dpg.get_item_width("_texture"),dpg.get_item_height("_texture")))
