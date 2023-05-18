@@ -97,6 +97,10 @@ class Gui_trainer():
     data_step:List[int]=field(default_factory=list,init=False)
     data_loss:List[float]=field(default_factory=list,init=False)
     
+    compacted_batch:int=-1
+    not_compacted_batch:int=-1
+    rays_num:int=-1
+    
     def __post_init__(self):
         self.data_step=[]
         self.data_loss=[]
@@ -336,7 +340,9 @@ class Gui_trainer():
             )
             if state.should_commit_batch_config:
                 state = state.replace(batch_config=state.batch_config.commit(total_samples))
-
+            self.compacted_batch=metrics["measured_batch_size_before_compaction"]
+            self.not_compacted_batch=metrics["measured_batch_size"]
+            self.rays_num=state.batch_config.n_rays
             if state.should_write_batch_metrics:
                 logger.write_scalar("batch/↓loss", loss_log, state.step)
                 logger.write_scalar("batch/↑loss (db)", loss_db, state.step)
@@ -365,6 +371,13 @@ class Gui_trainer():
         return self.get_state().batch_config.running_mean_effective_samples_per_ray
     def get_samples_nums(self):
         return self.get_state().batch_config.running_mean_samples_per_ray
+    
+    def get_compactedBatch(self):
+        return self.compacted_batch
+    def get_notCompactedBatch(self):
+        return self.not_compacted_batch
+    def get_raysNum(self):
+        return self.rays_num
 class TrainThread(threading.Thread):
     def __init__(self,KEY,args,gui_args,logger,camera_pose,step,back_color):
         super(TrainThread,self).__init__()   
@@ -391,6 +404,10 @@ class TrainThread(threading.Thread):
         self.render_infer_time=-1
         self.data_step=[]
         self.data_loss=[]
+        
+        self.compacted_batch=-1
+        self.not_compacted_batch=-1
+        self.rays_num=-1
         try:   
             pass
             #self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
@@ -445,6 +462,31 @@ class TrainThread(threading.Thread):
             return "{:.3f}".format(1.0/(self.render_infer_time))
         else:
             return "{:.3f}".format(1.0/(self.render_infer_time+self.train_infer_time))
+
+    def get_compactedBatch(self):
+        if self.trainer:
+            self.compacted_batch=self.trainer.get_compactedBatch()
+            if self.compacted_batch!=-1:
+                return "{:d}".format(self.compacted_batch)
+            else:
+                return "no data"
+        return "no data"
+    def get_notCompactedBatch(self):
+        if self.trainer:
+            self.not_compacted_batch=self.trainer.get_notCompactedBatch()
+            if self.not_compacted_batch!=-1:
+                return "{:d}".format(self.not_compacted_batch)
+            else:
+                return "no data"
+        return "no data"
+    def get_raysNum(self):
+        if self.trainer:
+            self.rays_num=self.trainer.get_raysNum()
+            if self.rays_num!=-1:
+                return "{:d}".format(self.rays_num)
+            else:
+                return "no data"
+        return "no data"
     def stop(self):
         self.istraining=False
         self.needUpdate=False
@@ -683,6 +725,16 @@ class NeRFGUI():
                         with dpg.group(horizontal=True):
                             dpg.add_text("Mean effective samples/ray: ")
                             dpg.add_text("no data", tag="_effective_samples")
+                        
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("not compacted batch size: ")
+                            dpg.add_text("no data", tag="_not_compacted_batch_size")
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("compacted batch size: ")
+                            dpg.add_text("no data", tag="_compacted_batch_size")
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("number of rays: ")
+                            dpg.add_text("no data", tag="_rays_num")
                         # create plot
                         with dpg.plot(label="Loss(db)", height=self.gui_args.control_window_width-40, width=self.gui_args.control_window_width-40):
                             # optionally create legend
@@ -743,6 +795,7 @@ class NeRFGUI():
         dpg.set_value('_plot', [self.data_step,self.data_loss])
         dpg.fit_axis_data("y_axis")
         dpg.fit_axis_data("x_axis") 
+    
     def update_panel(self):
         dpg.set_value("_cur_train_step","{} (+{}/{})".format(self.train_thread.get_currentStep(),
                                                              self.train_thread.get_logStep(),
@@ -752,6 +805,10 @@ class NeRFGUI():
         dpg.set_value("_fps","{}".format(self.train_thread.get_Fps()))
         dpg.set_value("_samples","{}".format(self.train_thread.get_samples_nums()))
         dpg.set_value("_effective_samples","{}".format(self.train_thread.get_effective_samples_nums()))
+        
+        dpg.set_value("_compacted_batch_size","{}".format(self.train_thread.get_compactedBatch()))
+        dpg.set_value("_not_compacted_batch_size","{}".format(self.train_thread.get_notCompactedBatch()))
+        dpg.set_value("_rays_num","{}".format(self.train_thread.get_raysNum()))
         self.data_step,self.data_loss=self.train_thread.get_plotData()
         self.update_plot()
     
