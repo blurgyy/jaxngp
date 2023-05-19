@@ -384,7 +384,7 @@ class TransformJsonBase:
     # camera's translation vectors should be scaled with this factor while loading (default value
     # taken from NVLabs/instant-ngp/include/neural-graphics-primitives/nerf_loader.h)
     # NOTE: this value does not affect scene's bounding box
-    scale: float=dataclasses.field(default_factory=lambda: 1/3, kw_only=True)
+    scale: float=dataclasses.field(default_factory=lambda: 2/3, kw_only=True)
 
     bg: bool=dataclasses.field(default_factory=lambda: False, kw_only=True)
 
