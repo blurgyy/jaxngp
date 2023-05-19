@@ -666,7 +666,7 @@ class NeRFGUI():
         self.View_W,self.View_H=self.W+self.gui_args.control_window_width,self.H
         dpg.create_viewport(title='NeRF', width=self.View_W, height=self.View_H,
                             min_width=250+self.gui_args.control_window_width,min_height=250,x_pos=0, y_pos=0)
-        with dpg.window(tag="_main_window",
+        with dpg.window(tag="_main_window",no_scrollbar=True
                ) as main_window:
             dpg.set_primary_window("_main_window", True)
             with dpg.group(horizontal=True):
@@ -772,7 +772,7 @@ class NeRFGUI():
             # dpg.set_item_width("_main_window",self.View_W)
             # dpg.set_item_height("_main_window",self.View_H)
             dpg.set_item_width("_primary_window",self.W)
-            dpg.set_item_height("_primary_window",self.H) 
+            #dpg.set_item_height("_primary_window",self.H) 
             dpg.delete_item("_img")
             dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W, height=self.H)
             if self.train_thread:
