@@ -227,3 +227,5 @@ class GuiWindowArgs():
     bs: int=25_0000
     # number of latest checkpoints to keep
     keep: int=1
+    #max number of loss steps shown on gui
+    max_show_loss_step:int=200

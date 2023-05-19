@@ -605,11 +605,10 @@ class NeRFGUI():
         def callback_mouseRelease(sender,app_data):
             if not dpg.is_item_focused("_primary_window"):
                 return 
-
             self.cameraPose = self.cameraPoseNext
             
         def callback_mouseWheel(sender,app_data):
-            if not dpg.is_item_focused("_primary_window"):
+            if not dpg.is_item_hovered("_primary_window"):
                 return 
             delta=app_data
             self.cameraPose.change_radius(delta)
