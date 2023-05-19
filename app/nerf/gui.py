@@ -38,21 +38,12 @@ class CameraPose():
     radius:float=4.0
     tx:float=0.0
     ty:float=0.0
-    def pose_spherical(self,theta, phi, radius,tx,ty):
+    centroid:np.ndarray=np.asarray([0.,0.,0.])
+    def pose_spherical(self,theta, phi, radius):
         trans_t=lambda t: np.array([
         [1,0,0,0],
         [0,1,0,0],
         [0,0,1,t],
-        [0,0,0,1]],np.float32)
-        trans_tx=lambda t: np.array([
-        [1,0,0,t],
-        [0,1,0,0],
-        [0,0,1,0],
-        [0,0,0,1]],np.float32)
-        trans_ty=lambda t: np.array([
-        [1,0,0,0],
-        [0,1,0,t],
-        [0,0,1,0],
         [0,0,0,1]],np.float32)
         rot_phi=lambda phi:np.array([
             [1,0,0,0],
@@ -65,18 +56,26 @@ class CameraPose():
             [np.sin(theta),0,np.cos(theta),0],
             [0,0,0,1]],np.float32)
         c2w=trans_t(radius)
-         #translate
-        c2w=np.matmul(trans_tx(tx),c2w)
-        c2w=np.matmul(trans_ty(ty),c2w)
         #rotate
         c2w=np.matmul(rot_phi(phi/180.*np.pi),c2w)
         c2w=np.matmul(rot_theta(theta/180.*np.pi),c2w)
-        c2w =np.matmul(np.array([[-1,0,0,0],[0,0,1,0],[0,1,0,0],[0,0,0,1]]) , c2w)
-       
+         
         return c2w
     @property
     def pose(self):
-        return jnp.asarray(self.pose_spherical(self.theta,self.phi,self.radius,self.tx,self.ty))
+        c2w = self.pose_spherical(self.theta,self.phi,self.radius)
+        #translate
+        self.centroid = np.asarray(self.centroid) + .5 * self.tx * c2w[:3, 0] + .5 * self.ty * c2w[:3, 1]
+        self.tx, self.ty = 0, 0
+        trans_centroid=np.array([
+        [1,0,0,self.centroid[0]],
+        [0,1,0,self.centroid[1]],
+        [0,0,1,self.centroid[2]],
+        [0,0,0,1]],np.float32)
+        c2w = np.matmul(trans_centroid, c2w)
+        c2w =np.matmul(np.array([[-1,0,0,0],[0,0,1,0],[0,1,0,0],[0,0,0,1]]) , c2w)
+        return jnp.asarray(c2w)
+    
     def move(self,dx,dy):
         velocity=0.08
         self.theta+=velocity*dx
