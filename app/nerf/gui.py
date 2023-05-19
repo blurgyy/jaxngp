@@ -35,11 +35,23 @@ class CameraPose():
     theta:float=160.0
     phi:float=-30.0
     radius:float=4.0
-    def pose_spherical(self,theta, phi, radius):
+    tx:float=0.0
+    ty:float=0.0
+    def pose_spherical(self,theta, phi, radius,tx,ty):
         trans_t=lambda t: np.array([
         [1,0,0,0],
         [0,1,0,0],
         [0,0,1,t],
+        [0,0,0,1]],np.float32)
+        trans_tx=lambda t: np.array([
+        [1,0,0,t],
+        [0,1,0,0],
+        [0,0,1,0],
+        [0,0,0,1]],np.float32)
+        trans_ty=lambda t: np.array([
+        [1,0,0,0],
+        [0,1,0,t],
+        [0,0,1,0],
         [0,0,0,1]],np.float32)
         rot_phi=lambda phi:np.array([
             [1,0,0,0],
@@ -52,17 +64,27 @@ class CameraPose():
             [np.sin(theta),0,np.cos(theta),0],
             [0,0,0,1]],np.float32)
         c2w=trans_t(radius)
+         #translate
+        c2w=np.matmul(trans_tx(tx),c2w)
+        c2w=np.matmul(trans_ty(ty),c2w)
         c2w=np.matmul(rot_phi(phi/180.*np.pi),c2w)
         c2w=np.matmul(rot_theta(theta/180.*np.pi),c2w)
-        c2w =np.matmul(np.array([[-1,0,0,0],[0,0,1,0],[0,1,0,0],[0,0,0,1]]) , c2w) 
+        c2w =np.matmul(np.array([[-1,0,0,0],[0,0,1,0],[0,1,0,0],[0,0,0,1]]) , c2w)
+       
         return c2w
     @property
     def pose(self):
-        return jnp.asarray(self.pose_spherical(self.theta,self.phi,self.radius))
+        return jnp.asarray(self.pose_spherical(self.theta,self.phi,self.radius,self.tx,self.ty))
     def move(self,dx,dy):
         velocity=0.08
         self.theta+=velocity*dx
         self.phi-=velocity*dy
+        return self.pose
+    def trans(self,dx,dy):
+        
+        velocity=0.003
+        self.tx-=dx*velocity
+        self.ty+=dy*velocity
         return self.pose
     def change_radius(self,rate):
         self.radius*=1.1**(-rate)
@@ -341,8 +363,8 @@ class Gui_trainer():
             )
             if state.should_commit_batch_config:
                 state = state.replace(batch_config=state.batch_config.commit(total_samples))
-            self.compacted_batch=metrics["measured_batch_size_before_compaction"]
-            self.not_compacted_batch=metrics["measured_batch_size"]
+            self.compacted_batch=metrics["measured_batch_size"]
+            self.not_compacted_batch=metrics["measured_batch_size_before_compaction"]
             self.rays_num=state.batch_config.n_rays
             if state.should_write_batch_metrics:
                 logger.write_scalar("batch/↓loss", loss_log, state.step)
@@ -409,6 +431,8 @@ class TrainThread(threading.Thread):
         self.compacted_batch=-1
         self.not_compacted_batch=-1
         self.rays_num=-1
+        
+        self.frame_updated=False
         try:   
             pass
             #self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
@@ -417,6 +441,7 @@ class TrainThread(threading.Thread):
     def initFrame(self):
         img=Image.new("RGB",(self.W,self.H),color_float2int(self.back_color))
         self.framebuff=np.array(img,dtype=np.float32)/255.
+        self.frame_updated=True
         
     def setBackColor(self,color:Tuple[float,float,float]):
         self.back_color=color
@@ -439,6 +464,7 @@ class TrainThread(threading.Thread):
                 if self.istesting:
                     start_time=time.time()    
                     _,self.framebuff,_=self.trainer.render_frame(self.scale,self.H,self.W)
+                    self.frame_updated=True
                     end_time=time.time()
                     self.render_infer_time=end_time-start_time
                     self.istesting=False
@@ -543,6 +569,10 @@ class TrainThread(threading.Thread):
             return "no data"
     def test(self):
         self.istesting=True
+    def finishUpdate(self):
+        self.frame_updated=False
+    def canUpdate(self):
+        return self.frame_updated
 @dataclass
 class NeRFGUI():
     
@@ -598,12 +628,21 @@ class NeRFGUI():
             if self.train_thread:
                 self.train_thread.set_camera_pose(self.cameraPoseNext.pose)
                 self.train_thread.test()
-              
+        def callback_midmouseDrag(sender,app_data):
+            if not dpg.is_item_hovered("_primary_window"):
+                return 
+            dx=app_data[1]
+            dy=app_data[2]
+            self.cameraPoseNext = deepcopy(self.cameraPosePrev)
+            self.cameraPoseNext.trans(dx,dy)      
+            if self.train_thread:
+                self.train_thread.set_camera_pose(self.cameraPoseNext.pose)
+                self.train_thread.test()
         def callback_mouseDown(sender,app_data):
             if app_data[1] < 1e-5:
                 self.cameraPosePrev = self.cameraPose
         def callback_mouseRelease(sender,app_data):
-            if not dpg.is_item_focused("_primary_window"):
+            if not dpg.is_item_hovered("_primary_window"):
                 return 
             self.cameraPose = self.cameraPoseNext
             
@@ -722,10 +761,10 @@ class NeRFGUI():
                             dpg.add_text("no data", tag="_effective_samples")
                         
                         with dpg.group(horizontal=True):
-                            dpg.add_text("not compacted batch size: ")
+                            dpg.add_text("batch size: ")
                             dpg.add_text("no data", tag="_not_compacted_batch_size")
                         with dpg.group(horizontal=True):
-                            dpg.add_text("compacted batch size: ")
+                            dpg.add_text("batch size(compacted): ")
                             dpg.add_text("no data", tag="_compacted_batch_size")
                         with dpg.group(horizontal=True):
                             dpg.add_text("number of rays: ")
@@ -755,6 +794,11 @@ class NeRFGUI():
             dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseRelease)
             dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseDown)
             dpg.add_mouse_wheel_handler(callback=callback_mouseWheel)
+            #mouse middle
+            dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Middle,callback=callback_midmouseDrag)
+            dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Middle,callback=callback_mouseDown)
+            dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Middle,callback=callback_mouseRelease)
+            
         dpg.setup_dearpygui()
         dpg.show_viewport()
     def change_scale(self):    
@@ -764,6 +808,7 @@ class NeRFGUI():
             self.train_thread.test()
     def update_frame(self):
         self.framebuff=self.train_thread.framebuff
+        dpg.set_value("_texture", self.framebuff)
     def adapt_size(self):
         if self.View_H!=dpg.get_viewport_height() or self.View_W!=dpg.get_viewport_width():
             self.View_H=dpg.get_viewport_height()
@@ -817,15 +862,15 @@ class NeRFGUI():
         try:       
             while dpg.is_dearpygui_running():
                 self.adapt_size()
-                #self.setFrameColor()
                 if self.train_thread:
                     self.train_thread.change_WH(self.W,self.H)
                     self.change_scale()
-                    # if self.istesting:
-                    #     self.train_thread.test()
-                    self.update_frame()
                     self.update_panel()
-                dpg.set_value("_texture", self.framebuff)
+                    if self.train_thread.canUpdate():
+                        self.update_frame()
+                        self.train_thread.finishUpdate()
+                else:
+                    dpg.set_value("_texture", self.framebuff)
                 dpg.render_dearpygui_frame()
                 
         except KeyboardInterrupt:
