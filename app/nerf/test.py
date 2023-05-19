@@ -80,7 +80,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
                 translation=scene_meta.frames[test_i].transform_matrix_jax_array[:3, 3],
             )
             KEY, key = jran.split(KEY, 2)
-            bg, rgb, depth = render_image_inference(
+            bg, rgb, depth, _ = render_image_inference(
                 KEY=key,
                 transform_cw=transform,
                 state=state,

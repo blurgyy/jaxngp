@@ -244,6 +244,7 @@ def march_and_integrate_inference(
     rays_rgb: jax.Array,
     rays_T: jax.Array,
     rays_depth: jax.Array,
+    rays_cost: jax.Array | None,
 ):
     counter, indices, n_samples, t_starts, xyzs, dss, z_vals = march_rays_inference(
         diagonal_n_steps=payload.diagonal_n_steps,
@@ -261,6 +262,8 @@ def march_and_integrate_inference(
         terminated=terminated,
         indices=indices,
     )
+    if rays_cost is not None:
+        rays_cost = rays_cost.at[indices].set(rays_cost[indices] + n_samples)
 
     xyzs = jax.lax.stop_gradient(xyzs)
     densities, rgbs = payload.nerf_fn(
@@ -291,6 +294,7 @@ def render_image_inference(
     transform_cw: RigidTransformation,
     state: NeRFState,
     camera_override: None | PinholeCamera=None,
+    render_cost: bool=False,
 ):
     if camera_override is not None:
         state = state.replace(scene_meta=state.scene_meta.replace(camera=camera_override))
@@ -300,6 +304,10 @@ def render_image_inference(
     rays_rgb = jnp.zeros((state.scene_meta.camera.n_pixels, 3), dtype=jnp.float32)
     rays_T = jnp.ones(state.scene_meta.camera.n_pixels, dtype=jnp.float32)
     rays_depth = jnp.zeros(state.scene_meta.camera.n_pixels, dtype=jnp.float32)
+    if render_cost:
+        rays_cost = jnp.zeros(state.scene_meta.camera.n_pixels, dtype=jnp.uint32)
+    else:
+        rays_cost = None
     if state.use_background_model:
         bg = state.bg_fn({"params": state.locked_params["bg"]}, o_world, d_world)
     elif state.render.random_bg:
@@ -356,6 +364,7 @@ def render_image_inference(
                 rays_rgb=rays_rgb,
                 rays_T=rays_T,
                 rays_depth=rays_depth,
+                rays_cost=rays_cost,
             )
             n_rendered_rays += terminate_cnt
 
@@ -363,5 +372,9 @@ def render_image_inference(
     image_array_u8 = jnp.clip(jnp.round(rays_rgb * 255), 0, 255).astype(jnp.uint8).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W, 3))
     rays_depth_f32 = rays_depth / (state.scene_meta.bound * 2 + jnp.linalg.norm(transform_cw.translation))
     depth_array_u8 = jnp.clip(jnp.round(rays_depth_f32 * 255), 0, 255).astype(jnp.uint8).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W))
+    if render_cost:
+        cost_array_u8 = jnp.clip(jnp.round(rays_cost / (rays_cost.max() + 1) * 255), 0, 255).astype(jnp.uint8).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W))
+    else:
+        cost_array_u8 = None
 
-    return bg_array_f32, image_array_u8, depth_array_u8
+    return bg_array_f32, image_array_u8, depth_array_u8, cost_array_u8

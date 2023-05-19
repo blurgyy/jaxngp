@@ -284,7 +284,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
                     translation=scene_val.all_transforms[val_i, -3:].reshape(3),
                 )
                 KEY, key = jran.split(KEY, 2)
-                bg, rgb, depth = render_image_inference(
+                bg, rgb, depth, _ = render_image_inference(
                     KEY=key,
                     transform_cw=val_transform,
                     state=state_eval,
