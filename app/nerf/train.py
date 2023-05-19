@@ -284,16 +284,16 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
                     translation=scene_val.all_transforms[val_i, -3:].reshape(3),
                 )
                 KEY, key = jran.split(KEY, 2)
-                bg, rgb, depth, _ = render_image_inference(
+                bg, rgb, depth, _ = data.to_cpu(render_image_inference(
                     KEY=key,
                     transform_cw=val_transform,
                     state=state_eval,
-                )
-                rendered_images.append(data.to_cpu(RenderedImage(
+                ))
+                rendered_images.append(RenderedImage(
                     bg=bg,
                     rgb=rgb,
-                    depth=common.compose(data.mono_to_rgb, data.f32_to_u8)(depth),
-                )))
+                    depth=depth,  # call to data.mono_to_rgb is deferred below so as to minimize impact on rendering speed
+                ))
             val_end_time = time.time()
             logger.write_scalar(
                 tag="validation/↓rendering time (ms) per image",
@@ -326,7 +326,11 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
                     H=scene_meta.camera.H,
                     W=scene_meta.camera.W,
                 ),
-                [gt, rendered_image.rgb, rendered_image.depth],
+                [
+                    gt,
+                    rendered_image.rgb,
+                    common.compose(data.mono_to_rgb, data.f32_to_u8)(rendered_image.depth),
+                ],
             ))
             logger.write_image(
                 tag="validation/[gt|rendered|depth]",

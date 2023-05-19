@@ -80,16 +80,16 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
                 translation=scene_meta.frames[test_i].transform_matrix_jax_array[:3, 3],
             )
             KEY, key = jran.split(KEY, 2)
-            bg, rgb, depth, _ = render_image_inference(
+            bg, rgb, depth, _ = data.to_cpu(render_image_inference(
                 KEY=key,
                 transform_cw=transform,
                 state=state,
-            )
-            rendered_images.append(data.to_cpu(RenderedImage(
+            ))
+            rendered_images.append(RenderedImage(
                 bg=bg,
                 rgb=rgb,
                 depth=depth,  # call to data.mono_to_rgb is deferred below so as to minimize impact on rendering speed
-            )))
+            ))
     except KeyboardInterrupt:
         logger.warn("keyboard interrupt, tested {} images".format(len(rendered_images)))
 
