@@ -1,4 +1,5 @@
 from copy import deepcopy
+from enum import Enum
 import logging
 from pathlib import Path
 import numpy as np
@@ -67,6 +68,7 @@ class CameraPose():
          #translate
         c2w=np.matmul(trans_tx(tx),c2w)
         c2w=np.matmul(trans_ty(ty),c2w)
+        #rotate
         c2w=np.matmul(rot_phi(phi/180.*np.pi),c2w)
         c2w=np.matmul(rot_theta(theta/180.*np.pi),c2w)
         c2w =np.matmul(np.array([[-1,0,0,0],[0,0,1,0],[0,1,0,0],[0,0,0,1]]) , c2w)
@@ -264,6 +266,9 @@ class Gui_trainer():
         bg=self.get_npf32_image(bg,W=self.gui_args.W,H=self.gui_args.H)
         rgb=self.get_npf32_image(rgb,W=self.gui_args.W,H=self.gui_args.H)
         depth=self.get_npf32_image(depth,W=self.gui_args.W,H=self.gui_args.H)
+        depth=depth[:,:,np.newaxis]
+        depth=np.tile(depth,(1,1,3))
+        self.logger.info("size:{}".format(depth.shape))
         return (bg, rgb, depth)
 
     def train_steps(self,steps:int)->Tuple[np.array,np.array,np.array]:
@@ -422,6 +427,8 @@ class TrainThread(threading.Thread):
         self.H,self.W=self.gui_args.H,self.gui_args.W
         self.back_color=back_color
         self.framebuff=None
+        self.rgb=None
+        self.depth=None
         self.trainer=None
         self.initFrame()
         self.train_infer_time=-1
@@ -434,6 +441,7 @@ class TrainThread(threading.Thread):
         self.rays_num=-1
         
         self.frame_updated=False
+        self.mode=Mode.Render
         try:   
             pass
             #self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
@@ -442,8 +450,11 @@ class TrainThread(threading.Thread):
     def initFrame(self):
         img=Image.new("RGB",(self.W,self.H),color_float2int(self.back_color))
         self.framebuff=np.array(img,dtype=np.float32)/255.
+        self.rgb=np.array(img,dtype=np.float32)/255.
+        self.depth=np.array(img,dtype=np.float32)/255.
         self.frame_updated=True
-        
+    def setMode(self,mode):
+        self.mode=mode
     def setBackColor(self,color:Tuple[float,float,float]):
         self.back_color=color
         if self.trainer:
@@ -464,7 +475,11 @@ class TrainThread(threading.Thread):
                     self.test()
                 if self.istesting:
                     start_time=time.time()    
-                    _,self.framebuff,_=self.trainer.render_frame(self.scale,self.H,self.W)
+                    _,self.rgb,self.depth=self.trainer.render_frame(self.scale,self.H,self.W)
+                    if self.mode==Mode.Render:
+                        self.framebuff=self.rgb
+                    else:
+                        self.framebuff=self.depth
                     self.frame_updated=True
                     end_time=time.time()
                     self.render_infer_time=end_time-start_time
@@ -578,6 +593,10 @@ class TrainThread(threading.Thread):
         return self.frame_updated
     def setStep(self,step):
         self.step=step
+class Mode(Enum):
+    Render = 0
+    Depth = 1
+
 @dataclass
 class NeRFGUI():
     
@@ -609,6 +628,7 @@ class NeRFGUI():
     View_W:int= field(init=False)
 
     exit_flag:bool=False
+    mode:Mode=Mode.Render
     def __post_init__(self):
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
 
@@ -709,8 +729,16 @@ class NeRFGUI():
             self.framebuff=np.ones(shape=(self.texture_H,self.texture_W,3),dtype=np.float32) 
             self.data_step.clear()
             self.data_loss.clear() 
-            self.update_plot()        
-                  
+            self.update_plot()
+                      
+        def callback_mode(sender, app_data):
+            if self.mode==Mode.Render:#change to depth mode
+                self.mode=Mode.Depth
+                dpg.configure_item("_button_mode", label="render")
+                
+            elif self.mode==Mode.Depth:#change to render mode
+                self.mode=Mode.Render
+                dpg.configure_item("_button_mode", label="depth")
         self.View_W,self.View_H=self.W+self.gui_args.control_window_width,self.H
         dpg.create_viewport(title='NeRF', width=self.View_W, height=self.View_H,
                             min_width=250+self.gui_args.control_window_width,min_height=250,x_pos=0, y_pos=0)
@@ -732,6 +760,10 @@ class NeRFGUI():
                     #control
                     with dpg.collapsing_header(tag="_conrol_panel",label="Control Panel", default_open=True):
                         dpg.bind_item_theme("_conrol_panel", theme_head)
+                        #mode
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("Visualization mode: ")
+                            dpg.add_button(label="depth", tag="_button_mode", callback=callback_mode)
                         # train / stop/reset
                         with dpg.group(horizontal=True):
                             dpg.add_text("Train: ")
@@ -884,6 +916,7 @@ class NeRFGUI():
             try:
                 self.adapt_size()
                 if self.train_thread:
+                    self.train_thread.setMode(self.mode)
                     self.train_thread.change_WH(self.W,self.H)
                     self.change_scale()
                     self.update_panel()
