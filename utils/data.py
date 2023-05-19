@@ -258,7 +258,8 @@ def create_dataset_from_single_camera_image_collection(
     if len(maps) == 0:
         raise RuntimeError("mapping with colmap failed")
     elif len(maps) > 1:
-        warnings.warn("colmap reconstructed more than 1 maps")
+        warnings.warn(
+            "colmap reconstructed more than 1 maps")
 
     sfm.undistort(
         images_dir=raw_images_dir,
@@ -387,8 +388,10 @@ def write_video(dest: Path, images: Sequence, *, fps: int=24, loop: int=3):
         for im in tqdm(images, desc="writing video to {}".format(dest.as_posix())):
             video_writer.append_data(np.asarray(im))
     except (BrokenPipeError, IOError) as e:  # sometimes ffmpeg encounters io error for no apparent reason
-        warnings.warn("failed writing video: {}".format(str(e)), RuntimeWarning)
-        warnings.warn("skipping saving video '{}'".format(dest.as_posix()), RuntimeWarning)
+        warnings.warn(
+            "failed writing video: {}".format(str(e)), RuntimeWarning)
+        warnings.warn(
+            "skipping saving video '{}'".format(dest.as_posix()), RuntimeWarning)
 
 
 @jax.jit
