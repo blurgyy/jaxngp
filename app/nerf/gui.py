@@ -698,7 +698,8 @@ class NeRFGUI():
                         dpg.add_text("resolution scale:")
                         self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,
                                                             clamped=True,min_value=0.1,max_value=1.0,width=self.gui_args.control_window_width-40)
-                        dpg.add_color_edit(tag="_BackColor",label="Background color", default_value=[255, 255, 255], no_alpha=True,
+                        dpg.add_text("Background color: ")
+                        dpg.add_color_edit(tag="_BackColor", default_value=[255, 255, 255], no_alpha=True,
                                                          width=self.gui_args.control_window_width-40, callback=callback_backgroundColor)
                     with dpg.collapsing_header(tag="_para_panel",label="Parameter Monitor", default_open=True):
                         dpg.bind_item_theme("_para_panel", theme_head)
@@ -790,6 +791,9 @@ class NeRFGUI():
             self.framebuff=np.array(img,dtype=np.float32)/255.
         dpg.set_value("_texture", self.framebuff)
     def update_plot(self):
+        if len(self.data_loss)>self.gui_args.max_show_loss_step:
+            self.data_loss=self.data_loss[-self.gui_args.max_show_loss_step-1:]
+            self.data_step=self.data_step[-self.gui_args.max_show_loss_step-1:]
         dpg.set_value('_plot', [self.data_step,self.data_loss])
         dpg.fit_axis_data("y_axis")
         dpg.fit_axis_data("x_axis") 
