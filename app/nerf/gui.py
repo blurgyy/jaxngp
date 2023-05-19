@@ -628,6 +628,8 @@ class NeRFGUI():
 
     exit_flag:bool=False
     mode:Mode=Mode.Render
+    
+    mouse_pressed:bool=False
     def __post_init__(self):
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
 
@@ -635,9 +637,9 @@ class NeRFGUI():
         self.texture_H,self.texture_W=self.H,self.W
         self.framebuff=np.ones(shape=(self.W,self.H,3),dtype=np.float32)#default background is white
         dpg.create_context()
-        self.ItemsLayout()
         self.train_thread=None
         self.cameraPose,self.cameraPosePrev,self.cameraPoseNext=CameraPose(), CameraPose(), CameraPose()
+        self.ItemsLayout()
     def ItemsLayout(self):
         def callback_backgroundColor():
             self.back_color= color_int2float(dpg.get_value("_BackColor"))
@@ -653,6 +655,7 @@ class NeRFGUI():
             if self.train_thread:
                 self.train_thread.set_camera_pose(self.cameraPoseNext.pose)
                 self.train_thread.test()
+                self.show_cam_angle(self.cameraPoseNext.theta,self.cameraPoseNext.phi)
         def callback_midmouseDrag(sender,app_data):
             if not dpg.is_item_hovered("_primary_window"):
                 return 
@@ -663,9 +666,11 @@ class NeRFGUI():
             if self.train_thread:
                 self.train_thread.set_camera_pose(self.cameraPoseNext.pose)
                 self.train_thread.test()
+                self.show_cam_centroid(self.cameraPoseNext.centroid[0],self.cameraPoseNext.centroid[1],self.cameraPoseNext.centroid[2])
         def callback_mouseDown(sender,app_data):
             if not dpg.is_item_hovered("_primary_window"):
                 return 
+            self.mouse_pressed=True
             if app_data[1] < 1e-5:
                 self.cameraPosePrev = self.cameraPose
             if self.train_thread:
@@ -673,6 +678,7 @@ class NeRFGUI():
         def callback_mouseRelease(sender,app_data):
             if not dpg.is_item_hovered("_primary_window"):
                 return 
+            self.mouse_pressed=False
             self.cameraPose = self.cameraPoseNext
             if self.train_thread:
                 self.train_thread.setStep(self.gui_args.train_steps)
@@ -780,6 +786,26 @@ class NeRFGUI():
                         dpg.add_text("Background color: ")
                         dpg.add_color_edit(tag="_BackColor", default_value=[255, 255, 255], no_alpha=True,
                                                          width=self.gui_args.control_window_width-40, callback=callback_backgroundColor)
+                        with dpg.value_registry():
+                            dpg.add_float_value(default_value=0.0, tag="float_value")
+                            # dpg.add_string_value(default_value="Default string", tag="string_value")
+                        #camera pose
+                        dpg.add_text("camera pose:")
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("centroid:")
+                            dpg.add_text("x")
+                            dpg.add_input_text(tag="_centroid_x",width=40,default_value=self.cameraPose.centroid[0],decimal=True)
+                            dpg.add_text("y")
+                            dpg.add_input_text( tag="_centroid_y",width=40,default_value=self.cameraPose.centroid[1],decimal=True)
+                            dpg.add_text("z")
+                            dpg.add_input_text( tag="_centroid_z",width=40,default_value=self.cameraPose.centroid[2],decimal=True)
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("angle:")
+                            dpg.add_text("theta")
+                            dpg.add_input_text( tag="_theta",width=70,default_value=self.cameraPose.theta,decimal=True)
+                            dpg.add_text("phi")
+                            dpg.add_input_text( tag="_phi",width=70,default_value=self.cameraPose.phi,decimal=True)
+                       # dpg.set_value("_centroid_x",1000)
                     with dpg.collapsing_header(tag="_para_panel",label="Parameter Monitor", default_open=True):
                         dpg.bind_item_theme("_para_panel", theme_head)
                         with dpg.group(horizontal=True):
@@ -822,12 +848,14 @@ class NeRFGUI():
                             dpg.add_line_series(self.data_step, self.data_loss, label="loss", parent="y_axis",tag="_plot")
                     with dpg.collapsing_header(tag="_tip_panel",label="Tips", default_open=True):
                         dpg.bind_item_theme("_tip_panel", theme_head)
-                        tip1="* Drag the left mouse button to change the camera perspective\n"
+                        tip1="* Drag the left mouse button to rotate the camera\n"
                         tip2="* The mouse wheel zooms the distance between the camera and the object\n"
                         tip3="* Drag the window to resize\n"
+                        tip4="* Drag the middle mouse button to translate the camera\n"
                         dpg.add_text(tip1,wrap=self.gui_args.control_window_width-40)
                         dpg.add_text(tip2,wrap=self.gui_args.control_window_width-40)
                         dpg.add_text(tip3,wrap=self.gui_args.control_window_width-40)
+                        dpg.add_text(tip4,wrap=self.gui_args.control_window_width-40)
         def callback_key(sender,appdata):
             if appdata==dpg.mvKey_Q:
                 self.logger.warn("press exit key:Q ")
@@ -893,7 +921,56 @@ class NeRFGUI():
         dpg.set_value('_plot', [self.data_step,self.data_loss])
         dpg.fit_axis_data("y_axis")
         dpg.fit_axis_data("x_axis") 
-    
+    def set_cam_angle(self):
+        try:
+            theta=float(dpg.get_value("_theta"))
+            phi=float(dpg.get_value("_phi"))
+            self.logger.info("theta:{},phi:{}".format(theta,phi))
+            if theta!=self.cameraPose.theta or phi!=self.cameraPose.phi:
+                self.cameraPose.theta=theta
+                self.cameraPose.phi=phi         
+                self.train_thread.set_camera_pose(self.cameraPose.pose)
+                self.train_thread.test()
+        except BaseException as e:
+            self.logger.error(e)
+    def show_cam_angle(self,_theta,_phi):
+        _theta=float('{:.3f}'.format(_theta))
+        _phi=float('{:.3f}'.format(_phi))
+        try:
+            theta=float(dpg.get_value("_theta"))
+            phi=float(dpg.get_value("_phi"))
+            if theta!=_theta or phi!=_phi:
+                dpg.set_value("_theta",_theta)
+                dpg.set_value("_phi",_phi)
+        except BaseException as e:
+            self.logger.error(e)
+    def set_cam_centroid(self):
+        try:
+            x=float(dpg.get_value("_centroid_x"))
+            y=float(dpg.get_value("_centroid_y"))
+            z=float(dpg.get_value("_centroid_z"))
+            if x!=self.cameraPose.centroid[0] or y!=self.cameraPose.centroid[1] or z!=self.cameraPose.centroid[2]:
+                self.cameraPose.centroid[0]=x
+                self.cameraPose.centroid[1]=y
+                self.cameraPose.centroid[2]=z
+                self.train_thread.set_camera_pose(self.cameraPose.pose)
+                self.train_thread.test()
+        except BaseException as e:
+            self.logger.error(e)
+    def show_cam_centroid(self,_x,_y,_z):
+        _x=float('{:.3f}'.format(_x))
+        _y=float('{:.3f}'.format(_y))
+        _z=float('{:.3f}'.format(_z))
+        try:
+            x=float(dpg.get_value("_centroid_x"))
+            y=float(dpg.get_value("_centroid_y"))
+            z=float(dpg.get_value("_centroid_z"))
+            if x!=_x or y!=_y or z!=_z:
+                dpg.set_value("_centroid_x",_x)
+                dpg.set_value("_centroid_y",_y)
+                dpg.set_value("_centroid_z",_z)
+        except BaseException as e:
+            self.logger.error(e)
     def update_panel(self):
         dpg.set_value("_cur_train_step","{} (+{}/{})".format(self.train_thread.get_currentStep(),
                                                              self.train_thread.get_logStep(),
@@ -915,6 +992,9 @@ class NeRFGUI():
             try:
                 self.adapt_size()
                 if self.train_thread:
+                    if not self.mouse_pressed:
+                        self.set_cam_angle()
+                        self.set_cam_centroid()
                     self.train_thread.setMode(self.mode)
                     self.train_thread.change_WH(self.W,self.H)
                     self.change_scale()
