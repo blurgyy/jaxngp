@@ -775,6 +775,9 @@ class NeRFGUI():
             #dpg.set_item_height("_primary_window",self.H) 
             dpg.delete_item("_img")
             dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W, height=self.H)
+            dpg.configure_item("_conrol_panel",label="Control Panel", default_open=True)
+            dpg.configure_item("_para_panel",label="Parameter Monitor", default_open=True)
+            dpg.configure_item("_tip_panel",label="Tips", default_open=True)
             if self.train_thread:
                 self.train_thread.test()
             #dpg.configure_item("_texture",width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb)
