@@ -389,13 +389,14 @@ def write_video(dest: Path, images: Sequence, *, fps: int=24, loop: int=3):
 
 @jax.jit
 def set_pixels(imgarr: jax.Array, xys: jax.Array, selected: jax.Array, preds: jax.Array) -> jax.Array:
+    chex.assert_type(imgarr, jnp.uint8)
     H, W = imgarr.shape[:2]
     if len(imgarr.shape) == 3:
         interm = imgarr.reshape(H*W, -1)
     else:
         interm = imgarr.ravel()
     idcs = xys[selected, 1] * W + xys[selected, 0]
-    interm = interm.at[idcs].set(jnp.clip(jnp.round(preds * 255), 0, 255).astype(jnp.uint8))
+    interm = interm.at[idcs].set(f32_to_u8(preds))
     if len(imgarr.shape) == 3:
         return interm.reshape(H, W, -1)
     else:
@@ -442,7 +443,7 @@ def blend_rgba_image_array(imgarr, bg: jax.Array):
     if imgarr.dtype == jnp.uint8:
         rgbs, alpha = rgbs.astype(float) / 255, alpha.astype(float) / 255
         rgbs = rgbs * alpha + bg * (1 - alpha)
-        rgbs = jnp.clip(jnp.round(rgbs * 255), 0, 255).astype(jnp.uint8)
+        rgbs = f32_to_u8(rgbs)
     else:
         rgbs = rgbs * alpha + bg * (1 - alpha)
     return rgbs

@@ -16,6 +16,7 @@ from volrendjax import (
 )
 
 from utils.common import jit_jaxfn_with
+from utils.data import f32_to_u8
 from utils.types import (
     NeRFState,
     OccupancyDensityGrid,
@@ -369,11 +370,11 @@ def render_image_inference(
             n_rendered_rays += terminate_cnt
 
     bg_array_f32 = rays_bg.reshape((state.scene_meta.camera.H, state.scene_meta.camera.W, 3))
-    image_array_u8 = jnp.clip(jnp.round(rays_rgb * 255), 0, 255).astype(jnp.uint8).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W, 3))
+    image_array_u8 = f32_to_u8(rays_rgb).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W, 3))
     rays_depth_f32 = rays_depth / (state.scene_meta.bound * 2 + jnp.linalg.norm(transform_cw.translation))
-    depth_array_u8 = jnp.clip(jnp.round(rays_depth_f32 * 255), 0, 255).astype(jnp.uint8).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W))
+    depth_array_u8 = f32_to_u8(rays_depth_f32).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W))
     if render_cost:
-        cost_array_u8 = jnp.clip(jnp.round(rays_cost / (rays_cost.max() + 1) * 255), 0, 255).astype(jnp.uint8).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W))
+        cost_array_u8 = f32_to_u8(rays_cost.astype(jnp.float32) / (rays_cost.astype(jnp.float32).max() + 1.)).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W))
     else:
         cost_array_u8 = None
 
