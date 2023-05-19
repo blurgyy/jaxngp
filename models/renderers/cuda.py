@@ -330,9 +330,8 @@ def render_image_inference(
         iters = max(1, (state.scene_meta.camera.n_pixels - n_rendered_rays) // n_rays)
         iters = 2 ** int(math.log2(iters) + 1)
 
-        terminate_cnt = 0
         for _ in range(iters):
-            iter_terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth = march_and_integrate_inference(
+            terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth = march_and_integrate_inference(
                 payload=MarchAndIntegrateInferencePayload(
                     march_steps_cap=march_steps_cap,
                     diagonal_n_steps=state.raymarch.diagonal_n_steps,
@@ -358,8 +357,7 @@ def render_image_inference(
                 rays_T=rays_T,
                 rays_depth=rays_depth,
             )
-            terminate_cnt += iter_terminate_cnt
-        n_rendered_rays += terminate_cnt
+            n_rendered_rays += terminate_cnt
 
     bg_array_f32 = rays_bg.reshape((state.scene_meta.camera.H, state.scene_meta.camera.W, 3))
     image_array_u8 = jnp.clip(jnp.round(rays_rgb * 255), 0, 255).astype(jnp.uint8).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W, 3))

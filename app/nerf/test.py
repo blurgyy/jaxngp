@@ -85,11 +85,11 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
                 transform_cw=transform,
                 state=state,
             )
-            rendered_images.append(RenderedImage(
-                bg=data.to_cpu(bg),
-                rgb=data.to_cpu(rgb),
-                depth=data.to_cpu(depth),
-            ))
+            rendered_images.append(data.to_cpu(RenderedImage(
+                bg=bg,
+                rgb=rgb,
+                depth=depth,  # call to data.mono_to_rgb is deferred below so as to minimize impact on rendering speed
+            )))
     except KeyboardInterrupt:
         logger.warn("keyboard interrupt, tested {} images".format(len(rendered_images)))
 
