@@ -1,5 +1,8 @@
+from dataclasses import dataclass
 import math
+from typing import Callable
 
+from flax.core.scope import FrozenVariableDict
 import jax
 import jax.numpy as jnp
 import jax.random as jran
@@ -212,10 +215,21 @@ def render_rays_train(
     return batch_metrics, final_rgbs, depths
 
 
-@jit_jaxfn_with(static_argnames=["march_steps_cap"])
+@dataclass(frozen=True, kw_only=True)
+class MarchAndIntegrateInferencePayload:
+    march_steps_cap: int
+    diagonal_n_steps: int
+    cascades: int
+    density_grid_res: int
+    bound: float
+    stepsize_portion: float
+    nerf_fn: Callable
+
+
+@jit_jaxfn_with(static_argnames=["payload"])
 def march_and_integrate_inference(
-    march_steps_cap: int,
-    state: NeRFState,
+    payload: MarchAndIntegrateInferencePayload,
+    locked_nerf_params: FrozenVariableDict,
 
     counter: jax.Array,
     rays_o: jax.Array,
@@ -232,12 +246,12 @@ def march_and_integrate_inference(
     rays_depth: jax.Array,
 ):
     counter, indices, n_samples, t_starts, xyzs, dss, z_vals = march_rays_inference(
-        diagonal_n_steps=state.raymarch.diagonal_n_steps,
-        K=state.scene_meta.cascades,
-        G=state.raymarch.density_grid_res,
-        march_steps_cap=march_steps_cap,
-        bound=state.scene_meta.bound,
-        stepsize_portion=state.scene_meta.stepsize_portion,
+        diagonal_n_steps=payload.diagonal_n_steps,
+        K=payload.cascades,
+        G=payload.density_grid_res,
+        march_steps_cap=payload.march_steps_cap,
+        bound=payload.bound,
+        stepsize_portion=payload.stepsize_portion,
         rays_o=rays_o,
         rays_d=rays_d,
         t_starts=t_starts,
@@ -249,8 +263,8 @@ def march_and_integrate_inference(
     )
 
     xyzs = jax.lax.stop_gradient(xyzs)
-    densities, rgbs = state.nerf_fn(
-        {"params": state.locked_params["nerf"]},
+    densities, rgbs = payload.nerf_fn(
+        {"params": locked_nerf_params},
         xyzs,
         jnp.broadcast_to(rays_d[indices, None, :], xyzs.shape),
     )
@@ -301,11 +315,11 @@ def render_image_inference(
     )
 
     if state.batch_config.mean_effective_samples_per_ray > 7:
-        march_rays_cap = max(4, min(state.batch_config.mean_effective_samples_per_ray // 2 + 1, 8))
+        march_steps_cap = max(4, min(state.batch_config.mean_effective_samples_per_ray // 2 + 1, 8))
     else:
-        march_rays_cap = min(4, state.batch_config.mean_effective_samples_per_ray)
-    march_rays_cap = int(march_rays_cap)
-    n_rays = min(65536 // march_rays_cap, o_world.shape[0])
+        march_steps_cap = min(4, state.batch_config.mean_effective_samples_per_ray)
+    march_steps_cap = int(march_steps_cap)
+    n_rays = min(65536 // march_steps_cap, o_world.shape[0])
 
     counter = jnp.zeros(1, dtype=jnp.uint32)
     terminated = jnp.ones(n_rays, dtype=jnp.bool_)  # all rays are terminated at the beginning
@@ -319,8 +333,16 @@ def render_image_inference(
         terminate_cnt = 0
         for _ in range(iters):
             iter_terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth = march_and_integrate_inference(
-                march_steps_cap=march_rays_cap,
-                state=state,
+                payload=MarchAndIntegrateInferencePayload(
+                    march_steps_cap=march_steps_cap,
+                    diagonal_n_steps=state.raymarch.diagonal_n_steps,
+                    cascades=state.scene_meta.cascades,
+                    density_grid_res=state.raymarch.density_grid_res,
+                    bound=state.scene_meta.bound,
+                    stepsize_portion=state.scene_meta.stepsize_portion,
+                    nerf_fn=state.nerf_fn,
+                ),
+                locked_nerf_params=state.locked_params["nerf"],
 
                 counter=counter,
                 rays_o=o_world,
