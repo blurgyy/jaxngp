@@ -715,9 +715,6 @@ class NeRFGUI():
                             dpg.add_text("FPS: ")
                             dpg.add_text("no data", tag="_fps")
                         with dpg.group(horizontal=True):
-                            dpg.add_text("SPP: ")
-                            dpg.add_text("1", tag="_log_spp")
-                        with dpg.group(horizontal=True):
                             dpg.add_text("Mean samples/ray: ")
                             dpg.add_text("no data", tag="_samples")
                         with dpg.group(horizontal=True):
