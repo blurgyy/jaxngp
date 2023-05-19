@@ -713,7 +713,7 @@ class NeRFGUI():
                     with dpg.texture_registry(show=False):
                         dpg.add_raw_texture(width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb, tag="_texture")
                     with dpg.child_window(tag="_primary_window", width=self.W,no_scrollbar=True):
-                        dpg.add_image("_texture",tag="_img",parent="_primary_window")
+                        dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W-15, height=self.H-32)
                 #control panel
                 with dpg.child_window(tag="_control_window",no_scrollbar=True):
                     with dpg.theme() as theme_head:
@@ -819,7 +819,7 @@ class NeRFGUI():
             dpg.set_item_width("_primary_window",self.W)
             #dpg.set_item_height("_primary_window",self.H) 
             dpg.delete_item("_img")
-            dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W, height=self.H)
+            dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W-15, height=self.H-32)
             dpg.configure_item("_conrol_panel",label="Control Panel", default_open=True)
             dpg.configure_item("_para_panel",label="Parameter Monitor", default_open=True)
             dpg.configure_item("_tip_panel",label="Tips", default_open=True)
