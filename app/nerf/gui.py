@@ -124,6 +124,7 @@ class Gui_trainer():
     not_compacted_batch:int=-1
     rays_num:int=-1
     
+    need_exit:float=False
     def __post_init__(self):
         self.data_step=[]
         self.data_loss=[]
@@ -266,8 +267,7 @@ class Gui_trainer():
         return (bg, rgb, depth)
 
     def train_steps(self,steps:int)->Tuple[np.array,np.array,np.array]:
-        gc.collect()
-        
+        gc.collect()       
         if self.cur_step<self.gui_args.max_step and self.istraining:
             self.KEY, key = jran.split(self.KEY, 2)
             loss_log, self.state = self.gui_train_epoch(
@@ -284,7 +284,7 @@ class Gui_trainer():
             self.loss_log=str(loss_log)
         loss_db = data.linear_to_db(loss_log, maxval=1)
         self.logger.info("epoch#{:03d}: loss={:.2e}({:.2f}dB)".format(self.cur_step, loss_log, loss_db))
-        #return self.render_frame(_scale)
+        
     def get_npf32_image(self,img:jnp.array,W,H)->np.array:
         img=Image.fromarray(np.array(img,dtype=np.uint8))
         img=img.resize(size=(W,H), resample=Image.NEAREST)
@@ -305,6 +305,8 @@ class Gui_trainer():
         total_loss = 0
         self.log_step=0
         for _ in (pbar := tqdm(range(n_batches), desc="Training epoch#{:03d}".format(cur_steps), bar_format=common.tqdm_format)):
+            if self.need_exit:
+                raise KeyboardInterrupt
             if not self.istraining:
                 logger.warn("aborted at step {}".format(cur_steps))
                 # logger.info("saving training state ... ")
@@ -379,7 +381,6 @@ class Gui_trainer():
         return total_loss / n_processed_rays, state
     def stop_trainer(self):
         self.istraining=False
-    
     def setBackColor(self,color:Tuple[float,float,float]):
         self.back_color=color
     def get_currentStep(self):
@@ -448,9 +449,13 @@ class TrainThread(threading.Thread):
         if self.trainer:
             self.trainer.setBackColor(self.back_color)
     def run(self):
-        self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,back_color=self.back_color)
         try:
-            while self.needUpdate:
+            self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,back_color=self.back_color)
+        except Exception as e:
+            self.logger.error(e)
+            self.needUpdate=False
+        while self.needUpdate:
+            try:
                 if self.istraining and self.trainer and self.trainer.cur_step<self.gui_args.max_step:
                     start_time=time.time()
                     self.trainer.train_steps(self.step)
@@ -464,8 +469,9 @@ class TrainThread(threading.Thread):
                     end_time=time.time()
                     self.render_infer_time=end_time-start_time
                     self.istesting=False
-        except Exception as e:
-            self.logger.error(e)
+            except Exception as e:
+                    self.logger.error(e)
+                    break
     def get_TrainInferTime(self):
         if self.train_infer_time!=-1:
             return "{:.6f}".format(self.train_infer_time)
@@ -514,6 +520,7 @@ class TrainThread(threading.Thread):
         self.istraining=False
         self.needUpdate=False
         if self.trainer:
+            
             self.trainer.stop_trainer()
         thread_id = self.get_id() 
         self.logger.warning("Throw training thread exit Exception")
@@ -601,6 +608,7 @@ class NeRFGUI():
     View_H:int= field(init=False)
     View_W:int= field(init=False)
 
+    exit_flag:bool=False
     def __post_init__(self):
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
 
@@ -789,8 +797,16 @@ class NeRFGUI():
                         dpg.add_text(tip1,wrap=self.gui_args.control_window_width-40)
                         dpg.add_text(tip2,wrap=self.gui_args.control_window_width-40)
                         dpg.add_text(tip3,wrap=self.gui_args.control_window_width-40)
-        
-        #drag       
+        def callback_key(sender,appdata):
+            if appdata==dpg.mvKey_Q:
+                self.logger.warn("press exit key:Q ")
+                # if self.train_thread:
+                #     self.train_thread.stop()
+                self.logger.warn("exiting cleanly ...")
+                self.exit_flag=True
+
+                
+        #IO      
         with dpg.handler_registry():
             dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseDrag)
             dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseRelease)
@@ -801,6 +817,9 @@ class NeRFGUI():
             dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Middle,callback=callback_mouseDown)
             dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Middle,callback=callback_mouseRelease)
             
+            dpg.add_key_release_handler(callback=callback_key)  
+        
+        
         dpg.setup_dearpygui()
         dpg.show_viewport()
     def change_scale(self):    
@@ -860,9 +879,9 @@ class NeRFGUI():
         self.data_step,self.data_loss=self.train_thread.get_plotData()
         self.update_plot()
     
-    def render(self):
-        try:       
-            while dpg.is_dearpygui_running():
+    def render(self):            
+        while dpg.is_dearpygui_running():
+            try:
                 self.adapt_size()
                 if self.train_thread:
                     self.train_thread.change_WH(self.W,self.H)
@@ -874,13 +893,18 @@ class NeRFGUI():
                 else:
                     dpg.set_value("_texture", self.framebuff)
                 dpg.render_dearpygui_frame()
-                
-        except KeyboardInterrupt:
-            if self.train_thread:
-                self.train_thread.stop()
-            self.logger.info("exiting cleanly ...")
-            exit()    
+                if self.exit_flag:
+                    raise BaseException
+            except BaseException:
+                if self.train_thread:
+                    self.train_thread.stop()
+                while self.train_thread and self.train_thread.is_alive():
+                    pass
+                self.logger.warn("thread killed successfully")
+                self.logger.warn("exiting cleanly ...")
+                break 
         dpg.destroy_context()
+        
 
 
 def gui_exit(): 
