@@ -424,7 +424,9 @@ class TransformJsonBase:
         )
 
     def as_json(self, /, indent: int=2) -> str:
-        return json.dumps(dataclasses.asdict(self), indent=indent)
+        d = dataclasses.asdict(self)
+        d = jax.tree_util.tree_map(lambda x: x.as_posix() if isinstance(x, Path) else x, d)
+        return json.dumps(d, indent=indent)
 
     @classmethod
     def from_json(cls, jsonstr: str) -> "TransformJsonBase":
