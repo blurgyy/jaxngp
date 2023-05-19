@@ -383,8 +383,12 @@ def write_video(dest: Path, images: Sequence, *, fps: int=24, loop: int=3):
     images = list(images) * loop
     assert len(images) > 0, "cannot write empty video"
     video_writer = imageio.get_writer(dest, mode="I", fps=fps)
-    for im in tqdm(images, desc="writing video to {}".format(dest.as_posix())):
-        video_writer.append_data(np.asarray(im))
+    try:
+        for im in tqdm(images, desc="writing video to {}".format(dest.as_posix())):
+            video_writer.append_data(np.asarray(im))
+    except (BrokenPipeError, IOError) as e:  # sometimes ffmpeg encounters io error for no apparent reason
+        warnings.warn("failed writing video: {}".format(str(e)), RuntimeWarning)
+        warnings.warn("skipping saving video '{}'".format(dest.as_posix()), RuntimeWarning)
 
 
 @jax.jit
