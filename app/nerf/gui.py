@@ -457,10 +457,6 @@ class TrainThread(threading.Thread):
                     end_time=time.time()
                     self.train_infer_time=end_time-start_time
                     self.test()
-                    # start_time=time.time()
-                    # _,self.framebuff,_=self.trainer.render_frame(self.scale,self.H,self.W)
-                    # end_time=time.time()
-                    # self.render_infer_time=end_time-start_time
                 if self.istesting:
                     start_time=time.time()    
                     _,self.framebuff,_=self.trainer.render_frame(self.scale,self.H,self.W)
@@ -573,6 +569,8 @@ class TrainThread(threading.Thread):
         self.frame_updated=False
     def canUpdate(self):
         return self.frame_updated
+    def setStep(self,step):
+        self.step=step
 @dataclass
 class NeRFGUI():
     
@@ -639,20 +637,24 @@ class NeRFGUI():
                 self.train_thread.set_camera_pose(self.cameraPoseNext.pose)
                 self.train_thread.test()
         def callback_mouseDown(sender,app_data):
+            if not dpg.is_item_hovered("_primary_window"):
+                return 
             if app_data[1] < 1e-5:
                 self.cameraPosePrev = self.cameraPose
+            if self.train_thread:
+                self.train_thread.setStep(1)
         def callback_mouseRelease(sender,app_data):
             if not dpg.is_item_hovered("_primary_window"):
                 return 
             self.cameraPose = self.cameraPoseNext
-            
+            if self.train_thread:
+                self.train_thread.setStep(self.gui_args.train_steps)
         def callback_mouseWheel(sender,app_data):
             if not dpg.is_item_hovered("_primary_window"):
                 return 
-            delta=app_data
-            self.cameraPose.change_radius(delta)
-            self.logger.info("self.cameraPose.radius:{}".format(self.cameraPose.radius))
             if self.train_thread:
+                self.cameraPose.change_radius(app_data)
+                self.logger.info("self.cameraPose.radius:{}".format(self.cameraPose.radius))
                 self.train_thread.set_camera_pose(self.cameraPose.pose)
                 self.train_thread.test()
         def callback_train(sender, app_data):
@@ -845,7 +847,7 @@ class NeRFGUI():
     def update_panel(self):
         dpg.set_value("_cur_train_step","{} (+{}/{})".format(self.train_thread.get_currentStep(),
                                                              self.train_thread.get_logStep(),
-                                                             self.gui_args.train_steps))
+                                                             self.train_thread.step))
         dpg.set_value("_log_train_time","{}".format(self.train_thread.get_TrainInferTime()))
         dpg.set_value("_log_infer_time","{}".format(self.train_thread.get_RenderInferTime()))
         dpg.set_value("_fps","{}".format(self.train_thread.get_Fps()))
