@@ -96,6 +96,8 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     if args.trajectory == "loaded":
         if args.camera_override.enabled:
             logger.info("camera is overridden, not calculating psnr")
+        elif len(rendered_images) == 0:
+            logger.warn("tested 0 image, not calculating psnr")
         else:
             gt_rgbs_f32 = map(
                 lambda test_view, rendered_image: data.blend_rgba_image_array(
