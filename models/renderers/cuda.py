@@ -192,7 +192,7 @@ def render_rays_train(
         occupancy_bitfield=state.ogrid.occupancy,
     )
 
-    densities, rgbs = state.nerf_fn(
+    drgbs = state.nerf_fn(
         {"params": state.params["nerf"]},
         ray_pts,
         ray_dirs,
@@ -204,8 +204,7 @@ def render_rays_train(
         bgs=bg,
         dss=dss,
         z_vals=z_vals,
-        densities=densities,
-        rgbs=rgbs,
+        drgbs=drgbs,
     )
 
     batch_metrics = {
@@ -267,7 +266,7 @@ def march_and_integrate_inference(
         rays_cost = rays_cost.at[indices].set(rays_cost[indices] + n_samples)
 
     xyzs = jax.lax.stop_gradient(xyzs)
-    densities, rgbs = payload.nerf_fn(
+    drgbs = payload.nerf_fn(
         {"params": locked_nerf_params},
         xyzs,
         jnp.broadcast_to(rays_d[indices, None, :], xyzs.shape),
@@ -283,8 +282,7 @@ def march_and_integrate_inference(
         indices=indices,
         dss=dss,
         z_vals=z_vals,
-        densities=densities,
-        rgbs=rgbs,
+        drgbs=drgbs,
     )
 
     return terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth

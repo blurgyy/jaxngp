@@ -14,8 +14,7 @@ def integrate_rays(
     bgs: jax.Array,
     dss: jax.Array,
     z_vals: jax.Array,
-    densities: jax.Array,
-    rgbs: jax.Array,
+    drgbs: jax.Array,
 ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     """
     Inputs:
@@ -35,8 +34,7 @@ def integrate_rays(
                              no longer appropriate to assume the density is constant along this
                              large segment; (2) `z_vals[i+1]` is not defined for the last sample.
         z_vals [total_samples]: z_vals[i] is the distance of the i-th sample from the camera
-        densities [total_samples, 1]: density values along a ray
-        rgbs [total_samples, 3]: rgb values along a ray
+        drgbs [total_samples, 4]: density (1) and rgb (3) values along a ray
 
     Returns:
         measured_batch_size `uint`: total number of samples that got composited into output
@@ -49,8 +47,7 @@ def integrate_rays(
         bgs,
         dss,
         z_vals,
-        densities,
-        rgbs,
+        drgbs
     )
 
     return counter[0], final_rgbs, depths
@@ -66,8 +63,7 @@ def integrate_rays_inference(
     indices: jax.Array,
     dss: jax.Array,
     z_vals: jax.Array,
-    densities: jax.Array,
-    rgbs: jax.Array,
+    drgbs: jax.Array,
 ):
     """
     Inputs:
@@ -83,8 +79,7 @@ def integrate_rays_inference(
                                      corresponding to this ray
         dss `float` `[n_rays, march_steps_cap]`: each sample's `ds`
         z_vals `float` `[n_rays, march_steps_cap]`: each sample's distance to its ray origin
-        densities `float` `[n_rays, march_steps_cap]`: predicted density values from a NeRF model
-        rgbs `float` `[n_rays, march_steps_cap, 3]`: predicted RGB values from a NeRF model
+        drgbs `float` `[n_rays, march_steps_cap, 4]`: predicted density (1) and RGB (3) values from a NeRF model
 
     Returns:
         terminate_cnt `uint32`: number of rays that terminated this iteration
@@ -104,8 +99,7 @@ def integrate_rays_inference(
         indices,
         dss,
         z_vals,
-        densities,
-        rgbs,
+        drgbs,
     )
     rays_rgb = rays_rgb.at[indices].set(rays_rgb_out)
     rays_T = rays_T.at[indices].set(rays_T_out)

@@ -54,8 +54,7 @@ def __integrate_rays(
     bgs: jax.Array,
     dss: jax.Array,
     z_vals: jax.Array,
-    densities: jax.Array,
-    rgbs: jax.Array,
+    drgbs: jax.Array,
 ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     bgs = jax.numpy.broadcast_to(bgs, (rays_sample_startidx.shape[0], 3))
 
@@ -65,8 +64,7 @@ def __integrate_rays(
         bgs,
         dss,
         z_vals,
-        densities,
-        rgbs,
+        drgbs,
     )
 
     return counter, final_rgbs, depths
@@ -77,8 +75,7 @@ def __fwd_integrate_rays(
     bgs: jax.Array,
     dss: jax.Array,
     z_vals: jax.Array,
-    densities: jax.Array,
-    rgbs: jax.Array,
+    drgbs: jax.Array,
 ):
     bgs = jax.numpy.broadcast_to(bgs, (rays_sample_startidx.shape[0], 3))
 
@@ -88,8 +85,7 @@ def __fwd_integrate_rays(
         bgs,
         dss,
         z_vals,
-        densities,
-        rgbs,
+        drgbs,
     )
     counter, final_rgbs, depths = primal_outputs
     aux = {
@@ -98,8 +94,7 @@ def __fwd_integrate_rays(
         "in.bgs": bgs,
         "in.dss": dss,
         "in.z_vals": z_vals,
-        "in.densities": densities,
-        "in.rgbs": rgbs,
+        "in.drgbs": drgbs,
 
         "out.counter": counter,
         "out.final_rgbs": final_rgbs,
@@ -109,14 +104,13 @@ def __fwd_integrate_rays(
 
 def __bwd_integrate_rays(aux, grads):
     _, dL_dfinal_rgbs, dL_ddepths = grads
-    dL_dbgs, dL_dz_vals, dL_ddensities, dL_drgbs = integrate_rays_bwd_p.bind(
+    dL_dbgs, dL_dz_vals, dL_ddrgbs = integrate_rays_bwd_p.bind(
         aux["in.rays_sample_startidx"],
         aux["in.rays_n_samples"],
         aux["in.bgs"],
         aux["in.dss"],
         aux["in.z_vals"],
-        aux["in.densities"],
-        aux["in.rgbs"],
+        aux["in.drgbs"],
 
         aux["out.final_rgbs"],
         aux["out.depths"],
@@ -136,7 +130,7 @@ def __bwd_integrate_rays(aux, grads):
         # 4-th primal input is `dss`, no gradient
         None,
         # gradients for background colors, z_vals and model predictions (densites and rgbs)
-        dL_dbgs, dL_dz_vals, dL_ddensities, dL_drgbs
+        dL_dbgs, dL_dz_vals, dL_ddrgbs
     )
 
 __integrate_rays.defvjp(

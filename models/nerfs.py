@@ -70,7 +70,7 @@ class NeRF(nn.Module):
 
         density, rgb = self.density_activation(density), self.rgb_activation(rgb)
 
-        return density.reshape(*original_aux_shapes, 1), rgb.reshape(*original_aux_shapes, 3)
+        return jnp.concatenate([density, rgb], axis=-1).reshape(*original_aux_shapes, 4)
 
 
 class CoordinateBasedMLP(nn.Module):

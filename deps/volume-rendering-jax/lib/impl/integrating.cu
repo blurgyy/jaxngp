@@ -32,8 +32,7 @@ __global__ void integrate_rays_kernel(
     , float const * const __restrict__ bgs  // [n_rays, 3]
     , float const * const __restrict__ dss  // [total_samples]
     , float const * const __restrict__ z_vals  // [total_samples]
-    , float const * const __restrict__ densities  // [total_samples, 1]
-    , float const * const __restrict__ rgbs  // [total_samples, 3]
+    , float const * const __restrict__ drgbs  // [total_samples, 4]
 
     // helper
     , std::uint32_t * const __restrict__ counter  // [1]
@@ -52,8 +51,7 @@ __global__ void integrate_rays_kernel(
     float const * const __restrict__ ray_bgs = bgs + i * 3;  // [3]
     float const * const __restrict__ ray_dss = dss + start_idx;  // [n_samples]
     float const * const __restrict__ ray_z_vals = z_vals + start_idx;  // [n_samples]
-    float const * const __restrict__ ray_densities = densities + start_idx;  // [n_samples]
-    float const * const __restrict__ ray_rgbs = rgbs + start_idx * 3;  // [n_samples, 3]
+    float const * const __restrict__ ray_drgbs = drgbs + start_idx * 4;  // [n_samples, 4]
 
     // front-to-back composition, with early stop
     std::uint32_t sample_idx = 0;
@@ -63,14 +61,14 @@ __global__ void integrate_rays_kernel(
     for (; ray_transmittance > T_THRESHOLD && sample_idx < n_samples; ++sample_idx) {
         float const z_val = ray_z_vals[sample_idx];
         float const delta_t = ray_dss[sample_idx];
-        float const alpha = 1.f - __expf(-ray_densities[sample_idx] * delta_t);
+        float const alpha = 1.f - __expf(-ray_drgbs[sample_idx * 4] * delta_t);
 
         float const weight = ray_transmittance * alpha;
 
         /// composite colors
-        r += weight * ray_rgbs[sample_idx * 3 + 0];
-        g += weight * ray_rgbs[sample_idx * 3 + 1];
-        b += weight * ray_rgbs[sample_idx * 3 + 2];
+        r += weight * ray_drgbs[sample_idx * 4 + 1];
+        g += weight * ray_drgbs[sample_idx * 4 + 2];
+        b += weight * ray_drgbs[sample_idx * 4 + 3];
 
         /// composite depth
         ray_depth += weight * z_val;
@@ -117,8 +115,7 @@ __global__ void integrate_rays_backward_kernel(
     , float const * const __restrict__ bgs  // [n_rays, 3]
     , float const * const __restrict__ dss  // [total_samples]
     , float const * const __restrict__ z_vals  // [total_samples]
-    , float const * const __restrict__ densities  // [total_samples]
-    , float const * const __restrict__ rgbs  // [total_samples, 3]
+    , float const * const __restrict__ drgbs  // [total_samples, 4]
 
     /// original outputs
     , float const * const __restrict__ final_rgbs  // [n_rays, 3]
@@ -131,8 +128,7 @@ __global__ void integrate_rays_backward_kernel(
     // output arrays
     , float * const __restrict__ dL_dbgs  // [n_rays, 3]
     , float * const __restrict__ dL_dz_vals  // [total_samples]
-    , float * const __restrict__ dL_ddensities  // [total_samples]
-    , float * const __restrict__ dL_drgbs  // [total_samples, 3]
+    , float * const __restrict__ dL_ddrgbs  // [total_samples, 4]
 ) {
     std::uint32_t const i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_rays) { return; }
@@ -145,8 +141,7 @@ __global__ void integrate_rays_backward_kernel(
     float const * const __restrict__ ray_bgs = bgs + i * 3;
     float const * const __restrict__ ray_dss = dss + start_idx;  // [n_samples]
     float const * const __restrict__ ray_z_vals = z_vals + start_idx;  // [n_samples]
-    float const * const __restrict__ ray_densities = densities + start_idx;  // [n_samples]
-    float const * const __restrict__ ray_rgbs = rgbs + start_idx * 3;  // [n_samples, 3]
+    float const * const __restrict__ ray_drgbs = drgbs + start_idx * 4;  // [n_samples, 4]
 
     /// original outputs
     float const ray_final_rgb[3] = {
@@ -167,8 +162,7 @@ __global__ void integrate_rays_backward_kernel(
     // outputs
     float * const __restrict__ ray_dL_dbgs = dL_dbgs + i * 3;  // [3]
     float * const __restrict__ ray_dL_dz_vals = dL_dz_vals + start_idx;  // [n_samples]
-    float * const __restrict__ ray_dL_ddensities = dL_ddensities + start_idx;  // [n_samples]
-    float * const __restrict__ ray_dL_drgbs = dL_drgbs + start_idx * 3;  // [n_samples, 3]
+    float * const __restrict__ ray_dL_ddrgbs = dL_ddrgbs + start_idx * 4;  // [n_samples, 4]
 
     // front-to-back composition, with early stop
     float transmittance = 1.f;
@@ -177,13 +171,13 @@ __global__ void integrate_rays_backward_kernel(
     for (std::uint32_t sample_idx = 0; transmittance > T_THRESHOLD && sample_idx < n_samples; ++sample_idx) {
         float const z_val = ray_z_vals[sample_idx];
         float const delta_t = ray_dss[sample_idx];
-        float const alpha = 1.f - __expf(-ray_densities[sample_idx] * delta_t);
+        float const alpha = 1.f - __expf(-ray_drgbs[sample_idx * 4] * delta_t);
 
         float const weight = transmittance * alpha;
 
-        cur_rgb[0] += weight * ray_rgbs[sample_idx * 3 + 0];
-        cur_rgb[1] += weight * ray_rgbs[sample_idx * 3 + 1];
-        cur_rgb[2] += weight * ray_rgbs[sample_idx * 3 + 2];
+        cur_rgb[0] += weight * ray_drgbs[sample_idx * 4 + 1];
+        cur_rgb[1] += weight * ray_drgbs[sample_idx * 4 + 2];
+        cur_rgb[2] += weight * ray_drgbs[sample_idx * 4 + 3];
         cur_depth += weight * ray_z_vals[sample_idx];
 
         // decay transmittance before gradient calculation, as transmittance used in gradient
@@ -195,7 +189,7 @@ __global__ void integrate_rays_backward_kernel(
         ray_dL_dz_vals[sample_idx] = weight * ray_dL_ddepth;
 
         /// density gradients
-        ray_dL_ddensities[sample_idx] = delta_t * (
+        ray_dL_ddrgbs[sample_idx * 4] = delta_t * (
             0.f
             //// gradients from final_rgbs
             ///// NOTE:
@@ -204,17 +198,17 @@ __global__ void integrate_rays_backward_kernel(
             /////   change.
             ///// TODO:
             /////   write this up in a public post
-            + ray_dL_dfinal_rgb[0] * (transmittance * ray_rgbs[sample_idx * 3 + 0] - (ray_final_rgb[0] - cur_rgb[0]))
-            + ray_dL_dfinal_rgb[1] * (transmittance * ray_rgbs[sample_idx * 3 + 1] - (ray_final_rgb[1] - cur_rgb[1]))
-            + ray_dL_dfinal_rgb[2] * (transmittance * ray_rgbs[sample_idx * 3 + 2] - (ray_final_rgb[2] - cur_rgb[2]))
+            + ray_dL_dfinal_rgb[0] * (transmittance * ray_drgbs[sample_idx * 4 + 1] - (ray_final_rgb[0] - cur_rgb[0]))
+            + ray_dL_dfinal_rgb[1] * (transmittance * ray_drgbs[sample_idx * 4 + 2] - (ray_final_rgb[1] - cur_rgb[1]))
+            + ray_dL_dfinal_rgb[2] * (transmittance * ray_drgbs[sample_idx * 4 + 3] - (ray_final_rgb[2] - cur_rgb[2]))
             //// gradients from depth
             + ray_dL_ddepth * (transmittance * ray_z_vals[sample_idx] - (ray_depth - cur_depth))
         );
 
         /// color gradients
-        ray_dL_drgbs[sample_idx * 3 + 0] = weight * ray_dL_dfinal_rgb[0];
-        ray_dL_drgbs[sample_idx * 3 + 1] = weight * ray_dL_dfinal_rgb[1];
-        ray_dL_drgbs[sample_idx * 3 + 2] = weight * ray_dL_dfinal_rgb[2];
+        ray_dL_ddrgbs[sample_idx * 4 + 1] = weight * ray_dL_dfinal_rgb[0];
+        ray_dL_ddrgbs[sample_idx * 4 + 2] = weight * ray_dL_dfinal_rgb[1];
+        ray_dL_ddrgbs[sample_idx * 4 + 3] = weight * ray_dL_dfinal_rgb[2];
     }
 
     // gradients for background colors
@@ -237,8 +231,7 @@ __global__ void integrate_rays_inference_kernel(
     , std::uint32_t const * const __restrict__ indices  // [n_rays]
     , float const * const __restrict__ dss  // [n_rays, march_steps_cap]
     , float const * const __restrict__ z_vals  // [n_rays, march_steps_cap]
-    , float const * const __restrict__ densities  // [n_rays, march_steps_cap]
-    , float const * const __restrict__ rgbs  // [n_rays, march_steps_cap, 3]
+    , float const * const __restrict__ drgbs  // [n_rays, march_steps_cap, 4]
 
     , std::uint32_t * const __restrict__ terminate_cnt
     , bool * const __restrict__ terminated
@@ -255,8 +248,7 @@ __global__ void integrate_rays_inference_kernel(
     if (ray_idx < n_total_rays) {
         float const * const __restrict__ ray_dss = dss + i * march_steps_cap;
         float const * const __restrict__ ray_z_vals = z_vals + i * march_steps_cap;
-        float const * const __restrict__ ray_densities = densities + i * march_steps_cap;
-        float const * const __restrict__ ray_rgbs = rgbs + i * march_steps_cap * 3;
+        float const * const __restrict__ ray_drgbs = drgbs + i * march_steps_cap * 4;
 
         float ray_T = rays_T[ray_idx];
         float r = rays_rgb[ray_idx * 3 + 0];
@@ -265,12 +257,12 @@ __global__ void integrate_rays_inference_kernel(
         float ray_depth = rays_depth[ray_idx];
         for (std::uint32_t sample_idx = 0; ray_T > T_THRESHOLD && sample_idx < ray_n_samples; ++sample_idx) {
             float const ds = ray_dss[sample_idx];
-            float const density = ray_densities[sample_idx];
+            float const density = ray_drgbs[sample_idx * 4];
             float const alpha = 1.f - __expf(-density * ds);
             float const weight = ray_T * alpha;
-            r += weight * ray_rgbs[sample_idx * 3 + 0];
-            g += weight * ray_rgbs[sample_idx * 3 + 1];
-            b += weight * ray_rgbs[sample_idx * 3 + 2];
+            r += weight * ray_drgbs[sample_idx * 4 + 1];
+            g += weight * ray_drgbs[sample_idx * 4 + 2];
+            b += weight * ray_drgbs[sample_idx * 4 + 3];
             ray_depth += weight * ray_z_vals[sample_idx];;
             ray_T *= (1.f - alpha);
         }
@@ -325,8 +317,7 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
     float const * const __restrict__ bgs = static_cast<float *>(next_buffer());  // [n_rays, 3]
     float const * const __restrict__ dss = static_cast<float *>(next_buffer());  // [total_samples]
     float const * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [total_samples]
-    float const * const __restrict__ densities = static_cast<float *>(next_buffer());  // [total_samples]
-    float const * const __restrict__ rgbs = static_cast<float *>(next_buffer());  // [total_samples, 3]
+    float const * const __restrict__ drgbs = static_cast<float *>(next_buffer());  // [total_samples, 4]
 
     // helper counter for measured_batch_size
     std::uint32_t * const __restrict__ counter = static_cast<std::uint32_t *>(next_buffer());  // [1]
@@ -352,8 +343,7 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
         , bgs
         , dss
         , z_vals
-        , densities
-        , rgbs
+        , drgbs
         // helper counter
         , counter
         // output arrays (2)
@@ -384,8 +374,7 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
     float const * const __restrict__ bgs = static_cast<float *>(next_buffer());  // [n_rays, 3]
     float const * const __restrict__ dss = static_cast<float *>(next_buffer());  // [total_samples]
     float const * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [total_samples]
-    float const * const __restrict__ densities = static_cast<float *>(next_buffer());  // [total_samples]
-    float const * const __restrict__ rgbs = static_cast<float *>(next_buffer());  // [total_samples, 3]
+    float const * const __restrict__ drgbs = static_cast<float *>(next_buffer());  // [total_samples, 4]
     //// original outputs
     float const * const __restrict__ final_rgbs = static_cast<float *>(next_buffer());  // [n_rays, 3]
     float const * const __restrict__ depths = static_cast<float *>(next_buffer());  // [n_rays]
@@ -396,14 +385,12 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
     // outputs
     float * const __restrict__ dL_dbgs = static_cast<float *>(next_buffer());  // [n_rays, 3]
     float * const __restrict__ dL_dz_vals = static_cast<float *>(next_buffer());  // [total_samples]
-    float * const __restrict__ dL_ddensities = static_cast<float *>(next_buffer());  // [total_samples]
-    float * const __restrict__ dL_drgbs = static_cast<float *>(next_buffer());  // [total_samples, 3]
+    float * const __restrict__ dL_ddrgbs = static_cast<float *>(next_buffer());  // [total_samples, 4]
 
     // reset all outputs to zeros
     CUDA_CHECK_THROW(cudaMemsetAsync(dL_dbgs, 0x00, n_rays * 3 * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(dL_dz_vals, 0x00, total_samples * sizeof(float), stream));
-    CUDA_CHECK_THROW(cudaMemsetAsync(dL_ddensities, 0x00, total_samples * sizeof(float), stream));
-    CUDA_CHECK_THROW(cudaMemsetAsync(dL_drgbs, 0x00, total_samples * 3 * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(dL_ddrgbs, 0x00, total_samples * 4 * sizeof(float), stream));
 
     // kernel launch
     std::uint32_t static constexpr blockSize = 512;
@@ -419,8 +406,7 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
         , bgs
         , dss
         , z_vals
-        , densities
-        , rgbs
+        , drgbs
         /// original outputs
         , final_rgbs
         , depths
@@ -431,8 +417,7 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
         // output arrays
         , dL_dbgs
         , dL_dz_vals
-        , dL_ddensities
-        , dL_drgbs
+        , dL_ddrgbs
     );
 
     // abort on error
@@ -462,8 +447,7 @@ void integrate_rays_inference_launcher(cudaStream_t stream, void **buffers, char
     std::uint32_t const * const __restrict__ indices = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     float const * const __restrict__ dss = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap]
     float const * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap]
-    float const * const __restrict__ densities = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap]
-    float const * const __restrict__ rgbs = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap, 3]
+    float const * const __restrict__ drgbs = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap, 4]
 
     // outputs
     std::uint32_t * const __restrict__ terminate_cnt = static_cast<std::uint32_t *>(next_buffer());  // [1]
@@ -496,8 +480,7 @@ void integrate_rays_inference_launcher(cudaStream_t stream, void **buffers, char
         , indices
         , dss
         , z_vals
-        , densities
-        , rgbs
+        , drgbs
 
         , terminate_cnt
         , terminated
