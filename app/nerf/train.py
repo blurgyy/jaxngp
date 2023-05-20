@@ -129,6 +129,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
         srcs=args.frames_train,
         scene_options=args.scene,
     )
+    logger.debug("sharpness_min={:.3f}, sharpness_max={:.3f}".format(*scene_train.meta.sharpness_range))
 
     if len(args.frames_val) > 0:
         logger.info("loading validation frames")

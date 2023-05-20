@@ -139,6 +139,7 @@ class NeRFTrainingArgs(NeRFArgsBase):
         random_bg=True,
     )
     scene: SceneOptions=SceneOptions(
+        sharpness_threshold=-1.,
         world_scale=1.0,
         resolution_scale=1.0,
     )
@@ -189,6 +190,7 @@ class NeRFTestingArgs(NeRFArgsBase):
         random_bg=False,
     )
     scene: SceneOptions=SceneOptions(
+        sharpness_threshold=-1.,
         world_scale=1.0,
         resolution_scale=1.0,
     )

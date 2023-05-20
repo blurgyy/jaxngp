@@ -314,6 +314,9 @@ class CameraOverrideOptions:
 @replace_impl
 @pydantic.dataclasses.dataclass(frozen=True)
 class SceneOptions:
+    # images with sharpness lower than this value will be discarded
+    sharpness_threshold: float
+
     # scale both the scene's camera positions and bounding box with this factor
     world_scale: float
 
@@ -553,6 +556,14 @@ class SceneMeta:
     @property
     def n_pixels(self) -> float:
         return self.camera.n_pixels * len(self.frames)
+
+    @property
+    def sharpness_range(self) -> float:
+        return functools.reduce(
+            lambda prev, frame: (min(prev[0], frame.sharpness), max(prev[1], frame.sharpness)),
+            self.frames,
+            (1e9, -1e9),
+        )
 
     # this is the same thing as `dt_gamma` in ashawkey/torch-ngp
     @property

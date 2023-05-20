@@ -623,6 +623,15 @@ def load_scene(
     sort_frames: bool=False,
     orbit_options: OrbitTrajectoryOptions | None=None,
 ) -> SceneMeta | Tuple[SceneData, List[ViewMetadata]]:
+    """
+    Inputs:
+        srcs: sequence of paths to recursively load transforms.json
+        scene_options: see :class:`SceneOptions`
+        sort_frames: whether to sort the frames by their filenames, (uses natural sort if enabled)
+        orbit_options: if not `None`, generate a sequence of camera poses and ignore the loaded
+                       camera poses
+    """
+
     assert isinstance(srcs, collections.abc.Sequence) and not isinstance(srcs, str), (
         "load_scene accepts a sequence of paths as srcs to load, did you mean '{}'?".format([srcs])
     )
@@ -631,24 +640,34 @@ def load_scene(
     transforms = merge_transforms(map(load_transform_json_recursive, srcs))
     if transforms is None:
         raise FileNotFoundError("could not load transforms from any of {}".format(srcs))
-    transforms = transforms.replace(
-        frames=list(filter(
-            lambda f: f.file_path is not None,
-            map(
-                lambda f: f.replace(file_path=try_image_extensions(f.file_path)),
-                transforms.frames,
-            ),
-        ))
+
+    loaded_frames, discarded_frames = functools.reduce(
+        lambda prev, frame: (
+            prev[0] + ((frame,) if (
+                frame.file_path is not None
+                and frame.sharpness >= scene_options.sharpness_threshold
+            ) else ()),
+            prev[1] + (() if (
+                frame.file_path is not None
+                and frame.sharpness >= scene_options.sharpness_threshold
+            ) else (frame,)),
+        ),
+        map(
+            lambda f: f.replace(file_path=try_image_extensions(f.file_path)),
+            transforms.frames,
+        ),
+        (tuple(), tuple()),
     )
+
+    if len(loaded_frames) == 0:
+        raise RuntimeError("loaded 0 frame from '{}' (discarded {} frame(s))".format(srcs, len(discarded_frames)))
+
+    transforms = transforms.replace(frames=loaded_frames)
+
     if sort_frames:
         transforms = transforms.replace(
             frames=natsorted(transforms.frames, key=lambda f: f.file_path),
         )
-
-    if transforms is None:
-        raise FileNotFoundError("could not find any valid transforms in {}".format(srcs))
-    if len(transforms.frames) == 0:
-        raise ValueError("could not find any frame in {}".format(srcs))
 
     # shared camera model
     if isinstance(transforms, TransformJsonNeRFSynthetic):
@@ -692,6 +711,7 @@ def load_scene(
     )
 
     if orbit_options is not None:
+        assert isinstance(orbit_options, OrbitTrajectoryOptions)
         return scene_meta.make_frames_with_orbiting_trajectory(orbit_options)
 
     views = tuple(map(
