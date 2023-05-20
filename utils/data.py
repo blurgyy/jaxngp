@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Literal, Sequence, Tuple
 import warnings
 
-from PIL import Image
+from PIL import Image, ImageFilter, UnidentifiedImageError
 import chex
 import ffmpeg
 import imageio
@@ -50,10 +50,21 @@ def mono_to_rgb(img: jax.Array, cm: Literal["inferno", "jet", "turbo"]="inferno"
     return plt.get_cmap(cm)(img)
 
 
+def sharpness_of(path: str | Path) -> float | None:
+    try:
+        image = Image.open(path)
+    except (IsADirectoryError, UnidentifiedImageError) as e:
+        warnings.warn(
+            "failed loading '{}': {}".format(path, str(e)))
+        return None
+    laplacian = image.convert("L").filter(ImageFilter.FIND_EDGES)
+    return float(np.asarray(laplacian).var())
+
+
 def video_to_images(
     video_in: Path,
     images_dir: Path,
-    fmt: str="%03d.png",
+    fmt: str="%04d.png",
     fps: int=3,
 ):
     video_in, images_dir = Path(video_in), Path(images_dir)
@@ -118,6 +129,18 @@ def closest_point_2_lines(oa, da, ob, db):
     return (oa+ta*da+ob+tb*db) * 0.5, denom
 
 
+def write_sharpness_json(raw_images_dir: str | Path):
+    raw_images_dir = Path(raw_images_dir)
+    out_filename = "sharpnesses.jaxngp.json"
+    image_candidates = tuple(filter(lambda x: x.name != out_filename, raw_images_dir.iterdir()))
+    sharpnesses = ThreadPoolExecutor().map(sharpness_of, image_candidates)
+    path_sharpness_tuples = zip(map(lambda p: p.absolute().as_posix(), raw_images_dir.iterdir()), sharpnesses)
+    path_sharpness_tuples = filter(lambda tup: tup[1] is not None, path_sharpness_tuples)
+    path_sharpness_tuples = sorted(tqdm(path_sharpness_tuples, desc="estimating sharpness of image collection"), key=lambda tup: tup[1], reverse=True)
+    with open(raw_images_dir.joinpath(out_filename), "w") as f:
+        json.dump(path_sharpness_tuples, f)
+
+
 def write_transforms_json(
     dataset_root_dir: Path,
     images_dir: Path,
@@ -162,6 +185,11 @@ def write_transforms_json(
             file_path=rel_prefix.joinpath(name).as_posix(),
             transform_matrix=c2w.tolist(),
         ))
+
+    # estimate sharpness
+    sharpnesses = ThreadPoolExecutor().map(lambda f: sharpness_of(dataset_root_dir.joinpath(f.file_path)), frames)
+    for i, sharpness in enumerate(tqdm(sharpnesses, total=len(frames), desc="estimating sharpness of image collection")):
+        frames[i] = frames[i].replace(sharpness=sharpness)
 
     # reorient the scene to be easier to work with
     up = up / np.linalg.norm(up)
