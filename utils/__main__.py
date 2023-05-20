@@ -65,7 +65,7 @@ class CreateDataset:
     bound: float=8.0
 
     # scale the camera's positions, the mean camera-to-origin distance will be `4.0 * camera_scale`.
-    camera_scale: float=dataclasses.field(default_factory=lambda: 1/3, kw_only=True)
+    camera_scale: float=dataclasses.field(default_factory=lambda: 2/3, kw_only=True)
 
     # should the scene be modeled with a background that is not part of the scene geometry?
     bg: bool=dataclasses.field(default_factory=lambda: False, kw_only=True)
