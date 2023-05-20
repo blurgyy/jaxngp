@@ -601,6 +601,8 @@ def load_scene(
     srcs = list(map(Path, srcs))
 
     transforms = merge_transforms(map(load_transform_json_recursive, srcs))
+    if transforms is None:
+        raise FileNotFoundError("could not load transforms from any of {}".format(srcs))
     transforms = transforms.replace(
         frames=list(filter(
             lambda f: f.file_path is not None,
