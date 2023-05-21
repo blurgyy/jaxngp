@@ -665,39 +665,36 @@ class NeRFState(TrainState):
     @functools.partial(jax.jit, static_argnames=["cas", "update_all"])
     def update_ogrid_density(self, KEY: jran.KeyArray, cas: int, update_all: bool) -> "NeRFState":
         G3 = self.raymarch.density_grid_res**3
-        cas_slice = slice(cas * G3, (cas + 1) * G3)
-        cas_alive_indices = self.ogrid.alive_indices[self.ogrid.alive_indices_offset[cas]:self.ogrid.alive_indices_offset[cas+1]]
-        aligned_indices = cas_alive_indices % G3  # values are in range [0, G3)
-        n_grids = aligned_indices.shape[0]
+        n_grids = G3
+        cas_slice = slice(cas * n_grids, (cas + 1) * n_grids)
 
         decay = .95
         cas_occ_mask = self.ogrid.occ_mask[cas_slice]
-        cas_density_grid = self.ogrid.density[cas_slice].at[aligned_indices].set(self.ogrid.density[cas_slice][aligned_indices] * decay)
+        cas_density_grid = self.ogrid.density[cas_slice] * decay
 
         if update_all:
             # During the first 256 training steps, we sample 𝑀 = 𝐾 · 128^{3} cells uniformly without
             # repetition.
-            cas_updated_indices = aligned_indices
+            cas_updated_indices = jnp.arange(n_grids, dtype=jnp.uint32)
         else:
             M = max(1, n_grids // 2)
             # The first 𝑀/2 cells are sampled uniformly among all cells.
             KEY, key_firsthalf, key_secondhalf = jran.split(KEY, 3)
             indices_firsthalf = jran.choice(
                 key=key_firsthalf,
-                a=aligned_indices,
+                a=jnp.arange(n_grids, dtype=jnp.uint32),
                 shape=(max(1, M//2),),
                 replace=True,  # allow duplicated choices
             )
             # Rejection sampling is used for the remaining samples to restrict selection to cells
             # that are currently occupied.
             # NOTE: Below is just uniformly sampling the occupied cells, not rejection sampling.
-            cas_alive_occ_mask = cas_occ_mask[aligned_indices]
             indices_secondhalf = jran.choice(
                 key=key_secondhalf,
-                a=aligned_indices,
+                a=jnp.arange(n_grids, dtype=jnp.uint32),
                 shape=(max(1, M//2),),
                 replace=True,  # allow duplicated choices
-                p=cas_alive_occ_mask.astype(jnp.float32),  # only care about occupied grids
+                p=cas_occ_mask.astype(jnp.float32),  # only care about occupied grids
             )
             cas_updated_indices = jnp.concatenate([indices_firsthalf, indices_secondhalf])
 
@@ -719,9 +716,13 @@ class NeRFState(TrainState):
             {"params": self.locked_params["nerf"]},
             jax.lax.stop_gradient(coordinates),
             None,
-        )
+        ).ravel()
         cas_density_grid = cas_density_grid.at[cas_updated_indices].set(
-            jnp.maximum(cas_density_grid[cas_updated_indices], new_densities.ravel())
+            jnp.maximum(cas_density_grid[cas_updated_indices], jnp.where(
+                cas_density_grid[cas_updated_indices] < 0,
+                cas_density_grid[cas_updated_indices],
+                new_densities,
+            ))
         )
         new_ogrid = self.ogrid.replace(
             density=self.ogrid.density.at[cas_slice].set(cas_density_grid),
