@@ -11,100 +11,17 @@ from volrendjax import (
     integrate_rays_inference,
     march_rays,
     march_rays_inference,
-    morton3d_invert,
-    packbits,
 )
 
 from utils.common import jit_jaxfn_with
 from utils.data import f32_to_u8
 from utils.types import (
     NeRFState,
-    OccupancyDensityGrid,
     PinholeCamera,
     RigidTransformation,
 )
 
 from ._utils import make_rays_worldspace
-
-
-@jit_jaxfn_with(static_argnames=["update_all"])
-def update_ogrid(
-    KEY: jran.KeyArray,
-    update_all: bool,
-    state: NeRFState,
-) -> NeRFState:
-    # (1) decay the density value in each grid cell by a factor of 0.95.
-    decay = .95
-    density_grid = state.ogrid.density * decay
-
-    # (2) randomly sample 𝑀 candidate cells, and set their value to the maximum of their current
-    # value and the density component of the NeRF model at a random location within the cell.
-    G3 = state.raymarch.density_grid_res ** 3
-    for cas in range(state.scene_meta.cascades):
-        if update_all:
-            # During the first 256 training steps, we sample 𝑀 = 𝐾 · 128^{3} cells uniformly without
-            # repetition.
-            M = G3
-            indices = jnp.arange(M, dtype=jnp.uint32)
-        else:
-            # For subsequent training steps we set 𝑀 = 𝐾 · 128^{3}/2 which we partition into two
-            # sets.
-            M = G3 // 2
-            # The first 𝑀/2 cells are sampled uniformly among all cells.
-            KEY, key_firsthalf, key_secondhalf = jran.split(KEY, 3)
-            indices_firsthalf = jran.choice(key=key_firsthalf, a=jnp.arange(G3, dtype=jnp.uint32), shape=(M//2,), replace=True)  # allow duplicated choices
-            # Rejection sampling is used for the remaining samples to restrict selection to cells
-            # that are currently occupied.
-            # NOTE: Below is just uniformly sampling the occupied cells, not rejection sampling.
-            cas_occ_mask = state.ogrid.occ_mask[cas*G3:(cas+1)*G3]
-            p = cas_occ_mask.astype(jnp.float32)
-            indices_secondhalf = jran.choice(key=key_secondhalf, a=jnp.arange(G3, dtype=jnp.uint32), shape=(M//2,), replace=True, p=p)
-            indices = jnp.concatenate([indices_firsthalf, indices_secondhalf])
-
-        coordinates = morton3d_invert(indices).astype(jnp.float32)
-        coordinates = coordinates / (state.raymarch.density_grid_res - 1) * 2 - 1  # in [-1, 1]
-        mip_bound = min(state.scene_meta.bound, 2**cas)
-        half_cell_width = mip_bound / state.raymarch.density_grid_res
-        coordinates *= mip_bound - half_cell_width  # in [-mip_bound+half_cell_width, mip_bound-half_cell_width]
-        # random point inside grid cells
-        KEY, key = jran.split(KEY, 2)
-        coordinates += jran.uniform(
-            key,
-            coordinates.shape,
-            coordinates.dtype,
-            minval=-half_cell_width,
-            maxval=half_cell_width,
-        )
-
-        new_densities = state.nerf_fn(
-            {"params": state.locked_params["nerf"]},
-            jax.lax.stop_gradient(coordinates),
-            None,
-        )
-
-        # set their value to the maximum of their current value and the density component of the
-        # NeRF model at a random location within the cell.
-        density_grid = density_grid.at[indices + cas*G3].set(
-            jnp.maximum(density_grid[indices + cas*G3], new_densities.ravel())
-        )
-
-    # (3) update the occupancy bits by thresholding each cell’s density with 𝑡 = 0.01 · 1024/√3,
-    # which corresponds to thresholding the opacity of a minimal ray marching step by 1 − exp(−0.01)
-    # ≈ 0.01.
-    density_threshold = .01 * state.raymarch.diagonal_n_steps / (2 * min(state.scene_meta.bound, 1) * 3**.5)
-    mean_density = jnp.sum(jnp.where(density_grid > 0, density_grid, 0)) / jnp.sum(jnp.where(density_grid > 0, 1, 0))
-    density_threshold = jnp.minimum(density_threshold, mean_density)
-    # density_threshold = 1e-2
-    occupied_mask, occupancy_bitfield = packbits(
-        density_threshold=density_threshold,
-        density_grid=density_grid,
-    )
-
-    return state.replace(ogrid=OccupancyDensityGrid(
-        density=density_grid,
-        occ_mask=occupied_mask,
-        occupancy=occupancy_bitfield,
-    ))
 
 
 def make_near_far_from_bound(

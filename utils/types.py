@@ -673,12 +673,12 @@ class NeRFState(TrainState):
         cas_density_grid = self.ogrid.density[cas_slice] * decay
 
         if update_all:
-            # During the first 256 training steps, we sample 𝑀 = 𝐾 · 128^{3} cells uniformly without
+            # During the first 256 training steps, we sample M = K * 128^{3} cells uniformly without
             # repetition.
             cas_updated_indices = jnp.arange(n_grids, dtype=jnp.uint32)
         else:
             M = max(1, n_grids // 2)
-            # The first 𝑀/2 cells are sampled uniformly among all cells.
+            # The first M/2 cells are sampled uniformly among all cells.
             KEY, key_firsthalf, key_secondhalf = jran.split(KEY, 3)
             indices_firsthalf = jran.choice(
                 key=key_firsthalf,
