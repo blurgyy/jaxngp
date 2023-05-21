@@ -368,7 +368,7 @@ class TransformJsonFrame:
 
     def scale_camera_positions(self, scale: float) -> "TransformJsonFrame":
         new_transform_matrix = self.transform_matrix_numpy
-        new_transform_matrix[:3, 3] *= scale
+        new_transform_matrix[:3, 3] *= scale * 2
         return self.replace(
             transform_matrix=new_transform_matrix.tolist(),
         )
@@ -384,10 +384,15 @@ class TransformJsonBase:
     # instant-ngp will work with this code base as well).
     aabb_scale: float=dataclasses.field(default_factory=lambda: 1., kw_only=True)
 
-    # camera's translation vectors should be scaled with this factor while loading (default value
-    # taken from NVLabs/instant-ngp/include/neural-graphics-primitives/nerf_loader.h)
+    # scale camera's translation vectors by this factor while loading (default value taken from
+    # NVLabs/instant-ngp/include/neural-graphics-primitives/nerf_loader.h), since current
+    # implementation (this codebase) represents the scene inside a 2^3 cube centered at origin, to
+    # achieve the same scene scale as that of NVLabs/instant-ngp while using the same
+    # transform*.json files, the camera translation vectors will be scaled by 2 time this value.
+    # I.e. if the transform*.json specifies `"scale": 0.3`, loaded cameras' translation vectors will
+    # be scaled by `0.6`.  See `utils.types.TransformJsonFrame.scale_camera_positions` for details.
     # NOTE: this value does not affect scene's bounding box
-    scale: float=dataclasses.field(default_factory=lambda: 2/3, kw_only=True)
+    scale: float=dataclasses.field(default_factory=lambda: 1/3, kw_only=True)
 
     bg: bool=dataclasses.field(default_factory=lambda: False, kw_only=True)
 

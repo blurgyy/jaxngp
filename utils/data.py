@@ -246,7 +246,7 @@ def write_transforms_json(
     all_transform_json: TransformJsonNGP = all_transform_json.replace(
         scale=camera_scale,
         bg=bg,
-    ).scale_camera_positions()
+    )
     train_tj = all_transform_json.replace(frames=frames[:len(frames) // 2])
     val_tj = all_transform_json.replace(frames=frames[len(frames) // 2:len(frames) // 2 + len(frames) // 4])
     test_tj = all_transform_json.replace(frames=frames[len(frames) // 2 + len(frames) // 4:])
