@@ -731,7 +731,7 @@ class NeRFState(TrainState):
     @jax.jit
     def threshold_ogrid(self) -> "NeRFState":
         density_threshold = .01 * self.raymarch.diagonal_n_steps / (2 * min(self.scene_meta.bound, 1) * 3**.5)
-        mean_density = self.ogrid.density[self.ogrid.alive_indices].mean()
+        mean_density = self.ogrid.density[self.ogrid.alive_indices[:self.ogrid.alive_indices_offset[1]]].mean()
         density_threshold = jnp.minimum(density_threshold, mean_density)
         occupied_mask, occupancy_bitfield = packbits(
             density_threshold=density_threshold,
