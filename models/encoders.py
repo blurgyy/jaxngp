@@ -62,7 +62,7 @@ class HashGridEncoder(Encoder):
         # Essentially, it is $(n_max / n_min) ** (1/(L - 1))$
         b = math.exp((math.log(self.N_max) - math.log(self.N_min)) / (self.L - 1))
 
-        resolutions, use_tiled, offsets = [], [], [0]
+        resolutions, first_hash, offsets = [], 0, [0]
         for i in range(self.L):
             res = int(self.N_min * (b**i))
             resolutions.append(res - 1)
@@ -70,9 +70,8 @@ class HashGridEncoder(Encoder):
             n_entries = res ** self.dim
 
             if n_entries <= self.T:
-                use_tiled.append(True)
+                first_hash += 1
             else:
-                use_tiled.append(False)
                 n_entries = self.T
 
             offsets.append(offsets[-1] + n_entries)
@@ -177,11 +176,9 @@ class HashGridEncoder(Encoder):
         # [L, n_points, 2**dim, dim]
         vert_pos = make_vert_pos(pos_scaled)
         # [L, n_points, 2**dim]
-        indices = jnp.where(
-            jnp.asarray(use_tiled, dtype=jnp.bool_)[:, None, None],
-            make_tiled_indices(resolutions, vert_pos),
-            make_hash_indices(vert_pos),
-        )
+        tiled_indices = make_tiled_indices(resolutions[:first_hash], vert_pos[:first_hash, ...])
+        hash_indices = make_hash_indices(vert_pos[first_hash:, ...])
+        indices = jnp.concatenate([tiled_indices, hash_indices], axis=0)
 
         # [L, n_points, 2**dim, F]
         vert_latents = latents[indices]
