@@ -246,6 +246,7 @@ def write_transforms_json(
     all_transform_json: TransformJsonNGP = all_transform_json.replace(
         scale=camera_scale,
         bg=bg,
+        up=[0, 0, 1],
     )
     train_tj = all_transform_json.replace(frames=frames[:len(frames) // 2])
     val_tj = all_transform_json.replace(frames=frames[len(frames) // 2:len(frames) // 2 + len(frames) // 4])
@@ -585,7 +586,7 @@ def load_transform_json_recursive(src: Path | str) -> TransformJsonNGP | Transfo
                     if transforms.get("camera_angle_x") is not None
                     else TransformJsonNGP(**transforms)
                 )
-                transforms = transforms.make_absolute(src.parent).scale_camera_positions()
+                transforms = transforms.make_absolute(src.parent).rotate_world_up().scale_camera_positions()
             except TypeError:
                 # not a valid transform.json
                 return None
