@@ -667,8 +667,13 @@ class NeRFState(TrainState):
     def __post_init__(self):
         assert self.apply_fn is None
 
-    @functools.partial(jax.jit, static_argnames=["cas", "update_all"])
-    def update_ogrid_density(self, KEY: jran.KeyArray, cas: int, update_all: bool) -> "NeRFState":
+    def update_ogrid_density(
+        self,
+        KEY: jran.KeyArray,
+        cas: int,
+        update_all: bool,
+        max_inference: int,
+    ) -> "NeRFState":
         G3 = self.raymarch.density_grid_res**3
         n_grids = G3
         cas_slice = slice(cas * n_grids, (cas + 1) * n_grids)
@@ -717,11 +722,16 @@ class NeRFState(TrainState):
             minval=-half_cell_width,
             maxval=half_cell_width,
         )
-        new_densities = self.nerf_fn(
-            {"params": self.locked_params["nerf"]},
-            jax.lax.stop_gradient(coordinates),
-            None,
-        ).ravel()
+
+        new_densities = []
+        for co in jnp.array_split(jax.lax.stop_gradient(coordinates), n_grids // (max_inference)):
+            new_densities.append(jax.jit(self.nerf_fn)(
+                {"params": self.locked_params["nerf"]},
+                co,
+                None,
+            ).ravel())
+
+        new_densities = jnp.concatenate(new_densities)
         cas_density_grid = cas_density_grid.at[cas_updated_indices].set(
             jnp.maximum(cas_density_grid[cas_updated_indices], jnp.where(
                 cas_density_grid[cas_updated_indices] < 0,

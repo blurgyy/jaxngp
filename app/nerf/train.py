@@ -78,6 +78,7 @@ def train_epoch(
                         KEY=key,
                         cas=cas,
                         update_all=bool(state.should_update_all_ogrid_cells),
+                        max_inference=total_samples,
                     )
                 state = state.threshold_ogrid()
 
