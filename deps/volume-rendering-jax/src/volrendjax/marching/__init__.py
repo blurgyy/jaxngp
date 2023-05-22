@@ -60,7 +60,7 @@ def march_rays(
         dirs `[total_samples, 3]`: spatial coordinates of the generated samples, invalid array
                                    locations are masked out with zeros.
         dss `[total_samples]`: `ds`s of each sample, for a more detailed explanation of this
-                               notation, see documentation of function `volrendjax.integrat_rays`,
+                               notation, see documentation of function `volrendjax.integrate_rays`,
                                invalid array locations are masked out with zeros.
         z_vals `[total_samples]`: samples' distances to their origins, invalid array
                                   locations are masked out with zeros.
@@ -115,7 +115,31 @@ def march_rays_inference(
     terminated: jax.Array,
     indices: jax.Array,
 ):
-    counter, indices, n_samples, t_starts_out, xyzdirs, dss, z_vals = impl.march_rays_inference_p.bind(
+    """
+    Inputs:
+        diagonal_n_steps, K, G, bound, stepsize_portion: see explanations in function `march_rays`
+        march_steps_cap `int`: maximum steps to march for each ray in this iteration
+
+        rays_o `float` `[n_total_rays, 3]`: ray origins
+        rays_d `float` `[n_total_rays, 3]`: ray directions
+        t_starts `float` `n_total_rays`: distance of each ray's starting point to its origin
+        t_ends `float` `n_total_rays`: distance of each ray's ending point to its origin
+        occupancy_bitfield `uint8` `[K*(G**3)//8]`: the occupancy grid represented as a bit array
+        counter `uint32`: helper variable to keep record of the latest ray that got rendered
+        terminated `bool` `[n_rays]`: output of `integrate_rays_inference`, a binary mask indicating
+                                      each ray's termination status
+        indices `[n_rays]`: each ray's location in the global arrays
+
+    Returns:
+        counter `uint32` `[1]`: for use in next iteration
+        indices `uint32` `[n_rays]`: for use in the integrate_rays_inference immediately after
+        n_samples `uint32` `[n_rays]`: number of generated samples of each ray in question
+        t_starts `float` `[n_rays]`: advanced values of `t` for use in next iteration
+        xyzs `float` `[n_rays, march_steps_cap, 3]`: each sample's XYZ coordinate
+        dss `float` `[n_rays, march_steps_cap]`: `ds` of each sample
+        z_vals `float` `[n_rays, march_steps_cap]`: distance of each sample to their ray origins
+    """
+    counter, indices, n_samples, t_starts_out, xyzs, dss, z_vals = impl.march_rays_inference_p.bind(
         rays_o,
         rays_d,
         t_starts,
@@ -133,4 +157,4 @@ def march_rays_inference(
         stepsize_portion=stepsize_portion,
     )
     t_starts = t_starts.at[indices].set(t_starts_out)
-    return counter, indices, n_samples, t_starts, xyzdirs, dss, z_vals
+    return counter, indices, n_samples, t_starts, xyzs, dss, z_vals

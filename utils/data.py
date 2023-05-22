@@ -1,18 +1,19 @@
 import collections
 from concurrent.futures import ThreadPoolExecutor
-import dataclasses
 import functools
 import json
 from pathlib import Path
 from typing import List, Literal, Sequence, Tuple
+import warnings
 
-from PIL import Image
+from PIL import Image, ImageFilter, UnidentifiedImageError
 import chex
 import ffmpeg
 import imageio
 import jax
 import jax.numpy as jnp
 import jax.random as jran
+from matplotlib import pyplot as plt
 from natsort import natsorted
 import numpy as np
 
@@ -32,12 +33,11 @@ from .types import (
     TransformJsonFrame,
     TransformJsonNGP,
     TransformJsonNeRFSynthetic,
-    TransformsProvider,
     ViewMetadata,
 )
 
 
-def to_cpu(array: jnp.DeviceArray) -> jnp.DeviceArray:
+def to_cpu(array: jax.Array) -> jax.Array:
     return jax.device_put(array, device=jax.devices("cpu")[0])
 
 
@@ -45,20 +45,26 @@ def to_cpu(array: jnp.DeviceArray) -> jnp.DeviceArray:
 def f32_to_u8(img: jax.Array) -> jax.Array:
     return jnp.clip(jnp.round(img * 255), 0, 255).astype(jnp.uint8)
 
-    sfm.export_text_format_model(
-        undistorted_sparse_reconstruction_dir=undistorted_images_dir.joinpath("sparse"),
-        text_model_dir=text_model_dir,
-    )
 
-@jax.jit
-def mono_to_rgb(img: jax.Array) -> jax.Array:
-    return jnp.tile(img[..., None], (1, 1, 3))
+def mono_to_rgb(img: jax.Array, cm: Literal["inferno", "jet", "turbo"]="inferno") -> jax.Array:
+    return plt.get_cmap(cm)(img)
+
+
+def sharpness_of(path: str | Path) -> float | None:
+    try:
+        image = Image.open(path)
+    except (IsADirectoryError, UnidentifiedImageError) as e:
+        warnings.warn(
+            "failed loading '{}': {}".format(path, str(e)))
+        return None
+    laplacian = image.convert("L").filter(ImageFilter.FIND_EDGES)
+    return float(np.asarray(laplacian).var())
 
 
 def video_to_images(
     video_in: Path,
     images_dir: Path,
-    fmt: str="%03d.png",
+    fmt: str="%04d.png",
     fps: int=3,
 ):
     video_in, images_dir = Path(video_in), Path(images_dir)
@@ -123,6 +129,18 @@ def closest_point_2_lines(oa, da, ob, db):
     return (oa+ta*da+ob+tb*db) * 0.5, denom
 
 
+def write_sharpness_json(raw_images_dir: str | Path):
+    raw_images_dir = Path(raw_images_dir)
+    out_filename = "sharpnesses.jaxngp.json"
+    image_candidates = tuple(filter(lambda x: x.name != out_filename, raw_images_dir.iterdir()))
+    sharpnesses = ThreadPoolExecutor().map(sharpness_of, image_candidates)
+    path_sharpness_tuples = zip(map(lambda p: p.absolute().as_posix(), raw_images_dir.iterdir()), sharpnesses)
+    path_sharpness_tuples = filter(lambda tup: tup[1] is not None, path_sharpness_tuples)
+    path_sharpness_tuples = sorted(tqdm(path_sharpness_tuples, desc="estimating sharpness of image collection"), key=lambda tup: tup[1], reverse=True)
+    with open(raw_images_dir.joinpath(out_filename), "w") as f:
+        json.dump(path_sharpness_tuples, f)
+
+
 def write_transforms_json(
     dataset_root_dir: Path,
     images_dir: Path,
@@ -168,6 +186,11 @@ def write_transforms_json(
             transform_matrix=c2w.tolist(),
         ))
 
+    # estimate sharpness
+    sharpnesses = ThreadPoolExecutor().map(lambda f: sharpness_of(dataset_root_dir.joinpath(f.file_path)), frames)
+    for i, sharpness in enumerate(tqdm(sharpnesses, total=len(frames), desc="estimating sharpness of image collection")):
+        frames[i] = frames[i].replace(sharpness=sharpness)
+
     # reorient the scene to be easier to work with
     up = up / np.linalg.norm(up)
     print("up vector:", up, "->", [0, 0, 1])
@@ -176,7 +199,7 @@ def write_transforms_json(
     R[-1, -1] = 1
 
     for i, f in enumerate(frames):
-        frames[i] = dataclasses.replace(f, transform_matrix=np.matmul(R, f.transform_matrix_numpy).tolist())
+        frames[i] = f.replace(transform_matrix=np.matmul(R, f.transform_matrix_numpy).tolist())
 
     # find a central point they are all looking at
     totw = 0.0
@@ -196,7 +219,7 @@ def write_transforms_json(
     for i, f in enumerate(frames):
         new_m = f.transform_matrix_numpy
         new_m[0:3,3] -= totp
-        frames[i] = dataclasses.replace(f, transform_matrix=new_m.tolist())
+        frames[i] = f.replace(transform_matrix=new_m.tolist())
 
     avglen = 0.
     for f in frames:
@@ -207,9 +230,9 @@ def write_transforms_json(
         # scale to "nerf sized"
         new_m = f.transform_matrix_numpy
         new_m[0:3, 3] *= 4.0 / avglen
-        frames[i] = dataclasses.replace(f, transform_matrix=new_m.tolist())
+        frames[i] = f.replace(transform_matrix=new_m.tolist())
 
-    print("scene bound (i.e. half width of scene's aabb):", bound * 2)
+    print("scene bound (i.e. half width of scene's aabb):", bound)
     all_transform_json = TransformJsonNGP(
         frames=frames,
         fl_x=camera.fx,
@@ -220,14 +243,13 @@ def write_transforms_json(
         h=camera.H,
         aabb_scale=bound,
     )
-    all_transform_json: TransformJsonNGP = dataclasses.replace(
-        all_transform_json,
+    all_transform_json: TransformJsonNGP = all_transform_json.replace(
         scale=camera_scale,
         bg=bg,
-    ).scale_camera_positions()
-    train_tj = dataclasses.replace(all_transform_json, frames=frames[:len(frames) // 2])
-    val_tj = dataclasses.replace(all_transform_json, frames=frames[len(frames) // 2:len(frames) // 2 + len(frames) // 4])
-    test_tj = dataclasses.replace(all_transform_json, frames=frames[len(frames) // 2 + len(frames) // 4:])
+    )
+    train_tj = all_transform_json.replace(frames=frames[:len(frames) // 2])
+    val_tj = all_transform_json.replace(frames=frames[len(frames) // 2:len(frames) // 2 + len(frames) // 4])
+    test_tj = all_transform_json.replace(frames=frames[len(frames) // 2 + len(frames) // 4:])
     train_tj.save(dataset_root_dir.joinpath("transforms_train.json"))
     val_tj.save(dataset_root_dir.joinpath("transforms_val.json"))
     test_tj.save(dataset_root_dir.joinpath("transforms_test.json"))
@@ -264,11 +286,12 @@ def create_dataset_from_single_camera_image_collection(
     if len(maps) == 0:
         raise RuntimeError("mapping with colmap failed")
     elif len(maps) > 1:
-        raise RuntimeError("colmap reconstructed more than 1 maps")
+        warnings.warn(
+            "colmap reconstructed more than 1 maps")
 
     sfm.undistort(
         images_dir=raw_images_dir,
-        sparse_reconstruction_dir=sparse_reconstruction_dir.joinpath("0"),
+        sparse_reconstruction_dir=sparse_reconstruction_dir.joinpath("0"),  # just use the first map reconstructed by colmap
         undistorted_images_dir=undistorted_images_dir,
     )
 
@@ -332,9 +355,13 @@ def side_by_side(
     chex.assert_scalar_non_negative(vertical)
     chex.assert_type([lhs, rhs], jnp.uint8)
     if len(lhs.shape) == 2 or lhs.shape[-1] == 1:
-        lhs = mono_to_rgb(lhs)
+        lhs = jnp.tile(lhs[..., None], (1, 1, 3))
     if len(rhs.shape) == 2 or rhs.shape[-1] == 1:
-        rhs = mono_to_rgb(rhs)
+        rhs = jnp.tile(rhs[..., None], (1, 1, 3))
+    if rhs.shape[-1] == 3:
+        rhs = jnp.concatenate([rhs, 255 * jnp.ones_like(rhs[..., -1:], dtype=jnp.uint8)], axis=-1)
+    if lhs.shape[-1] == 3:
+        lhs = jnp.concatenate([lhs, 255 * jnp.ones_like(lhs[..., -1:], dtype=jnp.uint8)], axis=-1)
     if vertical:
         chex.assert_axis_dimension(lhs, 1, W)
         chex.assert_axis_dimension(rhs, 1, W)
@@ -343,8 +370,8 @@ def side_by_side(
         chex.assert_axis_dimension(rhs, 0, H)
     concat_axis = 0 if vertical else 1
     if gap > 0:
-        gap_color = jnp.asarray(gap_color, dtype=jnp.uint8)
-        gap = jnp.broadcast_to(gap_color, (gap, W, 3) if vertical else (H, gap, 3))
+        gap_color = jnp.asarray(gap_color + (0xff,), dtype=jnp.uint8)
+        gap = jnp.broadcast_to(gap_color, (gap, W, 4) if vertical else (H, gap, 4))
         return jnp.concatenate([lhs, gap, rhs], axis=concat_axis)
     else:
         return jnp.concatenate([lhs, rhs], axis=concat_axis)
@@ -357,14 +384,14 @@ def add_border(
     color: RGBColorU8=(0xfe, 0xdc, 0xba)
 ) -> jax.Array:
     chex.assert_rank(img, 3)
-    chex.assert_axis_dimension(img, -1, 3)
+    chex.assert_axis_dimension(img, -1, 4)
     chex.assert_scalar_non_negative(width)
     chex.assert_type(img, jnp.uint8)
-    color = jnp.asarray(color, dtype=jnp.uint8)
+    color = jnp.asarray(color + (0xff,), dtype=jnp.uint8)
     H, W = img.shape[:2]
-    leftright = jnp.broadcast_to(color, (H, width, 3))
+    leftright = jnp.broadcast_to(color, (H, width, 4))
     img = jnp.concatenate([leftright, img, leftright], axis=1)
-    topbottom = jnp.broadcast_to(color, (width, W+2*width, 3))
+    topbottom = jnp.broadcast_to(color, (width, W+2*width, 4))
     img = jnp.concatenate([topbottom, img, topbottom], axis=0)
     return img
 
@@ -385,19 +412,26 @@ def write_video(dest: Path, images: Sequence, *, fps: int=24, loop: int=3):
     images = list(images) * loop
     assert len(images) > 0, "cannot write empty video"
     video_writer = imageio.get_writer(dest, mode="I", fps=fps)
-    for im in tqdm(images, desc="writing video to {}".format(dest.as_posix())):
-        video_writer.append_data(np.asarray(im))
+    try:
+        for im in tqdm(images, desc="writing video to {}".format(dest.as_posix())):
+            video_writer.append_data(np.asarray(im))
+    except (BrokenPipeError, IOError) as e:  # sometimes ffmpeg encounters io error for no apparent reason
+        warnings.warn(
+            "failed writing video: {}".format(str(e)), RuntimeWarning)
+        warnings.warn(
+            "skipping saving video '{}'".format(dest.as_posix()), RuntimeWarning)
 
 
 @jax.jit
 def set_pixels(imgarr: jax.Array, xys: jax.Array, selected: jax.Array, preds: jax.Array) -> jax.Array:
+    chex.assert_type(imgarr, jnp.uint8)
     H, W = imgarr.shape[:2]
     if len(imgarr.shape) == 3:
         interm = imgarr.reshape(H*W, -1)
     else:
         interm = imgarr.ravel()
     idcs = xys[selected, 1] * W + xys[selected, 0]
-    interm = interm.at[idcs].set(jnp.clip(jnp.round(preds * 255), 0, 255).astype(jnp.uint8))
+    interm = interm.at[idcs].set(f32_to_u8(preds))
     if len(imgarr.shape) == 3:
         return interm.reshape(H, W, -1)
     else:
@@ -426,28 +460,27 @@ def alternate_color(KEY: jran.KeyArray, bg: RGBColor, n_pixels: int, dtype) -> j
     return jran.choice(key_choice, alternate_options, shape=(n_pixels,))
 
 
-def blend_rgba_image_array(imgarr, bg: RGBColor):
+def blend_rgba_image_array(imgarr, bg: jax.Array):
     """
     Blend the given background color according to the given alpha channel from `imgarr`.
     WARN: this function SHOULD NOT be used for blending background colors into volume-rendered
           pixels because the colors of volume-rendered pixels already have the alpha channel
           factored-in.  To blend background for volume-rendered pixels, directly add the scaled
           background color.
-          E.g.: `final_color = ray_accumulated_color + (1 - ray_opacity) * bg_color`
+          E.g.: `final_color = ray_accumulated_color + (1 - ray_opacity) * bg`
     """
     if isinstance(imgarr, Image.Image):
         imgarr = np.asarray(imgarr)
     chex.assert_shape(imgarr, [..., 4])
     chex.assert_type(imgarr, bg.dtype)
     rgbs, alpha = imgarr[..., :-1], imgarr[..., -1:]
-    bg_color = jnp.asarray(bg)
-    bg_color = jnp.broadcast_to(bg_color, rgbs.shape)
+    bg = jnp.broadcast_to(bg, rgbs.shape)
     if imgarr.dtype == jnp.uint8:
         rgbs, alpha = rgbs.astype(float) / 255, alpha.astype(float) / 255
-        rgbs = rgbs * alpha + bg_color * (1 - alpha)
-        rgbs = jnp.clip(jnp.round(rgbs * 255), 0, 255).astype(jnp.uint8)
+        rgbs = rgbs * alpha + bg * (1 - alpha)
+        rgbs = f32_to_u8(rgbs)
     else:
-        rgbs = rgbs * alpha + bg_color * (1 - alpha)
+        rgbs = rgbs * alpha + bg * (1 - alpha)
     return rgbs
 
 
@@ -545,15 +578,18 @@ def load_transform_json_recursive(src: Path | str) -> TransformJsonNGP | Transfo
         except:
             # unreadable, or not a json
             return None
-        try:
-            transforms = (
-                TransformJsonNeRFSynthetic(**transforms)
-                if transforms.get("camera_angle_x") is not None
-                else TransformJsonNGP(**transforms)
-            )
-            transforms = transforms.make_absolute(src.parent).scale_camera_positions()
-        except TypeError:
-            # not a valid transform.json
+        if isinstance(transforms, dict):
+            try:
+                transforms = (
+                    TransformJsonNeRFSynthetic(**transforms)
+                    if transforms.get("camera_angle_x") is not None
+                    else TransformJsonNGP(**transforms)
+                )
+                transforms = transforms.make_absolute(src.parent).scale_camera_positions()
+            except TypeError:
+                # not a valid transform.json
+                return None
+        else:
             return None
 
     else:
@@ -562,43 +598,78 @@ def load_transform_json_recursive(src: Path | str) -> TransformJsonNGP | Transfo
     return transforms
 
 
+def try_image_extensions(
+    file_path: Path,
+    extensions: List[str]=["png", "jpg", "jpeg"],
+) -> Path | None:
+    if "" not in extensions:
+        extensions = [""] + list(extensions)
+    for ext in extensions:
+        if len(ext) > 0 and ext[0] != ".":
+            ext = "." + ext
+        p = Path(file_path.as_posix() + ext)
+        if p.exists():
+            return p
+        p = Path(file_path.with_suffix(ext))
+        if p.exists():
+            return p
+    warnings.warn(
+        "could not find a file at '{}' with any extension of {}".format(file_path, extensions),
+        RuntimeWarning,
+    )
+    return None
+
+
 def load_scene(
     srcs: Sequence[Path | str],
     scene_options: SceneOptions,
     sort_frames: bool=False,
     orbit_options: OrbitTrajectoryOptions | None=None,
 ) -> SceneMeta | Tuple[SceneData, List[ViewMetadata]]:
+    """
+    Inputs:
+        srcs: sequence of paths to recursively load transforms.json
+        scene_options: see :class:`SceneOptions`
+        sort_frames: whether to sort the frames by their filenames, (uses natural sort if enabled)
+        orbit_options: if not `None`, generate a sequence of camera poses and ignore the loaded
+                       camera poses
+    """
+
     assert isinstance(srcs, collections.abc.Sequence) and not isinstance(srcs, str), (
         "load_scene accepts a sequence of paths as srcs to load, did you mean '{}'?".format([srcs])
     )
     srcs = list(map(Path, srcs))
 
     transforms = merge_transforms(map(load_transform_json_recursive, srcs))
-    if sort_frames:
-        transforms = dataclasses.replace(
-            transforms,
-            frames=natsorted(transforms.frames, key=lambda f: f.file_path),
-        )
-
     if transforms is None:
-        raise FileNotFoundError("could not find any valid transforms in {}".format(srcs))
-    if len(transforms.frames) == 0:
-        raise ValueError("could not find any frame in {}".format(srcs))
+        raise FileNotFoundError("could not load transforms from any of {}".format(srcs))
 
-    def try_image_extensions(
-        file_path: str,
-        extensions: List[str]=["png", "jpg", "jpeg"],
-    ) -> Path:
-        if "" not in extensions:
-            extensions = [""] + list(extensions)
-        for ext in extensions:
-            if len(ext) > 0 and ext[0] != ".":
-                ext = "." + ext
-            p = Path(file_path + ext)
-            if p.exists():
-                return p
-        raise FileNotFoundError(
-            "could not find a file at {} with any extension of {}".format(file_path, extensions)
+    loaded_frames, discarded_frames = functools.reduce(
+        lambda prev, frame: (
+            prev[0] + ((frame,) if (
+                frame.file_path is not None
+                and frame.sharpness >= scene_options.sharpness_threshold
+            ) else ()),
+            prev[1] + (() if (
+                frame.file_path is not None
+                and frame.sharpness >= scene_options.sharpness_threshold
+            ) else (frame,)),
+        ),
+        map(
+            lambda f: f.replace(file_path=try_image_extensions(f.file_path)),
+            transforms.frames,
+        ),
+        (tuple(), tuple()),
+    )
+
+    if len(loaded_frames) == 0:
+        raise RuntimeError("loaded 0 frame from '{}' (discarded {} frame(s))".format(srcs, len(discarded_frames)))
+
+    transforms = transforms.replace(frames=loaded_frames)
+
+    if sort_frames:
+        transforms = transforms.replace(
+            frames=natsorted(transforms.frames, key=lambda f: f.file_path),
         )
 
     # shared camera model
@@ -643,16 +714,17 @@ def load_scene(
     )
 
     if orbit_options is not None:
+        assert isinstance(orbit_options, OrbitTrajectoryOptions)
         return scene_meta.make_frames_with_orbiting_trajectory(orbit_options)
 
-    views = list(map(
+    views = tuple(map(
         lambda frame: ViewMetadata(
             scale=scene_options.resolution_scale,
             transform=RigidTransformation(
                 rotation=frame.transform_matrix_numpy[:3, :3],
                 translation=frame.transform_matrix_numpy[:3, 3],
             ),
-            file=try_image_extensions(frame.file_path),
+            file=frame.file_path,
         ),
         transforms.frames,
     ))

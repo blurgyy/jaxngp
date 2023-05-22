@@ -11,8 +11,6 @@ except ModuleNotFoundError:
     from jaxlib.hlo_helpers import custom_call
 
 
-
-
 # helper function for mapping given shapes to their default mlir layouts
 def default_layouts(*shapes):
     return [range(len(shape) - 1, -1, -1) for shape in shapes]
@@ -27,8 +25,7 @@ def integrate_rays_lowering_rule(
     bgs: ir.Value,
     dss: ir.Value,
     z_vals: ir.Value,
-    densities: ir.Value,
-    rgbs: ir.Value,
+    drgbs: ir.Value,
 ):
     n_rays, = ir.RankedTensorType(rays_sample_startidx.type).shape
     total_samples, = ir.RankedTensorType(z_vals.type).shape
@@ -42,12 +39,10 @@ def integrate_rays_lowering_rule(
         "in.bgs": (n_rays, 3),
         "in.dss": (total_samples,),
         "in.z_vals": (total_samples,),
-        "in.densities": (total_samples, 1),
-        "in.rgbs": (total_samples, 3),
+        "in.drgbs": (total_samples, 4),
 
         "helper.counter": (1,),
 
-        "out.opacities": (n_rays,),
         "out.final_rgbs": (n_rays, 3),
         "out.depths": (n_rays,),
     }
@@ -56,7 +51,6 @@ def integrate_rays_lowering_rule(
         call_target_name="integrate_rays",
         out_types=[
             ir.RankedTensorType.get(shapes["helper.counter"], ir.IntegerType.get_unsigned(32)),
-            ir.RankedTensorType.get(shapes["out.opacities"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.final_rgbs"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.depths"], ir.F32Type.get()),
         ],
@@ -66,8 +60,7 @@ def integrate_rays_lowering_rule(
             bgs,
             dss,
             z_vals,
-            densities,
-            rgbs,
+            drgbs,
         ],
         backend_config=opaque,
         operand_layouts=default_layouts(
@@ -76,12 +69,10 @@ def integrate_rays_lowering_rule(
             shapes["in.bgs"],
             shapes["in.dss"],
             shapes["in.z_vals"],
-            shapes["in.densities"],
-            shapes["in.rgbs"],
+            shapes["in.drgbs"],
         ),
         result_layouts=default_layouts(
             shapes["helper.counter"],
-            shapes["out.opacities"],
             shapes["out.final_rgbs"],
             shapes["out.depths"],
         ),
@@ -98,16 +89,13 @@ def integrate_rays_backward_lowring_rule(
     bgs: ir.Value,
     dss: ir.Value,
     z_vals: ir.Value,
-    densities: ir.Value,
-    rgbs: ir.Value,
+    drgbs: ir.Value,
 
     # original outputs
-    opacities: ir.Value,
     final_rgbs: ir.Value,
     depths: ir.Value,
 
     # gradient inputs
-    dL_dopacities: ir.Value,
     dL_dfinal_rgbs: ir.Value,
     dL_ddepths: ir.Value,
 ):
@@ -123,21 +111,17 @@ def integrate_rays_backward_lowring_rule(
         "in.bgs": (n_rays, 3),
         "in.dss": (total_samples,),
         "in.z_vals": (total_samples,),
-        "in.densities": (total_samples, 1),
-        "in.rgbs": (total_samples, 3),
+        "in.drgbs": (total_samples, 4),
 
-        "in.opacities": (n_rays,),
         "in.final_rgbs": (n_rays, 3),
         "in.depths": (n_rays,),
 
-        "in.dL_dopacities": (n_rays,),
         "in.dL_dfinal_rgbs": (n_rays, 3),
         "in.dL_ddepths": (n_rays,),
 
         "out.dL_dbgs": (n_rays, 3),
         "out.dL_dz_vals": (total_samples,),
-        "out.dL_ddensities": (total_samples, 1),
-        "out.dL_drgbs": (total_samples, 3),
+        "out.dL_ddrgbs": (total_samples, 4),
     }
 
     return custom_call(
@@ -145,8 +129,7 @@ def integrate_rays_backward_lowring_rule(
         out_types=[
             ir.RankedTensorType.get(shapes["out.dL_dbgs"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.dL_dz_vals"], ir.F32Type.get()),
-            ir.RankedTensorType.get(shapes["out.dL_ddensities"], ir.F32Type.get()),
-            ir.RankedTensorType.get(shapes["out.dL_drgbs"], ir.F32Type.get()),
+            ir.RankedTensorType.get(shapes["out.dL_ddrgbs"], ir.F32Type.get()),
         ],
         operands=[
             rays_sample_startidx,
@@ -155,14 +138,11 @@ def integrate_rays_backward_lowring_rule(
             bgs,
             dss,
             z_vals,
-            densities,
-            rgbs,
+            drgbs,
 
-            opacities,
             final_rgbs,
             depths,
 
-            dL_dopacities,
             dL_dfinal_rgbs,
             dL_ddepths
         ],
@@ -173,22 +153,18 @@ def integrate_rays_backward_lowring_rule(
             shapes["in.bgs"],
             shapes["in.dss"],
             shapes["in.z_vals"],
-            shapes["in.densities"],
-            shapes["in.rgbs"],
+            shapes["in.drgbs"],
 
-            shapes["in.opacities"],
             shapes["in.final_rgbs"],
             shapes["in.depths"],
 
-            shapes["in.dL_dopacities"],
             shapes["in.dL_dfinal_rgbs"],
             shapes["in.dL_ddepths"],
         ),
         result_layouts=default_layouts(
             shapes["out.dL_dbgs"],
             shapes["out.dL_dz_vals"],
-            shapes["out.dL_ddensities"],
-            shapes["out.dL_drgbs"],
+            shapes["out.dL_ddrgbs"],
         ),
     )
 
@@ -205,8 +181,7 @@ def integrate_rays_inference_lowering_rule(
     indices: ir.Value,
     dss: ir.Value,
     z_vals: ir.Value,
-    densities: ir.Value,
-    rgbs: ir.Value,
+    drgbs: ir.Value,
 ):
     (n_total_rays, _) = ir.RankedTensorType(rays_rgb.type).shape
     (n_rays, march_steps_cap) = ir.RankedTensorType(dss.type).shape
@@ -223,8 +198,7 @@ def integrate_rays_inference_lowering_rule(
         "in.indices": (n_rays,),
         "in.dss": (n_rays, march_steps_cap),
         "in.z_vals": (n_rays, march_steps_cap),
-        "in.densities": (n_rays, march_steps_cap, 1),
-        "in.rgbs": (n_rays, march_steps_cap, 3),
+        "in.drgbs": (n_rays, march_steps_cap, 4),
 
         "out.terminate_cnt": (1,),
         "out.terminated": (n_rays,),
@@ -252,8 +226,7 @@ def integrate_rays_inference_lowering_rule(
             indices,
             dss,
             z_vals,
-            densities,
-            rgbs,
+            drgbs,
         ],
         backend_config=opaque,
         operand_layouts=default_layouts(
@@ -266,8 +239,7 @@ def integrate_rays_inference_lowering_rule(
             shapes["in.indices"],
             shapes["in.dss"],
             shapes["in.z_vals"],
-            shapes["in.densities"],
-            shapes["in.rgbs"],
+            shapes["in.drgbs"],
         ),
         result_layouts=default_layouts(
             shapes["out.terminate_cnt"],

@@ -72,7 +72,7 @@ def train_step(
         else:
             bg = jnp.asarray(state.render.bg)
         KEY, key = jran.split(KEY, 2)
-        batch_metrics, _, pred_rgbs, _ = render_rays_train(
+        batch_metrics, pred_rgbs, _ = render_rays_train(
             KEY=key,
             o_world=o_world,
             d_world=d_world,

@@ -1,7 +1,6 @@
 import functools
 from typing import Tuple
 
-import chex
 import jax
 from jax.interpreters import mlir, xla
 from jax.lib import xla_client
@@ -55,22 +54,20 @@ def __integrate_rays(
     bgs: jax.Array,
     dss: jax.Array,
     z_vals: jax.Array,
-    densities: jax.Array,
-    rgbs: jax.Array,
+    drgbs: jax.Array,
 ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     bgs = jax.numpy.broadcast_to(bgs, (rays_sample_startidx.shape[0], 3))
 
-    counter, opacities, final_rgbs, depths = integrate_rays_p.bind(
+    counter, final_rgbs, depths = integrate_rays_p.bind(
         rays_sample_startidx,
         rays_n_samples,
         bgs,
         dss,
         z_vals,
-        densities,
-        rgbs,
+        drgbs,
     )
 
-    return counter, opacities, final_rgbs, depths
+    return counter, final_rgbs, depths
 
 def __fwd_integrate_rays(
     rays_sample_startidx: jax.Array,
@@ -78,8 +75,7 @@ def __fwd_integrate_rays(
     bgs: jax.Array,
     dss: jax.Array,
     z_vals: jax.Array,
-    densities: jax.Array,
-    rgbs: jax.Array,
+    drgbs: jax.Array,
 ):
     bgs = jax.numpy.broadcast_to(bgs, (rays_sample_startidx.shape[0], 3))
 
@@ -89,42 +85,36 @@ def __fwd_integrate_rays(
         bgs,
         dss,
         z_vals,
-        densities,
-        rgbs,
+        drgbs,
     )
-    counter, opacities, final_rgbs, depths = primal_outputs
+    counter, final_rgbs, depths = primal_outputs
     aux = {
         "in.rays_sample_startidx": rays_sample_startidx,
         "in.rays_n_samples": rays_n_samples,
         "in.bgs": bgs,
         "in.dss": dss,
         "in.z_vals": z_vals,
-        "in.densities": densities,
-        "in.rgbs": rgbs,
+        "in.drgbs": drgbs,
 
         "out.counter": counter,
-        "out.opacities": opacities,
         "out.final_rgbs": final_rgbs,
         "out.depths": depths,
     }
     return primal_outputs, aux
 
 def __bwd_integrate_rays(aux, grads):
-    _, dL_dopacities, dL_dfinal_rgbs, dL_ddepths = grads
-    dL_dbgs, dL_dz_vals, dL_ddensities, dL_drgbs = integrate_rays_bwd_p.bind(
+    _, dL_dfinal_rgbs, dL_ddepths = grads
+    dL_dbgs, dL_dz_vals, dL_ddrgbs = integrate_rays_bwd_p.bind(
         aux["in.rays_sample_startidx"],
         aux["in.rays_n_samples"],
         aux["in.bgs"],
         aux["in.dss"],
         aux["in.z_vals"],
-        aux["in.densities"],
-        aux["in.rgbs"],
+        aux["in.drgbs"],
 
-        aux["out.opacities"],
         aux["out.final_rgbs"],
         aux["out.depths"],
 
-        dL_dopacities,
         dL_dfinal_rgbs,
         dL_ddepths,
     )
@@ -140,7 +130,7 @@ def __bwd_integrate_rays(aux, grads):
         # 4-th primal input is `dss`, no gradient
         None,
         # gradients for background colors, z_vals and model predictions (densites and rgbs)
-        dL_dbgs, dL_dz_vals, dL_ddensities, dL_drgbs
+        dL_dbgs, dL_dz_vals, dL_ddrgbs
     )
 
 __integrate_rays.defvjp(

@@ -3,7 +3,7 @@ import functools
 import json
 import math
 from pathlib import Path
-from typing import Callable, List, Literal, Tuple
+from typing import Callable, List, Literal, Tuple, Type
 
 from PIL import Image
 import chex
@@ -60,6 +60,23 @@ def empty_impl(clz):
         return cls(**kwargs)
 
     setattr(clz, "empty", classmethod(empty_fn))
+    return clz
+
+
+def replace_impl(clz):
+    if "__dataclass_fields__" not in clz.__dict__:
+        raise TypeError("class `{}` is not a dataclass".format(clz.__name__))
+
+    fields = clz.__dict__["__dataclass_fields__"]
+
+    def replace_fn(self, /, **kwargs) -> Type[clz]:
+        for k in kwargs.keys():
+            if k not in fields:
+                raise RuntimeError("class `{}` does not have a field with name '{}'".format(clz.__name__, k))
+        ret = dataclasses.replace(self, **kwargs)
+        return ret
+
+    setattr(clz, "replace", replace_fn)
     return clz
 
 
@@ -167,7 +184,7 @@ class PinholeCamera:
     cx: float
     cy: float
 
-    near: float=0.0
+    near: float=0.1
 
     @property
     def n_pixels(self) -> int:
@@ -244,16 +261,68 @@ class RenderingOptions:
 
 
 @empty_impl
+@replace_impl
+@pydantic.dataclasses.dataclass(frozen=True)
+class CameraOverrideOptions:
+    width: int | None=None
+    height: int | None=None
+    focal: float | None=None
+    near: float=0.1
+
+    def __post_init__(self):
+        if self.width is None and self.height is None:
+            return
+        if int(self.width is not None) + int(self.height is not None) == 1:
+            side = self.width if self.width is not None else self.height
+            self.__init__(
+                width=side,
+                height=side,
+                focal=self.focal,
+                near=self.near,
+            )
+        assert self.width > 0 and self.height > 0
+        if self.enabled and self.focal is None:
+            self.__init__(
+                width=self.width,
+                height=self.height,
+                focal=min(self.width, self.height),
+                near=self.near,
+            )
+
+    @property
+    def enabled(self) -> bool:
+        return (
+            self.width is not None
+            and self.height is not None
+        )
+
+    @property
+    def camera(self) -> PinholeCamera:
+        assert self.enabled
+        return PinholeCamera(
+            W=self.width,
+            H=self.height,
+            fx=self.focal,
+            fy=self.focal,
+            cx=self.width / 2,
+            cy=self.height / 2,
+            near=self.near,
+        )
+
+
+@empty_impl
+@replace_impl
 @pydantic.dataclasses.dataclass(frozen=True)
 class SceneOptions:
+    # images with sharpness lower than this value will be discarded
+    sharpness_threshold: float
+
     # scale both the scene's camera positions and bounding box with this factor
     world_scale: float
 
     # scale input images in case they are too large, camera intrinsics are also scaled to match the
     # updated image resolution.
     resolution_scale: float
-
-    camera_near: float
 
 
 @dataclass
@@ -277,9 +346,10 @@ class ImageMetadata:
     rgbs: jax.Array  # float,[H*W, 3]: normalized rgb values in range [0, 1]
 
 
+@replace_impl
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonFrame:
-    file_path: str | None
+    file_path: Path | None
     transform_matrix: Matrix4x4
 
     # unused, kept for compatibility with the original nerf_synthetic dataset
@@ -298,13 +368,13 @@ class TransformJsonFrame:
 
     def scale_camera_positions(self, scale: float) -> "TransformJsonFrame":
         new_transform_matrix = self.transform_matrix_numpy
-        new_transform_matrix[:3, 3] *= scale
-        return dataclasses.replace(
-            self,
+        new_transform_matrix[:3, 3] *= scale * 2
+        return self.replace(
             transform_matrix=new_transform_matrix.tolist(),
         )
 
 
+@replace_impl
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonBase:
     frames: Tuple[TransformJsonFrame, ...]
@@ -314,16 +384,20 @@ class TransformJsonBase:
     # instant-ngp will work with this code base as well).
     aabb_scale: float=dataclasses.field(default_factory=lambda: 1., kw_only=True)
 
-    # camera's translation vectors should be scaled with this factor while loading (default value
-    # taken from NVLabs/instant-ngp/include/neural-graphics-primitives/nerf_loader.h)
+    # scale camera's translation vectors by this factor while loading (default value taken from
+    # NVLabs/instant-ngp/include/neural-graphics-primitives/nerf_loader.h), since current
+    # implementation (this codebase) represents the scene inside a 2^3 cube centered at origin, to
+    # achieve the same scene scale as that of NVLabs/instant-ngp while using the same
+    # transform*.json files, the camera translation vectors will be scaled by 2 time this value.
+    # I.e. if the transform*.json specifies `"scale": 0.3`, loaded cameras' translation vectors will
+    # be scaled by `0.6`.  See `utils.types.TransformJsonFrame.scale_camera_positions` for details.
     # NOTE: this value does not affect scene's bounding box
     scale: float=dataclasses.field(default_factory=lambda: 1/3, kw_only=True)
 
     bg: bool=dataclasses.field(default_factory=lambda: False, kw_only=True)
 
     def scale_camera_positions(self) -> "TransformJsonBase":
-        return dataclasses.replace(
-            self,
+        return self.replace(
             frames=tuple(map(lambda f: f.scale_camera_positions(self.scale), self.frames)),
         )
 
@@ -340,21 +414,16 @@ class TransformJsonBase:
                 if field != "frames"
             )
         )
-        return dataclasses.replace(
-            self,
-            frames=self.frames + rhs.frames,
-        )
+        return self.replace(frames=self.frames + rhs.frames)
 
     def make_absolute(self, parent_dir: Path | str) -> "TransformJsonBase":
         parent_dir = Path(parent_dir)
-        return dataclasses.replace(
-            self,
+        return self.replace(
             frames=tuple(map(
-                lambda f: dataclasses.replace(
-                    f,
+                lambda f: f.replace(
                     file_path=(
                         f.file_path
-                        if Path(f.file_path).is_absolute()
+                        if f.file_path.is_absolute()
                         else parent_dir.joinpath(f.file_path).absolute().as_posix()
                     ),
                 ),
@@ -363,7 +432,9 @@ class TransformJsonBase:
         )
 
     def as_json(self, /, indent: int=2) -> str:
-        return json.dumps(dataclasses.asdict(self), indent=indent)
+        d = dataclasses.asdict(self)
+        d = jax.tree_util.tree_map(lambda x: x.as_posix() if isinstance(x, Path) else x, d)
+        return json.dumps(d, indent=indent)
 
     @classmethod
     def from_json(cls, jsonstr: str) -> "TransformJsonBase":
@@ -379,11 +450,13 @@ class TransformJsonBase:
         return cls.from_json(path.read_text())
 
 
+@replace_impl
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonNeRFSynthetic(TransformJsonBase):
     camera_angle_x: float
 
 
+@replace_impl
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonNGP(TransformJsonBase):
     fl_x: float
@@ -446,16 +519,16 @@ class ViewMetadata:
 @dataclass
 class OrbitTrajectoryOptions:
     # cameras' distance to the orbiting axis
-    radius: float=.8
+    radius: float=1
 
     # lowest height of generated trajectory
-    low: float=1
+    low: float=0.0
 
     # highest height of generated trajectory
-    high: float=1.5
+    high: float=0.8
 
     # how many frames should be rendered per orbit
-    n_frames_per_orbit: int=120
+    n_frames_per_orbit: int=144
 
     n_orbit: int=2
 
@@ -489,13 +562,21 @@ class SceneMeta:
     def n_pixels(self) -> float:
         return self.camera.n_pixels * len(self.frames)
 
+    @property
+    def sharpness_range(self) -> float:
+        return functools.reduce(
+            lambda prev, frame: (min(prev[0], frame.sharpness), max(prev[1], frame.sharpness)),
+            self.frames,
+            (1e9, -1e9),
+        )
+
     # this is the same thing as `dt_gamma` in ashawkey/torch-ngp
     @property
     def stepsize_portion(self) -> float:
         if self.bound >= 64:
-            return 1e-2
-        elif self.bound >= 16:
             return 1/128
+        elif self.bound >= 16:
+            return 6e-3
         elif self.bound >= 4:
             return 5e-3
         elif self.bound > 1:
@@ -586,8 +667,13 @@ class NeRFState(TrainState):
     def __post_init__(self):
         assert self.apply_fn is None
 
-    @functools.partial(jax.jit, static_argnames=["cas", "update_all"])
-    def update_ogrid_density(self, KEY: jran.KeyArray, cas: int, update_all: bool) -> "NeRFState":
+    def update_ogrid_density(
+        self,
+        KEY: jran.KeyArray,
+        cas: int,
+        update_all: bool,
+        max_inference: int,
+    ) -> "NeRFState":
         G3 = self.raymarch.density_grid_res**3
         cas_slice = slice(cas * G3, (cas + 1) * G3)
         cas_alive_indices = self.ogrid.alive_indices[self.ogrid.alive_indices_offset[cas]:self.ogrid.alive_indices_offset[cas+1]]
@@ -595,16 +681,16 @@ class NeRFState(TrainState):
         n_grids = aligned_indices.shape[0]
 
         decay = .95
-        cas_density_grid = self.ogrid.density[cas_slice] * decay
         cas_occ_mask = self.ogrid.occ_mask[cas_slice]
+        cas_density_grid = self.ogrid.density[cas_slice].at[aligned_indices].set(self.ogrid.density[cas_slice][aligned_indices] * decay)
 
         if update_all:
-            # During the first 256 training steps, we sample 𝑀 = 𝐾 · 128^{3} cells uniformly without
+            # During the first 256 training steps, we sample M = K * 128^{3} cells uniformly without
             # repetition.
             cas_updated_indices = aligned_indices
         else:
             M = max(1, n_grids // 2)
-            # The first 𝑀/2 cells are sampled uniformly among all cells.
+            # The first M/2 cells are sampled uniformly among all cells.
             KEY, key_firsthalf, key_secondhalf = jran.split(KEY, 3)
             indices_firsthalf = jran.choice(
                 key=key_firsthalf,
@@ -639,13 +725,19 @@ class NeRFState(TrainState):
             minval=-half_cell_width,
             maxval=half_cell_width,
         )
-        new_densities = self.nerf_fn(
-            {"params": self.locked_params["nerf"]},
-            jax.lax.stop_gradient(coordinates),
-            None,
+
+        new_densities = map(
+            lambda coords_part: jax.jit(self.nerf_fn)(
+                {"params": self.locked_params["nerf"]},
+                coords_part,
+                None,
+            ).ravel(),
+            jnp.array_split(jax.lax.stop_gradient(coordinates), max(1, n_grids // (max_inference))),
         )
+        new_densities = jnp.concatenate(list(new_densities))
+
         cas_density_grid = cas_density_grid.at[cas_updated_indices].set(
-            jnp.maximum(cas_density_grid[cas_updated_indices], new_densities.ravel())
+            jnp.maximum(cas_density_grid[cas_updated_indices], new_densities)
         )
         new_ogrid = self.ogrid.replace(
             density=self.ogrid.density.at[cas_slice].set(cas_density_grid),
@@ -655,7 +747,7 @@ class NeRFState(TrainState):
     @jax.jit
     def threshold_ogrid(self) -> "NeRFState":
         density_threshold = .01 * self.raymarch.diagonal_n_steps / (2 * min(self.scene_meta.bound, 1) * 3**.5)
-        mean_density = self.ogrid.density[self.ogrid.alive_indices].mean()
+        mean_density = self.ogrid.density[self.ogrid.alive_indices[:self.ogrid.alive_indices_offset[1]]].mean()
         density_threshold = jnp.minimum(density_threshold, mean_density)
         occupied_mask, occupancy_bitfield = packbits(
             density_threshold=density_threshold,
@@ -766,16 +858,25 @@ class NeRFState(TrainState):
 
     @property
     def update_ogrid_interval(self) -> int:
-        return min(2 ** (int(self.step) // 2048 + 4), 128)
+        s = int(self.step)
+        if s < 16:
+            return 1
+        elif s < 256:
+            return s // 16
+        elif s < 1024:
+            return 16
+        elif s < 4096:
+            return 32
+        elif s < 8192:
+            return 64
+        else:
+            return 128
 
     @property
     def should_call_update_ogrid(self) -> bool:
         return (
-            self.step < 256
-            or (
-                self.step > 0
-                and self.step % self.update_ogrid_interval == 0
-            )
+            self.step > 0
+            and self.step % self.update_ogrid_interval == 0
         )
 
     @property

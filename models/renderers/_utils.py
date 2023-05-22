@@ -1,10 +1,8 @@
 import jax.numpy as jnp
 
-from utils.common import jit_jaxfn_with
 from utils.types import PinholeCamera, RigidTransformation
 
 
-@jit_jaxfn_with(static_argnames=["camera"])
 def make_rays_worldspace(
     camera: PinholeCamera,
     transform_cw: RigidTransformation,
@@ -13,7 +11,7 @@ def make_rays_worldspace(
     Generate world-space rays for each pixel in the given camera's projection plane.
 
     Inputs:
-        camera: camera model in-use
+        camera: the camera model in use
         transform_cw[rotation, translation]: camera to world transformation
             rotation [3, 3]: rotation matrix
             translation [3]: translation vector

@@ -46,6 +46,9 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         scene_meta = scene_data.meta
         logger.info("loaded {} camera transforms for testing".format(len(scene_meta.frames)))
 
+    if args.camera_override.enabled:
+        scene_meta = scene_meta.replace(camera=args.camera_override.camera)
+
     # load parameters
     logger.debug("loading checkpoint from '{}'".format(args.ckpt))
     state: NeRFState = checkpoints.restore_checkpoint(
@@ -61,7 +64,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     )
     # WARN:
     #   flax.checkpoints.restore_checkpoint() returns a pytree with all arrays of numpy's array type,
-    #   which slows down inference.  use jax.device_put() to convert them to jax's DeviceArray type.
+    #   which slows down inference.  use jax.device_put() to move them to jax's default device.
     # REF: <https://github.com/google/flax/discussions/1199#discussioncomment-635132>
     state = jax.device_put(state)
     logger.info("checkpoint loaded from '{}'".format(args.ckpt))
@@ -70,42 +73,47 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     try:
         n_frames = len(scene_meta.frames)
         logger.info("starting testing (totally {} transform(s) to test)".format(n_frames))
-        for test_i in common.tqdm(range(n_frames), desc="testing"):
+        for test_i in common.tqdm(range(n_frames), desc="testing (resolultion: {}x{})".format(scene_meta.camera.W, scene_meta.camera.H)):
             logger.debug("testing on frame {}".format(scene_meta.frames[test_i]))
             transform = RigidTransformation(
                 rotation=scene_meta.frames[test_i].transform_matrix_jax_array[:3, :3],
                 translation=scene_meta.frames[test_i].transform_matrix_jax_array[:3, 3],
             )
             KEY, key = jran.split(KEY, 2)
-            bg, rgb, depth = render_image_inference(
+            bg, rgb, depth, _ = data.to_cpu(render_image_inference(
                 KEY=key,
                 transform_cw=transform,
                 state=state,
-            )
+            ))
             rendered_images.append(RenderedImage(
-                bg=data.to_cpu(bg),
-                rgb=data.to_cpu(rgb),
-                depth=data.to_cpu(depth),
+                bg=bg,
+                rgb=rgb,
+                depth=depth,  # call to data.mono_to_rgb is deferred below so as to minimize impact on rendering speed
             ))
     except KeyboardInterrupt:
         logger.warn("keyboard interrupt, tested {} images".format(len(rendered_images)))
 
     if args.trajectory == "loaded":
-        gt_rgbs_f32 = map(
-            lambda test_view, rendered_image: data.blend_rgba_image_array(
-                test_view.image_rgba_u8.astype(jnp.float32) / 255,
-                rendered_image.bg,
-            ),
-            test_views,
-            rendered_images,
-        )
-        logger.debug("calculating psnr")
-        mean_psnr = sum(map(
-            data.psnr,
-            map(data.f32_to_u8, gt_rgbs_f32),
-            map(lambda ri: ri.rgb, rendered_images),
-        )) / len(rendered_images)
-        logger.info("tested {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
+        if args.camera_override.enabled:
+            logger.info("camera is overridden, not calculating psnr")
+        elif len(rendered_images) == 0:
+            logger.warn("tested 0 image, not calculating psnr")
+        else:
+            gt_rgbs_f32 = map(
+                lambda test_view, rendered_image: data.blend_rgba_image_array(
+                    test_view.image_rgba_u8.astype(jnp.float32) / 255,
+                    rendered_image.bg,
+                ),
+                test_views,
+                rendered_images,
+            )
+            logger.debug("calculating psnr")
+            mean_psnr = sum(map(
+                data.psnr,
+                map(data.f32_to_u8, gt_rgbs_f32),
+                map(lambda ri: ri.rgb, rendered_images),
+            )) / len(rendered_images)
+            logger.info("tested {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
 
     elif args.trajectory == "orbit":
         logger.debug("using generated orbiting trajectory, not calculating psnr")
@@ -129,7 +137,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         logger.debug("saving predicted depths as a video at '{}'".format(dest_depth_video))
         data.write_video(
             save_dest.joinpath("depth.mp4"),
-            map(lambda img: img.depth, rendered_images),
+            map(lambda img: common.compose(data.mono_to_rgb, data.f32_to_u8)(img.depth), rendered_images),
         )
 
     if "image" in args.save_as:
@@ -141,5 +149,13 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
 
         logger.debug("saving as images")
         for save_i, img in enumerate(common.tqdm(rendered_images, desc="saving images")):
-            Image.fromarray(np.asarray(img.rgb)).save(dest_rgb.joinpath("{:03d}.png".format(save_i)))
-            Image.fromarray(np.asarray(img.depth)).save(dest_depth.joinpath("{:03d}.png".format(save_i)))
+            common.compose(
+                np.asarray,
+                Image.fromarray
+            )(img.rgb).save(dest_rgb.joinpath("{:03d}.png".format(save_i)))
+            common.compose(
+                data.mono_to_rgb,
+                data.f32_to_u8,
+                np.asarray,
+                Image.fromarray
+            )(img.depth).save(dest_depth.joinpath("{:03d}.png".format(save_i)))

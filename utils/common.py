@@ -57,15 +57,7 @@ tqdm = functools.partial(tqdm_original, bar_format=tqdm_format)
 
 def compose(*fns):
     def _inner(x):
-        for fn in reversed(fns):
-            x = fn(x)
-        return x
-    return _inner
-
-
-def compose(*fns):
-    def _inner(x):
-        for fn in reversed(fns):
+        for fn in fns:
             x = fn(x)
         return x
     return _inner

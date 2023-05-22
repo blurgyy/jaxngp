@@ -14,8 +14,7 @@ def integrate_rays(
     bgs: jax.Array,
     dss: jax.Array,
     z_vals: jax.Array,
-    densities: jax.Array,
-    rgbs: jax.Array,
+    drgbs: jax.Array,
 ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     """
     Inputs:
@@ -35,26 +34,23 @@ def integrate_rays(
                              no longer appropriate to assume the density is constant along this
                              large segment; (2) `z_vals[i+1]` is not defined for the last sample.
         z_vals [total_samples]: z_vals[i] is the distance of the i-th sample from the camera
-        densities [total_samples, 1]: density values along a ray
-        rgbs [total_samples, 3]: rgb values along a ray
+        drgbs [total_samples, 4]: density (1) and rgb (3) values along a ray
 
     Returns:
         measured_batch_size `uint`: total number of samples that got composited into output
-        opacities `[n_rays]`: accumulated opacities along each ray
         final_rgbs `[n_rays, 3]~: integrated ray colors according to input densities and rgbs.
         depths `[n_rays]`: estimated termination depth of each ray
     """
-    counter, opacities, final_rgbs, depths = impl.__integrate_rays(
+    counter, final_rgbs, depths = impl.__integrate_rays(
         rays_sample_startidx,
         rays_n_samples,
         bgs,
         dss,
         z_vals,
-        densities,
-        rgbs,
+        drgbs
     )
 
-    return counter[0], opacities, final_rgbs, depths
+    return counter[0], final_rgbs, depths
 
 
 def integrate_rays_inference(
@@ -67,9 +63,32 @@ def integrate_rays_inference(
     indices: jax.Array,
     dss: jax.Array,
     z_vals: jax.Array,
-    densities: jax.Array,
-    rgbs: jax.Array,
+    drgbs: jax.Array,
 ):
+    """
+    Inputs:
+        rays_bg `float` `[n_total_rays, 3]`: normalized background color of each ray in question
+        rays_rgb `float` `[n_total_rays, 3]`: target array to write rendered colors to
+        rays_T `float` `[n_total_rays]`: accumulated transmittance of each ray
+        rays_depth `float` `[n_total_rays]`: accumulated depth of each ray
+
+        n_samples `uint32` `[n_rays]`: output of ray marching, specifies how many samples are
+                                        generated for this ray at this iteration
+        indices `uint32` `[n_rays]`: values are in range [0, n_total_rays), specifies the location
+                                     in `rays_bg`, `rays_rgb`, `rays_T`, and `rays_depth`
+                                     corresponding to this ray
+        dss `float` `[n_rays, march_steps_cap]`: each sample's `ds`
+        z_vals `float` `[n_rays, march_steps_cap]`: each sample's distance to its ray origin
+        drgbs `float` `[n_rays, march_steps_cap, 4]`: predicted density (1) and RGB (3) values from a NeRF model
+
+    Returns:
+        terminate_cnt `uint32`: number of rays that terminated this iteration
+        terminated `bool` `[n_rays]`: a binary mask, the i-th location being True means the i-th ray
+                                       has terminated
+        rays_rgb `float` `[n_total_rays, 3]`: the input `rays_rgb` with ray colors updated
+        rays_T `float` `[n_total_rays]`: the input `rays_rgb` with transmittance values updated
+        rays_depth `float``[n_total_rays]`: the input `rays_rgb` with depth values updated
+    """
     terminate_cnt, terminated, rays_rgb_out, rays_T_out, rays_depth_out = impl.integrate_rays_inference_p.bind(
         rays_bg,
         rays_rgb,
@@ -80,8 +99,7 @@ def integrate_rays_inference(
         indices,
         dss,
         z_vals,
-        densities,
-        rgbs,
+        drgbs,
     )
     rays_rgb = rays_rgb.at[indices].set(rays_rgb_out)
     rays_T = rays_T.at[indices].set(rays_T_out)

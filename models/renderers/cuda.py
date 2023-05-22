@@ -1,5 +1,8 @@
+from dataclasses import dataclass
 import math
+from typing import Callable
 
+from flax.core.scope import FrozenVariableDict
 import jax
 import jax.numpy as jnp
 import jax.random as jran
@@ -8,99 +11,17 @@ from volrendjax import (
     integrate_rays_inference,
     march_rays,
     march_rays_inference,
-    morton3d_invert,
-    packbits,
 )
 
 from utils.common import jit_jaxfn_with
+from utils.data import f32_to_u8
 from utils.types import (
     NeRFState,
-    OccupancyDensityGrid,
     PinholeCamera,
     RigidTransformation,
 )
 
 from ._utils import make_rays_worldspace
-
-
-@jit_jaxfn_with(static_argnames=["update_all"])
-def update_ogrid(
-    KEY: jran.KeyArray,
-    update_all: bool,
-    state: NeRFState,
-) -> NeRFState:
-    # (1) decay the density value in each grid cell by a factor of 0.95.
-    decay = .95
-    density_grid = state.ogrid.density * decay
-
-    # (2) randomly sample 𝑀 candidate cells, and set their value to the maximum of their current
-    # value and the density component of the NeRF model at a random location within the cell.
-    G3 = state.raymarch.density_grid_res ** 3
-    for cas in range(state.scene_meta.cascades):
-        if update_all:
-            # During the first 256 training steps, we sample 𝑀 = 𝐾 · 128^{3} cells uniformly without
-            # repetition.
-            M = G3
-            indices = jnp.arange(M, dtype=jnp.uint32)
-        else:
-            # For subsequent training steps we set 𝑀 = 𝐾 · 128^{3}/2 which we partition into two
-            # sets.
-            M = G3 // 2
-            # The first 𝑀/2 cells are sampled uniformly among all cells.
-            KEY, key_firsthalf, key_secondhalf = jran.split(KEY, 3)
-            indices_firsthalf = jran.choice(key=key_firsthalf, a=jnp.arange(G3, dtype=jnp.uint32), shape=(M//2,), replace=True)  # allow duplicated choices
-            # Rejection sampling is used for the remaining samples to restrict selection to cells
-            # that are currently occupied.
-            # NOTE: Below is just uniformly sampling the occupied cells, not rejection sampling.
-            cas_occ_mask = state.ogrid.occ_mask[cas*G3:(cas+1)*G3]
-            p = cas_occ_mask.astype(jnp.float32)
-            indices_secondhalf = jran.choice(key=key_secondhalf, a=jnp.arange(G3, dtype=jnp.uint32), shape=(M//2,), replace=True, p=p)
-            indices = jnp.concatenate([indices_firsthalf, indices_secondhalf])
-
-        coordinates = morton3d_invert(indices).astype(jnp.float32)
-        coordinates = coordinates / (state.raymarch.density_grid_res - 1) * 2 - 1  # in [-1, 1]
-        mip_bound = min(state.scene_meta.bound, 2**cas)
-        half_cell_width = mip_bound / state.raymarch.density_grid_res
-        coordinates *= mip_bound - half_cell_width  # in [-mip_bound+half_cell_width, mip_bound-half_cell_width]
-        # random point inside grid cells
-        KEY, key = jran.split(KEY, 2)
-        coordinates += jran.uniform(
-            key,
-            coordinates.shape,
-            coordinates.dtype,
-            minval=-half_cell_width,
-            maxval=half_cell_width,
-        )
-
-        new_densities = state.nerf_fn(
-            {"params": state.locked_params["nerf"]},
-            jax.lax.stop_gradient(coordinates),
-            None,
-        )
-
-        # set their value to the maximum of their current value and the density component of the
-        # NeRF model at a random location within the cell.
-        density_grid = density_grid.at[indices + cas*G3].set(
-            jnp.maximum(density_grid[indices + cas*G3], new_densities.ravel())
-        )
-
-    # (3) update the occupancy bits by thresholding each cell’s density with 𝑡 = 0.01 · 1024/√3,
-    # which corresponds to thresholding the opacity of a minimal ray marching step by 1 − exp(−0.01)
-    # ≈ 0.01.
-    density_threshold = .01 * state.raymarch.diagonal_n_steps / (2 * min(state.scene_meta.bound, 1) * 3**.5)
-    mean_density = jnp.sum(jnp.where(density_grid > 0, density_grid, 0)) / jnp.sum(jnp.where(density_grid > 0, 1, 0))
-    density_threshold = jnp.minimum(density_threshold, mean_density)
-    # density_threshold = 1e-2
-    occupied_mask, occupancy_bitfield = packbits(
-        density_threshold=density_threshold,
-        density_grid=density_grid,
-    )
-
-    return state.replace(ogrid=OccupancyDensityGrid(
-        density=density_grid,
-        occ_mask=occupied_mask,
-        occupancy=occupancy_bitfield,
-    ))
 
 
 def make_near_far_from_bound(
@@ -188,20 +109,19 @@ def render_rays_train(
         occupancy_bitfield=state.ogrid.occupancy,
     )
 
-    densities, rgbs = state.nerf_fn(
+    drgbs = state.nerf_fn(
         {"params": state.params["nerf"]},
         ray_pts,
         ray_dirs,
     )
 
-    effective_samples, opacities, final_rgbs, depths = integrate_rays(
+    effective_samples, final_rgbs, depths = integrate_rays(
         rays_sample_startidx=rays_sample_startidx,
         rays_n_samples=rays_n_samples,
         bgs=bg,
         dss=dss,
         z_vals=z_vals,
-        densities=densities,
-        rgbs=rgbs,
+        drgbs=drgbs,
     )
 
     batch_metrics = {
@@ -209,13 +129,24 @@ def render_rays_train(
         "measured_batch_size": jnp.where(effective_samples > 0, effective_samples, 0).sum(),
     }
 
-    return batch_metrics, opacities, final_rgbs, depths
+    return batch_metrics, final_rgbs, depths
 
 
-@jit_jaxfn_with(static_argnames=["march_steps_cap"])
+@dataclass(frozen=True, kw_only=True)
+class MarchAndIntegrateInferencePayload:
+    march_steps_cap: int
+    diagonal_n_steps: int
+    cascades: int
+    density_grid_res: int
+    bound: float
+    stepsize_portion: float
+    nerf_fn: Callable
+
+
+@jit_jaxfn_with(static_argnames=["payload"])
 def march_and_integrate_inference(
-    march_steps_cap: int,
-    state: NeRFState,
+    payload: MarchAndIntegrateInferencePayload,
+    locked_nerf_params: FrozenVariableDict,
 
     counter: jax.Array,
     rays_o: jax.Array,
@@ -230,14 +161,15 @@ def march_and_integrate_inference(
     rays_rgb: jax.Array,
     rays_T: jax.Array,
     rays_depth: jax.Array,
+    rays_cost: jax.Array | None,
 ):
-    counter, indices, n_samples, t_starts, xyzdirs, dss, z_vals = march_rays_inference(
-        diagonal_n_steps=state.raymarch.diagonal_n_steps,
-        K=state.scene_meta.cascades,
-        G=state.raymarch.density_grid_res,
-        march_steps_cap=march_steps_cap,
-        bound=state.scene_meta.bound,
-        stepsize_portion=state.scene_meta.stepsize_portion,
+    counter, indices, n_samples, t_starts, xyzs, dss, z_vals = march_rays_inference(
+        diagonal_n_steps=payload.diagonal_n_steps,
+        K=payload.cascades,
+        G=payload.density_grid_res,
+        march_steps_cap=payload.march_steps_cap,
+        bound=payload.bound,
+        stepsize_portion=payload.stepsize_portion,
         rays_o=rays_o,
         rays_d=rays_d,
         t_starts=t_starts,
@@ -247,12 +179,14 @@ def march_and_integrate_inference(
         terminated=terminated,
         indices=indices,
     )
+    if rays_cost is not None:
+        rays_cost = rays_cost.at[indices].set(rays_cost[indices] + n_samples)
 
-    xyzdirs = jax.lax.stop_gradient(xyzdirs)
-    densities, rgbs = state.nerf_fn(
-        {"params": state.locked_params["nerf"]},
-        xyzdirs[..., :3],
-        xyzdirs[..., 3:],
+    xyzs = jax.lax.stop_gradient(xyzs)
+    drgbs = payload.nerf_fn(
+        {"params": locked_nerf_params},
+        xyzs,
+        jnp.broadcast_to(rays_d[indices, None, :], xyzs.shape),
     )
 
     terminate_cnt, terminated, rays_rgb, rays_T, rays_depth = integrate_rays_inference(
@@ -265,8 +199,7 @@ def march_and_integrate_inference(
         indices=indices,
         dss=dss,
         z_vals=z_vals,
-        densities=densities,
-        rgbs=rgbs,
+        drgbs=drgbs,
     )
 
     return terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth
@@ -277,6 +210,7 @@ def render_image_inference(
     transform_cw: RigidTransformation,
     state: NeRFState,
     camera_override: None | PinholeCamera=None,
+    render_cost: bool=False,
 ):
     if camera_override is not None:
         state = state.replace(scene_meta=state.scene_meta.replace(camera=camera_override))
@@ -286,6 +220,10 @@ def render_image_inference(
     rays_rgb = jnp.zeros((state.scene_meta.camera.n_pixels, 3), dtype=jnp.float32)
     rays_T = jnp.ones(state.scene_meta.camera.n_pixels, dtype=jnp.float32)
     rays_depth = jnp.zeros(state.scene_meta.camera.n_pixels, dtype=jnp.float32)
+    if render_cost:
+        rays_cost = jnp.zeros(state.scene_meta.camera.n_pixels, dtype=jnp.uint32)
+    else:
+        rays_cost = None
     if state.use_background_model:
         bg = state.bg_fn({"params": state.locked_params["bg"]}, o_world, d_world)
     elif state.render.random_bg:
@@ -301,11 +239,11 @@ def render_image_inference(
     )
 
     if state.batch_config.mean_effective_samples_per_ray > 7:
-        march_rays_cap = max(4, min(state.batch_config.mean_effective_samples_per_ray // 2 + 1, 8))
+        march_steps_cap = max(4, min(state.batch_config.mean_effective_samples_per_ray // 2 + 1, 8))
     else:
-        march_rays_cap = min(4, state.batch_config.mean_effective_samples_per_ray)
-    march_rays_cap = int(march_rays_cap)
-    n_rays = min(65536, o_world.shape[0]) // march_rays_cap
+        march_steps_cap = min(4, state.batch_config.mean_effective_samples_per_ray)
+    march_steps_cap = int(march_steps_cap)
+    n_rays = min(65536 // march_steps_cap, o_world.shape[0])
 
     counter = jnp.zeros(1, dtype=jnp.uint32)
     terminated = jnp.ones(n_rays, dtype=jnp.bool_)  # all rays are terminated at the beginning
@@ -316,11 +254,18 @@ def render_image_inference(
         iters = max(1, (state.scene_meta.camera.n_pixels - n_rendered_rays) // n_rays)
         iters = 2 ** int(math.log2(iters) + 1)
 
-        terminate_cnt = 0
         for _ in range(iters):
-            iter_terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth = march_and_integrate_inference(
-                march_steps_cap=march_rays_cap,
-                state=state,
+            terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth = march_and_integrate_inference(
+                payload=MarchAndIntegrateInferencePayload(
+                    march_steps_cap=march_steps_cap,
+                    diagonal_n_steps=state.raymarch.diagonal_n_steps,
+                    cascades=state.scene_meta.cascades,
+                    density_grid_res=state.raymarch.density_grid_res,
+                    bound=state.scene_meta.bound,
+                    stepsize_portion=state.scene_meta.stepsize_portion,
+                    nerf_fn=state.nerf_fn,
+                ),
+                locked_nerf_params=state.locked_params["nerf"],
 
                 counter=counter,
                 rays_o=o_world,
@@ -335,13 +280,17 @@ def render_image_inference(
                 rays_rgb=rays_rgb,
                 rays_T=rays_T,
                 rays_depth=rays_depth,
+                rays_cost=rays_cost,
             )
-            terminate_cnt += iter_terminate_cnt
-        n_rendered_rays += terminate_cnt
+            n_rendered_rays += terminate_cnt
 
     bg_array_f32 = rays_bg.reshape((state.scene_meta.camera.H, state.scene_meta.camera.W, 3))
-    image_array_u8 = jnp.clip(jnp.round(rays_rgb * 255), 0, 255).astype(jnp.uint8).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W, 3))
+    image_array_u8 = f32_to_u8(rays_rgb).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W, 3))
     rays_depth_f32 = rays_depth / (state.scene_meta.bound * 2 + jnp.linalg.norm(transform_cw.translation))
-    depth_array_u8 = jnp.clip(jnp.round(rays_depth_f32 * 255), 0, 255).astype(jnp.uint8).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W))
+    depth_array_u8 = f32_to_u8(rays_depth_f32).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W))
+    if render_cost:
+        cost_array_u8 = f32_to_u8(rays_cost.astype(jnp.float32) / (rays_cost.astype(jnp.float32).max() + 1.)).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W))
+    else:
+        cost_array_u8 = None
 
-    return bg_array_f32, image_array_u8, depth_array_u8
+    return bg_array_f32, image_array_u8, depth_array_u8, cost_array_u8

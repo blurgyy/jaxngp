@@ -2,20 +2,18 @@ import dataclasses
 import functools
 import gc
 import time
-from typing import List
+from typing import Any, Dict, List, Tuple
 
 from flax.training import checkpoints
 import jax.numpy as jnp
 import jax.random as jran
 import optax
 import tyro
-import numpy as np
-from pathlib import Path
 
 from models.nerfs import make_nerf_ngp, make_skysphere_background_model_ngp
 from models.renderers import render_image_inference
 from utils import common, data
-from utils.args import NeRFTrainingArgs,GuiWindowArgs
+from utils.args import NeRFTrainingArgs
 from utils.types import (
     NeRFBatchConfig,
     NeRFState,
@@ -28,7 +26,6 @@ from utils.types import (
 from ._utils import train_step
 
 
-    
 def train_epoch(
     KEY: jran.KeyArray,
     state: NeRFState,
@@ -38,67 +35,76 @@ def train_epoch(
     ep_log: int,
     total_epochs: int,
     logger: common.Logger,
-):
+) -> Tuple[NeRFState, Dict[str, Any]]:
     n_processed_rays = 0
     total_loss = 0
+    interrupted = False
 
-    for _ in (pbar := common.tqdm(range(n_batches), desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs))):
-        KEY, key_perm, key_train_step = jran.split(KEY, 3)
-        perm = jran.choice(key_perm, scene.meta.n_pixels, shape=(state.batch_config.n_rays,), replace=True)
-        state, metrics = train_step(
-            KEY=key_train_step,
-            state=state,
-            total_samples=total_samples,
-            scene=scene,
-            perm=perm,
-        )
-        n_processed_rays += state.batch_config.n_rays
-        total_loss += metrics["loss"]
-        loss_log = metrics["loss"] / state.batch_config.n_rays
-
-        loss_db = data.linear_to_db(loss_log, maxval=1)
-        pbar.set_description_str(
-            desc="Training epoch#{:03d}/{:d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss={:.3e}({:.2f}dB)".format(
-                ep_log,
-                total_epochs,
-                metrics["measured_batch_size"],
-                metrics["measured_batch_size_before_compaction"],
-                state.batch_config.running_mean_effective_samples_per_ray,
-                state.batch_config.running_mean_samples_per_ray,
-                state.batch_config.n_rays,
-                loss_log,
-                loss_db,
+    try:
+        for _ in (pbar := common.tqdm(range(n_batches), desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs))):
+            KEY, key_perm, key_train_step = jran.split(KEY, 3)
+            perm = jran.choice(key_perm, scene.meta.n_pixels, shape=(state.batch_config.n_rays,), replace=True)
+            state, metrics = train_step(
+                KEY=key_train_step,
+                state=state,
+                total_samples=total_samples,
+                scene=scene,
+                perm=perm,
             )
-        )
- 
-        if state.should_call_update_ogrid:
-            # update occupancy grid
-            for cas in range(state.scene_meta.cascades):
-                KEY, key = jran.split(KEY, 2)
-                state = state.update_ogrid_density(
-                    KEY=key,
-                    cas=cas,
-                    update_all=bool(state.should_update_all_ogrid_cells),
+            n_processed_rays += state.batch_config.n_rays
+            total_loss += metrics["loss"]
+
+            loss_log = metrics["loss"] / state.batch_config.n_rays
+            loss_db = data.linear_to_db(loss_log, maxval=1)
+            pbar.set_description_str(
+                desc="Training epoch#{:03d}/{:d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss={:.3e}({:.2f}dB)".format(
+                    ep_log,
+                    total_epochs,
+                    metrics["measured_batch_size"],
+                    metrics["measured_batch_size_before_compaction"],
+                    state.batch_config.running_mean_effective_samples_per_ray,
+                    state.batch_config.running_mean_samples_per_ray,
+                    state.batch_config.n_rays,
+                    loss_log,
+                    loss_db,
                 )
-            state = state.threshold_ogrid()
+            )
 
-        state = state.update_batch_config(
-            new_measured_batch_size=metrics["measured_batch_size"],
-            new_measured_batch_size_before_compaction=metrics["measured_batch_size_before_compaction"],
-        )
-        if state.should_commit_batch_config:
-            state = state.replace(batch_config=state.batch_config.commit(total_samples))
+            if state.should_call_update_ogrid:
+                # update occupancy grid
+                for cas in range(state.scene_meta.cascades):
+                    KEY, key = jran.split(KEY, 2)
+                    state = state.update_ogrid_density(
+                        KEY=key,
+                        cas=cas,
+                        update_all=bool(state.should_update_all_ogrid_cells),
+                        max_inference=total_samples,
+                    )
+                state = state.threshold_ogrid()
 
-        if state.should_write_batch_metrics:
-            logger.write_scalar("batch/↓loss", loss_log, state.step)
-            logger.write_scalar("batch/↑loss (db)", loss_db, state.step)
-            logger.write_scalar("batch/effective batch size (not compacted)", metrics["measured_batch_size_before_compaction"], state.step)
-            logger.write_scalar("batch/↑effective batch size (compacted)", metrics["measured_batch_size"], state.step)
-            logger.write_scalar("rendering/↓effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
-            logger.write_scalar("rendering/↓marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
-            logger.write_scalar("rendering/↑number of rays", state.batch_config.n_rays, state.step)
+            state = state.update_batch_config(
+                new_measured_batch_size=metrics["measured_batch_size"],
+                new_measured_batch_size_before_compaction=metrics["measured_batch_size_before_compaction"],
+            )
+            if state.should_commit_batch_config:
+                state = state.replace(batch_config=state.batch_config.commit(total_samples))
 
-    return total_loss / n_processed_rays, state
+            if state.should_write_batch_metrics:
+                logger.write_scalar("batch/↓loss", loss_log, state.step)
+                logger.write_scalar("batch/↑loss (db)", loss_db, state.step)
+                logger.write_scalar("batch/effective batch size (not compacted)", metrics["measured_batch_size_before_compaction"], state.step)
+                logger.write_scalar("batch/↑effective batch size (compacted)", metrics["measured_batch_size"], state.step)
+                logger.write_scalar("rendering/↓effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
+                logger.write_scalar("rendering/↓marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
+                logger.write_scalar("rendering/↑number of rays", state.batch_config.n_rays, state.step)
+    except (InterruptedError, KeyboardInterrupt):
+        interrupted = True
+
+    return state, {
+        "total_loss": total_loss,
+        "n_processed_rays": n_processed_rays,
+        "interrupted": interrupted,
+    }
 
 
 def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
@@ -124,6 +130,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
         srcs=args.frames_train,
         scene_options=args.scene,
     )
+    logger.debug("sharpness_min={:.3f}, sharpness_max={:.3f}".format(*scene_train.meta.sharpness_range))
 
     if len(args.frames_val) > 0:
         logger.info("loading validation frames")
@@ -131,7 +138,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             srcs=args.frames_val,
             scene_options=args.scene,
         )
-        assert scene_train.meta == scene_val.meta
+        assert scene_train.meta.replace(frames=None) == scene_val.meta.replace(frames=None)
     else:
         logger.warn("got empty validation set, this run will not do validation")
 
@@ -226,19 +233,18 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
 
         ep_log = ep + 1
 
-        try:
-            KEY, key = jran.split(KEY, 2)
-            loss_log, state = train_epoch(
-                KEY=key,
-                state=state,
-                scene=scene_train,
-                n_batches=args.train.n_batches,
-                total_samples=args.train.bs,
-                ep_log=ep_log,
-                total_epochs=args.train.n_epochs,
-                logger=logger,
-            )
-        except KeyboardInterrupt:
+        KEY, key = jran.split(KEY, 2)
+        state, metrics = train_epoch(
+            KEY=key,
+            state=state,
+            scene=scene_train,
+            n_batches=args.train.n_batches,
+            total_samples=args.train.bs,
+            ep_log=ep_log,
+            total_epochs=args.train.n_epochs,
+            logger=logger,
+        )
+        if metrics["interrupted"]:
             logger.warn("aborted at epoch {}".format(ep_log))
             logger.info("saving training state ... ")
             ckpt_name = checkpoints.save_checkpoint(args.exp_dir, state, step="ep{}aborted".format(ep_log), overwrite=True, keep=2**30)
@@ -246,6 +252,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             logger.info("exiting cleanly ...")
             exit()
 
+        loss_log = metrics["total_loss"] / metrics["n_processed_rays"]
         loss_db = data.linear_to_db(loss_log, maxval=1)
         logger.info("epoch#{:03d}: loss={:.2e}({:.2f}dB)".format(ep_log, loss_log, loss_db))
         logger.write_scalar("epoch/↓loss", loss_log, step=ep_log)
@@ -279,15 +286,15 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
                     translation=scene_val.all_transforms[val_i, -3:].reshape(3),
                 )
                 KEY, key = jran.split(KEY, 2)
-                bg, rgb, depth = render_image_inference(
+                bg, rgb, depth, _ = data.to_cpu(render_image_inference(
                     KEY=key,
                     transform_cw=val_transform,
                     state=state_eval,
-                )
+                ))
                 rendered_images.append(RenderedImage(
-                    bg=data.to_cpu(bg),
-                    rgb=data.to_cpu(rgb),
-                    depth=data.to_cpu(depth),
+                    bg=bg,
+                    rgb=rgb,
+                    depth=depth,  # call to data.mono_to_rgb is deferred below so as to minimize impact on rendering speed
                 ))
             val_end_time = time.time()
             logger.write_scalar(
@@ -321,7 +328,11 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
                     H=scene_meta.camera.H,
                     W=scene_meta.camera.W,
                 ),
-                [gt, rendered_image.rgb, rendered_image.depth],
+                [
+                    gt,
+                    rendered_image.rgb,
+                    common.compose(data.mono_to_rgb, data.f32_to_u8)(rendered_image.depth),
+                ],
             ))
             logger.write_image(
                 tag="validation/[gt|rendered|depth]",

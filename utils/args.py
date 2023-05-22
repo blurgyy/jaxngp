@@ -5,6 +5,7 @@ from typing import Tuple
 import tyro
 
 from utils.types import (
+    CameraOverrideOptions,
     LogLevel,
     OrbitTrajectoryOptions,
     RayMarchingOptions,
@@ -138,9 +139,9 @@ class NeRFTrainingArgs(NeRFArgsBase):
         random_bg=True,
     )
     scene: SceneOptions=SceneOptions(
+        sharpness_threshold=-1.,
         world_scale=1.0,
         resolution_scale=1.0,
-        camera_near=0.1,
     )
 
     # raymarching/rendering options for validating during training
@@ -158,6 +159,8 @@ class NeRFTrainingArgs(NeRFArgsBase):
 @dataclass(frozen=True, kw_only=True)
 class NeRFTestingArgs(NeRFArgsBase):
     frames: tyro.conf.Positional[Tuple[Path, ...]]
+
+    camera_override: CameraOverrideOptions=None
 
     # use checkpoint from this path (can be a directory) for testing
     ckpt: Path
@@ -187,9 +190,9 @@ class NeRFTestingArgs(NeRFArgsBase):
         random_bg=False,
     )
     scene: SceneOptions=SceneOptions(
+        sharpness_threshold=-1.,
         world_scale=1.0,
         resolution_scale=1.0,
-        camera_near=0.1,
     )
     
 @dataclass
@@ -203,9 +206,9 @@ class GuiWindowArgs():
     resolution_scale=1.0
     common: CommonArgs=CommonArgs()
     scene: SceneOptions=SceneOptions(
+        sharpness_threshold=-1.,
         world_scale=1.0,
         resolution_scale=1.0,
-        camera_near=0.1,
     )
     bound:float=1.5*scene.world_scale
     

@@ -255,7 +255,7 @@ class Gui_trainer():
         transform = RigidTransformation(rotation=self.camera_pose[:3, :3],
                                         translation=jnp.squeeze(self.camera_pose[:3, 3].reshape(-1,3),axis=0))
         self.KEY, key = jran.split(self.KEY, 2)
-        bg, rgb, depth = render_image_inference(
+        bg, rgb, depth, _ = render_image_inference(
             KEY=key,
             transform_cw=transform,
             state=self.state.replace(render=self.state.render.replace(random_bg=False,bg=self.back_color)),
@@ -360,6 +360,7 @@ class Gui_trainer():
                         KEY=key,
                         cas=cas,
                         update_all=bool(state.should_update_all_ogrid_cells),
+                        max_inference=total_samples,
                     )
                 state = state.threshold_ogrid()
 
