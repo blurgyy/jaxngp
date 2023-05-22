@@ -578,15 +578,18 @@ def load_transform_json_recursive(src: Path | str) -> TransformJsonNGP | Transfo
         except:
             # unreadable, or not a json
             return None
-        try:
-            transforms = (
-                TransformJsonNeRFSynthetic(**transforms)
-                if transforms.get("camera_angle_x") is not None
-                else TransformJsonNGP(**transforms)
-            )
-            transforms = transforms.make_absolute(src.parent).scale_camera_positions()
-        except TypeError:
-            # not a valid transform.json
+        if isinstance(transforms, dict):
+            try:
+                transforms = (
+                    TransformJsonNeRFSynthetic(**transforms)
+                    if transforms.get("camera_angle_x") is not None
+                    else TransformJsonNGP(**transforms)
+                )
+                transforms = transforms.make_absolute(src.parent).scale_camera_positions()
+            except TypeError:
+                # not a valid transform.json
+                return None
+        else:
             return None
 
     else:
