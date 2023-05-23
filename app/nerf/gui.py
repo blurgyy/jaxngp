@@ -1059,6 +1059,8 @@ class NeRFGUI():
                 else:
                     dpg.set_value("_texture", self.framebuff)
                 dpg.render_dearpygui_frame()
+                import time
+                time.sleep(0.01)
                 if self.exit_flag:
                     raise BaseException
             except BaseException:
