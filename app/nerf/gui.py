@@ -273,18 +273,30 @@ class Gui_trainer():
             state=self.state.replace(render=self.state.render.replace(random_bg=False,bg=self.back_color)),
             #state=self.state.replace(render=self.state.render.replace(random_bg=False)),
             camera_override=self.camera,
-            #render_cost: bool = False
+            render_cost=True
         )
+        
+        # self.logger.info("cost shape:{},cost dtype:{}".format(cost.shape,cost.dtype))
         bg=self.get_npf32_image(bg,W=self.gui_args.W,H=self.gui_args.H)
         rgb=self.get_npf32_image(rgb,W=self.gui_args.W,H=self.gui_args.H)
         depth=self.color_depth(depth,W=self.gui_args.W,H=self.gui_args.H)
-        return (bg, rgb, depth)
-    
+        cost=self.get_cost_image(cost,W=self.gui_args.W,H=self.gui_args.H)
+        return (bg, rgb, depth,cost)
+    def get_cost_image(self,cost,W,H):
+        # cost=self.get_npf32_image(cost,W=W,H=H)
+        # cost=cost[:,:,np.newaxis]
+        # cost=np.tile(cost,(1,1,3))
+        
+        img=Image.fromarray(np.array(cost,dtype=np.uint8))
+        img=img.convert('RGB')
+        img=img.resize(size=(W,H), resample=Image.NEAREST)
+        cost=np.array(img,dtype=np.float32)/255.
+        return cost   
     def color_depth(self,depth,W,H):
         depth=np.array(mono_to_rgb(depth)*255,dtype=np.uint8)
         img=Image.fromarray(depth,mode='RGBA')
         img=img.convert('RGB')
-        img=img.resize(size=(W,H),resample=Image.LANCZOS)
+        img=img.resize(size=(W,H),resample=Image.NEAREST)
         depth=np.array(img,dtype=np.float32)/255.
         return depth
     
@@ -471,6 +483,7 @@ class TrainThread(threading.Thread):
         self.framebuff=np.array(img,dtype=np.float32)/255.
         self.rgb=np.array(img,dtype=np.float32)/255.
         self.depth=np.array(img,dtype=np.float32)/255.
+        self.cost=np.array(img,dtype=np.float32)/255.
         self.frame_updated=True
     def setMode(self,mode):
         self.mode=mode
@@ -495,11 +508,13 @@ class TrainThread(threading.Thread):
                 if self.istesting:
                     self.havestart=True
                     start_time=time.time()    
-                    _,self.rgb,self.depth=self.trainer.render_frame(self.scale,self.H,self.W)
+                    _,self.rgb,self.depth,self.cost=self.trainer.render_frame(self.scale,self.H,self.W)
                     if self.mode==Mode.Render:
                         self.framebuff=self.rgb
-                    else:
+                    elif self.mode==Mode.Depth:
                         self.framebuff=self.depth
+                    else:
+                        self.framebuff=self.cost
                     self.frame_updated=True
                     end_time=time.time()
                     self.render_infer_time=end_time-start_time
@@ -621,8 +636,9 @@ class TrainThread(threading.Thread):
             return self.trainer.camera
         return None
 class Mode(Enum):
-    Render = 0
-    Depth = 1
+    Render = 1
+    Depth = 2
+    Cost=3
 
 @dataclass
 class NeRFGUI():
@@ -770,13 +786,13 @@ class NeRFGUI():
             self.update_plot()
                       
         def callback_mode(sender, app_data):
-            if self.mode==Mode.Render:#change to depth mode
-                self.mode=Mode.Depth
-                dpg.configure_item("_button_mode", label="render")
-                
-            elif self.mode==Mode.Depth:#change to render mode
+            #self.logger.info("sender:{},app_data:{}".format(sender,app_data))
+            if app_data=="render":
                 self.mode=Mode.Render
-                dpg.configure_item("_button_mode", label="depth")
+            elif app_data=="depth":    
+                self.mode=Mode.Depth
+            else:
+                self.mode=Mode.Cost
         self.View_W,self.View_H=self.W+self.gui_args.control_window_width,self.H
         dpg.create_viewport(title='NeRF', width=self.View_W, height=self.View_H,
                             min_width=250+self.gui_args.control_window_width,min_height=250,x_pos=0, y_pos=0)
@@ -800,8 +816,9 @@ class NeRFGUI():
                         dpg.bind_item_theme("_conrol_panel", theme_head)
                         #mode
                         with dpg.group(horizontal=True):
-                            dpg.add_text("Visualization mode: ")
-                            dpg.add_button(label="depth", tag="_button_mode", callback=callback_mode)
+                            dpg.add_text("Visualization mode:   ")
+                            items=["render","depth","cost"]
+                            dpg.add_combo(items=items, callback=callback_mode,width=70,default_value="render")
                         # train / stop/reset
                         with dpg.group(horizontal=True):
                             dpg.add_text("Train: ")
