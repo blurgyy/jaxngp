@@ -202,7 +202,7 @@ def march_and_integrate_inference(
         drgbs=drgbs,
     )
 
-    return terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth
+    return terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth, rays_cost
 
 
 def render_image_inference(
@@ -255,7 +255,7 @@ def render_image_inference(
         iters = 2 ** int(math.log2(iters) + 1)
 
         for _ in range(iters):
-            terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth = march_and_integrate_inference(
+            terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth, rays_cost = march_and_integrate_inference(
                 payload=MarchAndIntegrateInferencePayload(
                     march_steps_cap=march_steps_cap,
                     diagonal_n_steps=state.raymarch.diagonal_n_steps,
