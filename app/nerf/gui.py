@@ -662,7 +662,9 @@ class NeRFGUI():
         self.framebuff=np.ones(shape=(self.W,self.H,3),dtype=np.float32)#default background is white
         dpg.create_context()
         self.train_thread=None
-        self.cameraPose,self.cameraPosePrev,self.cameraPoseNext=CameraPose(), CameraPose(), CameraPose()
+        self.cameraPose,self.cameraPosePrev,self.cameraPoseNext=CameraPose(radius=self.gui_args.bound*3),\
+                                                                CameraPose(radius=self.gui_args.bound*3),\
+                                                                CameraPose(radius=self.gui_args.bound*3)
         self.ItemsLayout()
     def ItemsLayout(self):
         def callback_backgroundColor(sender,app_data):

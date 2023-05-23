@@ -210,7 +210,7 @@ class GuiWindowArgs():
         world_scale=1.0,
         resolution_scale=1.0,
     )
-    bound:float=1.5*scene.world_scale
+    bound:float=2.0*scene.world_scale
     
     raymarch: RayMarchingOptions=RayMarchingOptions(
         diagonal_n_steps=1<<10,
