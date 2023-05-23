@@ -838,7 +838,7 @@ class NeRFGUI():
                     with dpg.collapsing_header(tag="_para_panel",label="Parameter Monitor", default_open=True):
                         dpg.bind_item_theme("_para_panel", theme_head)
                         with dpg.group(horizontal=True):
-                            dpg.add_text("resolution(H*W): ")
+                            dpg.add_text("Resolution(H*W): ")
                             dpg.add_text("{}*{}".format(self.H,self.W), tag="_cam_HW")
                         with dpg.group(horizontal=True):
                             dpg.add_text("Current training step: ")
@@ -860,13 +860,13 @@ class NeRFGUI():
                             dpg.add_text("no data", tag="_effective_samples")
                         
                         with dpg.group(horizontal=True):
-                            dpg.add_text("batch size: ")
+                            dpg.add_text("Batch size: ")
                             dpg.add_text("no data", tag="_not_compacted_batch_size")
                         with dpg.group(horizontal=True):
-                            dpg.add_text("batch size(compacted): ")
+                            dpg.add_text("Batch size(compacted): ")
                             dpg.add_text("no data", tag="_compacted_batch_size")
                         with dpg.group(horizontal=True):
-                            dpg.add_text("number of rays: ")
+                            dpg.add_text("Number of rays: ")
                             dpg.add_text("no data", tag="_rays_num")
                         # create plot
                         with dpg.plot(label="Loss", height=self.gui_args.control_window_width-40, width=self.gui_args.control_window_width-40):
