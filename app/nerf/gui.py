@@ -660,8 +660,8 @@ class NeRFGUI():
                 self.train_thread.test()
                 self.show_cam_angle(self.cameraPoseNext.theta,self.cameraPoseNext.phi)
         def callback_midmouseDrag(sender,app_data):
-            if not dpg.is_item_hovered("_primary_window"):
-                return 
+            # if not dpg.is_item_hovered("_primary_window"):
+            #     return 
             dx=app_data[1]
             dy=app_data[2]
             self.cameraPoseNext = deepcopy(self.cameraPosePrev)
