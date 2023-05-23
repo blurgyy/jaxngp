@@ -674,7 +674,7 @@ class NeRFGUI():
     mode:Mode=Mode.Render
     
     mouse_pressed:bool=False
-    
+    need_test:bool=True
     def __post_init__(self):
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
 
@@ -784,7 +784,12 @@ class NeRFGUI():
             self.data_step.clear()
             self.data_loss.clear() 
             self.update_plot()
-                      
+        def callback_Render(sender, app_data):
+            if self.need_test:
+                dpg.configure_item("_button_Render", label="continue rendering")
+            else:
+                dpg.configure_item("_button_Render", label="pause rendering")
+            self.need_test=not self.need_test            
         def callback_mode(sender, app_data):
             #self.logger.info("sender:{},app_data:{}".format(sender,app_data))
             if app_data=="render":
@@ -823,7 +828,11 @@ class NeRFGUI():
                         with dpg.group(horizontal=True):
                             dpg.add_text("Train: ")
                             dpg.add_button(label="start", tag="_button_train", callback=callback_train)
-                            dpg.add_button(label="reset", tag="_button_reset", callback=callback_reset)            
+                            dpg.add_button(label="reset", tag="_button_reset", callback=callback_reset)
+                        #need render
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("Render: ")
+                            dpg.add_button(label="pause rendering", tag="_button_Render", callback=callback_Render)
                         # save ckpt
                         with dpg.group(horizontal=True):
                             dpg.add_text("Checkpoint: ")
@@ -1077,9 +1086,12 @@ class NeRFGUI():
                     self.train_thread.change_WH(self.W,self.H)
                     self.change_scale()
                     self.update_panel()
-                    if self.train_thread.canUpdate():
-                        self.update_frame()
-                        self.train_thread.finishUpdate()
+                    if self.need_test:
+                        if self.train_thread.canUpdate():
+                            self.update_frame()
+                            self.train_thread.finishUpdate()
+                    else:
+                        self.train_thread.istesting=False
                 else:
                     dpg.set_value("_texture", self.framebuff)
                 dpg.render_dearpygui_frame()
