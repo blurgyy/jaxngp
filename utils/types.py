@@ -519,13 +519,13 @@ class ViewMetadata:
 @dataclass
 class OrbitTrajectoryOptions:
     # cameras' distance to the orbiting axis
-    radius: float=1
+    radius: float=1.8
 
     # lowest height of generated trajectory
     low: float=0.0
 
     # highest height of generated trajectory
-    high: float=0.8
+    high: float=1.3
 
     # how many frames should be rendered per orbit
     n_frames_per_orbit: int=144
@@ -533,7 +533,7 @@ class OrbitTrajectoryOptions:
     n_orbit: int=2
 
     # all orbiting cameras will look at this point
-    centroid: Tuple[float, float, float]=(0., 0., 0.1)
+    centroid: Tuple[float, float, float]=(0., 0., 0.2)
 
     @property
     def n_frames(self) -> int:
