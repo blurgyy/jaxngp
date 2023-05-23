@@ -13,7 +13,7 @@ import dearpygui.dearpygui as dpg
 import ctypes
 from utils.args import GuiWindowArgs, NeRFTrainingArgs,GuiWindowArgs
 from .train import *
-from utils.data import load_transform_json_recursive,merge_transforms
+from utils.data import load_transform_json_recursive,merge_transforms,mono_to_rgb
 from utils.types import (
     SceneData,
     SceneMeta,
@@ -277,12 +277,17 @@ class Gui_trainer():
         )
         bg=self.get_npf32_image(bg,W=self.gui_args.W,H=self.gui_args.H)
         rgb=self.get_npf32_image(rgb,W=self.gui_args.W,H=self.gui_args.H)
-        depth=self.get_npf32_image(depth,W=self.gui_args.W,H=self.gui_args.H)
-        depth=depth[:,:,np.newaxis]
-        depth=np.tile(depth,(1,1,3))
-        self.logger.info("size:{}".format(depth.shape))
+        depth=self.color_depth(depth,W=self.gui_args.W,H=self.gui_args.H)
         return (bg, rgb, depth)
-
+    
+    def color_depth(self,depth,W,H):
+        depth=np.array(mono_to_rgb(depth)*255,dtype=np.uint8)
+        img=Image.fromarray(depth,mode='RGBA')
+        img=img.convert('RGB')
+        img=img.resize(size=(W,H),resample=Image.LANCZOS)
+        depth=np.array(img,dtype=np.float32)/255.
+        return depth
+    
     def train_steps(self,steps:int)->Tuple[np.array,np.array,np.array]:
         gc.collect()       
         if self.cur_step<self.gui_args.max_step and self.istraining:
@@ -477,7 +482,7 @@ class TrainThread(threading.Thread):
         try:
             self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,back_color=self.back_color)
         except Exception as e:
-            self.logger.error(e)
+            self.logger.exception(e)
             self.needUpdate=False
         while self.needUpdate:
             try:
@@ -500,7 +505,7 @@ class TrainThread(threading.Thread):
                     self.render_infer_time=end_time-start_time
                     self.istesting=False
             except Exception as e:
-                    self.logger.error(e)
+                    self.logger.exception(e)
                     break
     def get_TrainInferTime(self):
         if self.train_infer_time!=-1:
@@ -662,9 +667,9 @@ class NeRFGUI():
         self.framebuff=np.ones(shape=(self.W,self.H,3),dtype=np.float32)#default background is white
         dpg.create_context()
         self.train_thread=None
-        self.cameraPose,self.cameraPosePrev,self.cameraPoseNext=CameraPose(radius=self.gui_args.bound*3),\
-                                                                CameraPose(radius=self.gui_args.bound*3),\
-                                                                CameraPose(radius=self.gui_args.bound*3)
+        self.cameraPose,self.cameraPosePrev,self.cameraPoseNext=CameraPose(radius=self.gui_args.bound*1.5),\
+                                                                CameraPose(radius=self.gui_args.bound*1.5),\
+                                                                CameraPose(radius=self.gui_args.bound*1.5)
         self.ItemsLayout()
     def ItemsLayout(self):
         def callback_backgroundColor(sender,app_data):
