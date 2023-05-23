@@ -817,7 +817,7 @@ class NeRFGUI():
                         #camera
                         dpg.add_text("camera set:")
                         with dpg.group(horizontal=True):
-                            dpg.add_text("near plane:")
+                            dpg.add_text("near plane")
                             dpg.add_input_text(tag="_camera_near",width=40,default_value=1.0,decimal=True)
                         with dpg.group(horizontal=True):
                             dpg.add_text("centroid:")
@@ -837,6 +837,9 @@ class NeRFGUI():
                        # dpg.set_value("_centroid_x",1000)
                     with dpg.collapsing_header(tag="_para_panel",label="Parameter Monitor", default_open=True):
                         dpg.bind_item_theme("_para_panel", theme_head)
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("resolution(H*W): ")
+                            dpg.add_text("{}*{}".format(self.H,self.W), tag="_cam_HW")
                         with dpg.group(horizontal=True):
                             dpg.add_text("Current training step: ")
                             dpg.add_text("no data", tag="_cur_train_step")
@@ -932,6 +935,7 @@ class NeRFGUI():
             dpg.configure_item("_conrol_panel",label="Control Panel", default_open=True)
             dpg.configure_item("_para_panel",label="Parameter Monitor", default_open=True)
             dpg.configure_item("_tip_panel",label="Tips", default_open=True)
+            dpg.set_value("_cam_HW","{}*{}".format(self.H,self.W))
             if self.train_thread:
                 self.train_thread.test()
             #dpg.configure_item("_texture",width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb)
