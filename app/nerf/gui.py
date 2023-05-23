@@ -39,6 +39,7 @@ class CameraPose():
     tx:float=0.0
     ty:float=0.0
     centroid:np.ndarray=np.asarray([0.,0.,0.])
+    
     def pose_spherical(self,theta, phi, radius):
         trans_t=lambda t: np.array([
         [1,0,0,0],
@@ -63,6 +64,9 @@ class CameraPose():
         return c2w
     @property
     def pose(self):
+        mod=lambda x:x%360
+        self.theta=mod(self.theta)
+        self.phi=mod(self.phi)
         c2w = self.pose_spherical(self.theta,self.phi,self.radius)
         #translate
         self.centroid = np.asarray(self.centroid) + .5 * self.tx * c2w[:3, 0] + .5 * self.ty * c2w[:3, 1]
@@ -74,8 +78,7 @@ class CameraPose():
         [0,0,0,1]],np.float32)
         c2w = np.matmul(trans_centroid, c2w)
         c2w =np.matmul(np.array([[-1,0,0,0],[0,0,1,0],[0,1,0,0],[0,0,0,1]]) , c2w)
-        return jnp.asarray(c2w)
-    
+        return jnp.asarray(c2w) 
     def move(self,dx,dy):
         velocity=0.12
         self.theta+=velocity*dx
