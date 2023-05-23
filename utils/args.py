@@ -203,7 +203,7 @@ class GuiWindowArgs():
     
     W:int=1024 
     H:int=768
-    resolution_scale=1.0
+    resolution_scale=0.3
     common: CommonArgs=CommonArgs()
     scene: SceneOptions=SceneOptions(
         sharpness_threshold=-1.,

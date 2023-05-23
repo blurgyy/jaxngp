@@ -665,7 +665,7 @@ class NeRFGUI():
         self.cameraPose,self.cameraPosePrev,self.cameraPoseNext=CameraPose(), CameraPose(), CameraPose()
         self.ItemsLayout()
     def ItemsLayout(self):
-        def callback_backgroundColor():
+        def callback_backgroundColor(sender,app_data):
             self.back_color= color_int2float(dpg.get_value("_BackColor"))
             self.logger.info("get color:{}".format(color_int2float(dpg.get_value("_BackColor"))))
             self.setFrameColor()
@@ -804,17 +804,16 @@ class NeRFGUI():
                         with dpg.group(horizontal=True):
                             dpg.add_text("Checkpoint: ")
                             dpg.add_button(label="save", tag="_button_save", callback=callback_save)
-                        dpg.add_text("", tag="_log_ckpt",wrap=self.gui_args.control_window_width-40)     
+                        dpg.add_text("", tag="_log_ckpt",wrap=self.gui_args.control_window_width-40)    
                         #resolution
                         dpg.add_text("resolution scale:")
                         self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,
-                                                            clamped=True,min_value=0.1,max_value=1.0,width=self.gui_args.control_window_width-40)
+                                                            clamped=True,min_value=0.1,max_value=1.0,width=self.gui_args.control_window_width-40,format="%.1f")
                         dpg.add_text("Background color: ")
                         dpg.add_color_edit(tag="_BackColor", default_value=[255, 255, 255], no_alpha=True,
                                                          width=self.gui_args.control_window_width-40, callback=callback_backgroundColor)
                         with dpg.value_registry():
                             dpg.add_float_value(default_value=0.0, tag="float_value")
-                            # dpg.add_string_value(default_value="Default string", tag="string_value")
                         #camera
                         dpg.add_text("camera set:")
                         with dpg.group(horizontal=True):
