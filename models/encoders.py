@@ -62,7 +62,7 @@ class HashGridEncoder(Encoder):
         # Essentially, it is $(n_max / n_min) ** (1/(L - 1))$
         b = math.exp((math.log(self.N_max) - math.log(self.N_min)) / (self.L - 1))
 
-        resolutions, first_hash, offsets = [], 0, [0]
+        resolutions, first_hash_level, offsets = [], 0, [0]
         for i in range(self.L):
             res = int(self.N_min * (b**i))
             resolutions.append(res - 1)
@@ -70,7 +70,7 @@ class HashGridEncoder(Encoder):
             n_entries = res ** self.dim
 
             if n_entries <= self.T:
-                first_hash += 1
+                first_hash_level += 1
             else:
                 n_entries = self.T
 
@@ -106,7 +106,7 @@ class HashGridEncoder(Encoder):
                                                                 vertices, of each level
 
             Returns:
-                indices `[L, n_points, 2**dim]`: grid cell indices of the vertices
+                indices `uint32` `[L, n_points, 2**dim]`: grid cell indices of the vertices
             """
             # [dim]
             if self.dim == 2:
@@ -128,7 +128,7 @@ class HashGridEncoder(Encoder):
                                                                 vertices, of each level
 
             Returns:
-                indices `[L, n_points, 2**dim]`: grid cell indices of the vertices
+                indices `uint32` `[L, n_points, 2**dim]`: grid cell indices of the vertices
             """
             # use primes as reported in the paper
             primes = jnp.asarray([1, 2_654_435_761, 805_459_861], dtype=jnp.uint32)
@@ -176,9 +176,12 @@ class HashGridEncoder(Encoder):
         # [L, n_points, 2**dim, dim]
         vert_pos = make_vert_pos(pos_scaled)
         # [L, n_points, 2**dim]
-        tiled_indices = make_tiled_indices(resolutions[:first_hash], vert_pos[:first_hash, ...])
-        hash_indices = make_hash_indices(vert_pos[first_hash:, ...])
-        indices = jnp.concatenate([tiled_indices, hash_indices], axis=0)
+        if first_hash_level > 0:
+            indices = make_tiled_indices(resolutions[:first_hash_level], vert_pos[:first_hash_level, ...])
+        else:
+            indices = jnp.empty(0, dtype=jnp.uint32)
+        if first_hash_level < self.L:
+            indices = jnp.concatenate([indices, make_hash_indices(vert_pos[first_hash_level:, ...])], axis=0)
 
         # [L, n_points, 2**dim, F]
         vert_latents = latents[indices]
