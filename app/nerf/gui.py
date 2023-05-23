@@ -77,15 +77,15 @@ class CameraPose():
         return jnp.asarray(c2w)
     
     def move(self,dx,dy):
-        velocity=0.08
+        velocity=0.12
         self.theta+=velocity*dx
         self.phi-=velocity*dy
         return self.pose
     def trans(self,dx,dy):
         
         velocity=0.003
-        self.tx-=dx*velocity
-        self.ty+=dy*velocity
+        self.tx-=dx*velocity*self.radius
+        self.ty+=dy*velocity*self.radius
         return self.pose
     def change_radius(self,rate):
         self.radius*=1.1**(-rate)
