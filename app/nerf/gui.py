@@ -714,6 +714,8 @@ class NeRFGUI():
                 self.logger.info("self.cameraPose.radius:{}".format(self.cameraPose.radius))
                 self.train_thread.set_camera_pose(self.cameraPose.pose)
                 self.train_thread.test()
+                self.show_cam_radius(self.cameraPose.radius)
+                
         def callback_train(sender, app_data):
             if self.need_train:
                 self.need_train = False
@@ -827,11 +829,12 @@ class NeRFGUI():
                             dpg.add_text("z")
                             dpg.add_input_text( tag="_centroid_z",width=40,default_value=self.cameraPose.centroid[2],decimal=True)
                         with dpg.group(horizontal=True):
-                            dpg.add_text("angle:")
                             dpg.add_text("theta")
-                            dpg.add_input_text( tag="_theta",width=70,default_value=self.cameraPose.theta,decimal=True)
+                            dpg.add_input_text( tag="_theta",width=40,default_value=self.cameraPose.theta,decimal=True)
                             dpg.add_text("phi")
-                            dpg.add_input_text( tag="_phi",width=70,default_value=self.cameraPose.phi,decimal=True)
+                            dpg.add_input_text( tag="_phi",width=40,default_value=self.cameraPose.phi,decimal=True)
+                            dpg.add_text("radius")
+                            dpg.add_input_text( tag="_radius",width=40,default_value=self.cameraPose.radius,decimal=True)
                        # dpg.set_value("_centroid_x",1000)
                     with dpg.collapsing_header(tag="_para_panel",label="Parameter Monitor", default_open=True):
                         dpg.bind_item_theme("_para_panel", theme_head)
@@ -953,10 +956,12 @@ class NeRFGUI():
         try:
             theta=float(dpg.get_value("_theta"))
             phi=float(dpg.get_value("_phi"))
+            radius=float(dpg.get_value("_radius"))
             #self.logger.info("theta:{},phi:{}".format(theta,phi))
-            if theta!=self.cameraPose.theta or phi!=self.cameraPose.phi:
+            if theta!=self.cameraPose.theta or phi!=self.cameraPose.phi or radius!=self.cameraPose.radius:
                 self.cameraPose.theta=theta
-                self.cameraPose.phi=phi         
+                self.cameraPose.phi=phi      
+                self.cameraPose.radius=radius   
                 self.train_thread.set_camera_pose(self.cameraPose.pose)
                 self.train_thread.test()
         except BaseException as e:
@@ -972,6 +977,14 @@ class NeRFGUI():
                 dpg.set_value("_phi",_phi)
         except BaseException as e:
             self.logger.error(e)
+    def show_cam_radius(self,_radius):
+        _radius=float('{:.3f}'.format(_radius))
+        try:
+            radius=float(dpg.get_value("_radius"))
+            if radius!=_radius:
+                dpg.set_value("_radius",_radius) 
+        except BaseException as e:
+            self.logger.error(e)    
     def set_cam_centroid(self):
         try:
             x=float(dpg.get_value("_centroid_x"))
