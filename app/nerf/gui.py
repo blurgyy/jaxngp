@@ -442,6 +442,7 @@ class TrainThread(threading.Thread):
         
         self.frame_updated=False
         self.mode=Mode.Render
+        self.havestart=False
         try:   
             pass
             #self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
@@ -474,6 +475,7 @@ class TrainThread(threading.Thread):
                     self.train_infer_time=end_time-start_time
                     self.test()
                 if self.istesting:
+                    self.havestart=True
                     start_time=time.time()    
                     _,self.rgb,self.depth=self.trainer.render_frame(self.scale,self.H,self.W)
                     if self.mode==Mode.Render:
@@ -908,8 +910,9 @@ class NeRFGUI():
                 self.train_thread.test()
             #dpg.configure_item("_texture",width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb)
     def setFrameColor(self):
-        if self.train_thread and self.train_thread.trainer:
+        if self.train_thread :
             self.train_thread.setBackColor(self.back_color)
+        if self.train_thread and self.train_thread.havestart:
             self.train_thread.test()
         else:              
             img=Image.new("RGB",(self.texture_W,self.texture_H),color_float2int(self.back_color))
@@ -926,7 +929,7 @@ class NeRFGUI():
         try:
             theta=float(dpg.get_value("_theta"))
             phi=float(dpg.get_value("_phi"))
-            self.logger.info("theta:{},phi:{}".format(theta,phi))
+            #self.logger.info("theta:{},phi:{}".format(theta,phi))
             if theta!=self.cameraPose.theta or phi!=self.cameraPose.phi:
                 self.cameraPose.theta=theta
                 self.cameraPose.phi=phi         
