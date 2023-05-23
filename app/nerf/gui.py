@@ -124,7 +124,8 @@ class Gui_trainer():
     compacted_batch:int=-1
     not_compacted_batch:int=-1
     rays_num:int=-1
-    
+    camera_near:float=1.0
+    camera:PinholeCamera=field(init=False)
     need_exit:float=False
     def __post_init__(self):
         self.data_step=[]
@@ -233,34 +234,43 @@ class Gui_trainer():
             tx=self.optimizer,
         )
         self.state=self.state.mark_untrained_density_grid()
-        
+        self.camera=PinholeCamera(
+            W=self.gui_args.W,
+            H=self.gui_args.H,
+            fx=self.scene_meta.camera.fx,
+            fy=self.scene_meta.camera.fy,
+            cx=self.gui_args.W/ 2,
+            cy=self.gui_args.H / 2,
+            near=self.camera_near,
+        )
 
     def set_render_camera(self,_scale,_H,_W)->PinholeCamera:
         _scene_meta = self.scene_meta
-        camera = PinholeCamera(
+        self.camera = PinholeCamera(
             W=_W,
             H=_H,
             fx=_scene_meta.camera.fx,
             fy=_scene_meta.camera.fy,
             cx=_W/ 2,
-            cy=_H / 2
+            cy=_H / 2,
+            near=self.camera_near,
         )
-        camera=camera.scale_resolution(_scale)
-        return camera
+        self.camera=self.camera.scale_resolution(_scale)
         
     def render_frame(self,_scale:float,_H:int,_W:int):
         self.logger.info("update frame which resolution scale is {},resolution is H:{},W:{}".format(_scale,_H,_W))
-        camera=self.set_render_camera(_scale,_H,_W)
+        self.set_render_camera(_scale,_H,_W)
         #camera pose
         transform = RigidTransformation(rotation=self.camera_pose[:3, :3],
                                         translation=jnp.squeeze(self.camera_pose[:3, 3].reshape(-1,3),axis=0))
         self.KEY, key = jran.split(self.KEY, 2)
-        bg, rgb, depth, _ = render_image_inference(
+        bg, rgb, depth, cost = render_image_inference(
             KEY=key,
             transform_cw=transform,
             state=self.state.replace(render=self.state.render.replace(random_bg=False,bg=self.back_color)),
             #state=self.state.replace(render=self.state.render.replace(random_bg=False)),
-            camera_override=camera
+            camera_override=self.camera,
+            #render_cost: bool = False
         )
         bg=self.get_npf32_image(bg,W=self.gui_args.W,H=self.gui_args.H)
         rgb=self.get_npf32_image(rgb,W=self.gui_args.W,H=self.gui_args.H)
@@ -595,6 +605,13 @@ class TrainThread(threading.Thread):
         return self.frame_updated
     def setStep(self,step):
         self.step=step
+    def setCamNear(self,near):
+        if self.trainer:
+            self.trainer.camera_near=near
+    def getPinholeCam(self):
+        if self.trainer:
+            return self.trainer.camera
+        return None
 class Mode(Enum):
     Render = 0
     Depth = 1
@@ -633,6 +650,7 @@ class NeRFGUI():
     mode:Mode=Mode.Render
     
     mouse_pressed:bool=False
+    
     def __post_init__(self):
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
 
@@ -792,8 +810,11 @@ class NeRFGUI():
                         with dpg.value_registry():
                             dpg.add_float_value(default_value=0.0, tag="float_value")
                             # dpg.add_string_value(default_value="Default string", tag="string_value")
-                        #camera pose
-                        dpg.add_text("camera pose:")
+                        #camera
+                        dpg.add_text("camera set:")
+                        with dpg.group(horizontal=True):
+                            dpg.add_text("near plane:")
+                            dpg.add_input_text(tag="_camera_near",width=40,default_value=1.0,decimal=True)
                         with dpg.group(horizontal=True):
                             dpg.add_text("centroid:")
                             dpg.add_text("x")
@@ -961,6 +982,15 @@ class NeRFGUI():
                 self.train_thread.test()
         except BaseException as e:
             self.logger.error(e)
+    def set_cam_near(self):
+        try:
+            cam_near=float(dpg.get_value("_camera_near"))
+            camera=self.train_thread.getPinholeCam()
+            if camera and camera.near!=cam_near:
+                self.train_thread.setCamNear(cam_near)
+                self.train_thread.test()
+        except BaseException as e:
+            self.logger.exception(e)
     def show_cam_centroid(self,_x,_y,_z):
         _x=float('{:.3f}'.format(_x))
         _y=float('{:.3f}'.format(_y))
@@ -999,6 +1029,7 @@ class NeRFGUI():
                     if not self.mouse_pressed:
                         self.set_cam_angle()
                         self.set_cam_centroid()
+                        self.set_cam_near()
                     self.train_thread.setMode(self.mode)
                     self.train_thread.change_WH(self.W,self.H)
                     self.change_scale()
