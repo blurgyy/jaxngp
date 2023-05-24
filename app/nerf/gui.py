@@ -4,8 +4,10 @@ import logging
 from pathlib import Path
 import numpy as np
 from typing import List,Any,Tuple,Union
+import jax
 import jax.random as jran
 import jax.numpy as jnp
+from flax.training import checkpoints
 from dataclasses import dataclass,field
 from tqdm import tqdm
 import threading
@@ -30,6 +32,27 @@ from models.nerfs import (NeRF,SkySphereBg)
 # from guis import *
 from PIL import Image
 import time
+@dataclass
+class CKPT():
+    need_load_ckpt=False
+    ckpt_file_path:Path=Path("")
+    step:int=0
+    
+    def parse_ckpt(self,ckpt_name:str,ckpt_path:str)->str:
+        sucess=False
+        s=ckpt_name.split("_")
+        if s[0]=="checkpoint" and Path(ckpt_path).exists:
+            try:
+                self.step=int(s[1].split(".")[0])
+                self.ckpt_file_path=Path(ckpt_path)
+                self.need_load_ckpt=True
+                sucess=True
+            except TypeError or ValueError as e:
+                self.logger.error(e)
+            finally: 
+                if sucess:
+                    return "checkpoint loaded from '{}'".format(self.ckpt_file_path)
+                return "Fail to load checkpoint, causing the file is not a checkpoint"
 
 @dataclass
 class CameraPose():
@@ -129,7 +152,10 @@ class Gui_trainer():
     rays_num:int=-1
     camera_near:float=1.0
     camera:PinholeCamera=field(init=False)
-    need_exit:float=False
+    need_exit:bool=False
+    
+    loading_ckpt:bool=False
+    ckpt:CKPT=CKPT()
     def __post_init__(self):
         self.data_step=[]
         self.data_loss=[]
@@ -209,34 +235,35 @@ class Gui_trainer():
                 "bg": self.scene_meta.bg,
             },
         )
-        
-         # training state
-        self.state = NeRFState.create(
-            ogrid=OccupancyDensityGrid.create(
-                cascades=self.scene_meta.cascades,
-                grid_resolution=self.args.raymarch.density_grid_res,
-            ),
-            batch_config=NeRFBatchConfig.create(
-                mean_effective_samples_per_ray=self.args.raymarch.diagonal_n_steps,
-                mean_samples_per_ray=self.args.raymarch.diagonal_n_steps,
-                n_rays=self.args.train.bs // self.args.raymarch.diagonal_n_steps,
-            ),
-            raymarch=self.args.raymarch,
-            render=self.args.render,
-            scene_options=self.args.scene,
-            scene_meta=self.scene_meta,
-            # unfreeze the frozen dict so that the weight_decay mask can apply, see:
-            #   <https://github.com/deepmind/optax/issues/160>
-            #   <https://github.com/google/flax/issues/1223>
-            nerf_fn=self.nerf_model.apply,
-            bg_fn=self.bg_model.apply if self.scene_meta.bg else None,
-            params={
-                "nerf": self.nerf_variables["params"].unfreeze(),
-                "bg": self.bg_variables["params"].unfreeze() if self.scene_meta.bg else None,
-            },
-            tx=self.optimizer,
-        )
-        self.state=self.state.mark_untrained_density_grid()
+        if self.ckpt.need_load_ckpt:
+            self.load_checkpoint(self.ckpt.ckpt_file_path,self.ckpt.step)
+        else:
+            self.state = NeRFState.create(
+                ogrid=OccupancyDensityGrid.create(
+                    cascades=self.scene_meta.cascades,
+                    grid_resolution=self.args.raymarch.density_grid_res,
+                ),
+                batch_config=NeRFBatchConfig.create(
+                    mean_effective_samples_per_ray=self.args.raymarch.diagonal_n_steps,
+                    mean_samples_per_ray=self.args.raymarch.diagonal_n_steps,
+                    n_rays=self.args.train.bs // self.args.raymarch.diagonal_n_steps,
+                ),
+                raymarch=self.args.raymarch,
+                render=self.args.render,
+                scene_options=self.args.scene,
+                scene_meta=self.scene_meta,
+                # unfreeze the frozen dict so that the weight_decay mask can apply, see:
+                #   <https://github.com/deepmind/optax/issues/160>
+                #   <https://github.com/google/flax/issues/1223>
+                nerf_fn=self.nerf_model.apply,
+                bg_fn=self.bg_model.apply if self.scene_meta.bg else None,
+                params={
+                    "nerf": self.nerf_variables["params"].unfreeze(),
+                    "bg": self.bg_variables["params"].unfreeze() if self.scene_meta.bg else None,
+                },
+                tx=self.optimizer,
+            )
+            self.state=self.state.mark_untrained_density_grid()
         self.camera=PinholeCamera(
             W=self.gui_args.W,
             H=self.gui_args.H,
@@ -246,6 +273,44 @@ class Gui_trainer():
             cy=self.gui_args.H / 2,
             near=self.camera_near,
         )
+        #  # training state
+        # path=Path('/home/cad_83/E/chenyingxi/jaxngp/data/gui/train2/checkpoint_2048')
+        # self.logger.info("loading checkpoint from '{}'".format(path))
+        # state: NeRFState = checkpoints.restore_checkpoint(
+        #     path,
+        #     target=NeRFState.create(
+        #                 ogrid=OccupancyDensityGrid.create(
+        #                     cascades=self.scene_meta.cascades,
+        #                     grid_resolution=self.args.raymarch.density_grid_res,
+        #                 ),
+        #                 batch_config=NeRFBatchConfig.create(
+        #                     mean_effective_samples_per_ray=self.args.raymarch.diagonal_n_steps,
+        #                     mean_samples_per_ray=self.args.raymarch.diagonal_n_steps,
+        #                     n_rays=self.args.train.bs // self.args.raymarch.diagonal_n_steps,
+        #                 ),
+        #                 raymarch=self.args.raymarch,
+        #                 render=self.args.render,
+        #                 scene_options=self.args.scene,
+        #                 scene_meta=self.scene_meta,
+        #                 # unfreeze the frozen dict so that the weight_decay mask can apply, see:
+        #                 #   <https://github.com/deepmind/optax/issues/160>
+        #                 #   <https://github.com/google/flax/issues/1223>
+        #                 nerf_fn=self.nerf_model.apply,
+        #                 bg_fn=self.bg_model.apply if self.scene_meta.bg else None,
+        #                 params={
+        #                     "nerf": self.nerf_variables["params"].unfreeze(),
+        #                     "bg": self.bg_variables["params"].unfreeze() if self.scene_meta.bg else None,
+        #                 },
+        #                 tx=self.optimizer,
+        #             )
+        # )
+        # # WARN:
+        # #   flax.checkpoints.restore_checkpoint() returns a pytree with all arrays of numpy's array type,
+        # #   which slows down inference.  use jax.device_put() to move them to jax's default device.
+        # # REF: <https://github.com/google/flax/discussions/1199#discussioncomment-635132>
+        # self.state = jax.device_put(state)
+        # self.logger.info("checkpoint loaded from '{}'".format(path))
+        # self.cur_step=2048
 
     def set_render_camera(self,_scale,_H,_W)->PinholeCamera:
         _scene_meta = self.scene_meta
@@ -299,26 +364,126 @@ class Gui_trainer():
         img=img.resize(size=(W,H),resample=Image.NEAREST)
         depth=np.array(img,dtype=np.float32)/255.
         return depth
-    
-    def train_steps(self,steps:int)->Tuple[np.array,np.array,np.array]:
-        gc.collect()       
-        if self.cur_step<self.gui_args.max_step and self.istraining:
-            self.KEY, key = jran.split(self.KEY, 2)
-            loss_log, self.state = self.gui_train_epoch(
-                KEY=key,
-                state=self.state,
-                scene=self.scene_train,
-                n_batches=steps,
-                total_samples=self.gui_args.bs,
-                #total_samples=self.args.train.bs,
-                cur_steps=self.cur_step,
-                logger=self.logger,
+    def load_checkpoint(self,path:Path,step:int):
+        self.loading_ckpt=True
+        try:
+            if not path.exists():
+                raise Exception("{} is not exists".format(path))
+        # self.logger.info("loading checkpoint from '{}'".format(path))
+        # state: NeRFState = checkpoints.restore_checkpoint(
+        #     path,
+        #     target=self.state
+        # )
+        # # WARN:
+        # #   flax.checkpoints.restore_checkpoint() returns a pytree with all arrays of numpy's array type,
+        # #   which slows down inference.  use jax.device_put() to move them to jax's default device.
+        # # REF: <https://github.com/google/flax/discussions/1199#discussioncomment-635132>
+        # self.state = jax.device_put(state)
+        # self.logger.info("checkpoint loaded from '{}'".format(path))
+        # self.cur_step=step 
+        # #self.state=self.state.mark_untrained_density_grid()
+        # self.state = NeRFState.create(
+        #     ogrid=OccupancyDensityGrid.create(
+        #         cascades=self.scene_meta.cascades,
+        #         grid_resolution=self.args.raymarch.density_grid_res,
+        #     ),
+        #     batch_config=NeRFBatchConfig.create(
+        #         mean_effective_samples_per_ray=self.args.raymarch.diagonal_n_steps,
+        #         mean_samples_per_ray=self.args.raymarch.diagonal_n_steps,
+        #         n_rays=self.args.train.bs // self.args.raymarch.diagonal_n_steps,
+        #     ),
+        #     raymarch=self.args.raymarch,
+        #     render=self.args.render,
+        #     scene_options=self.args.scene,
+        #     scene_meta=self.scene_meta,
+        #     # unfreeze the frozen dict so that the weight_decay mask can apply, see:
+        #     #   <https://github.com/deepmind/optax/issues/160>
+        #     #   <https://github.com/google/flax/issues/1223>
+        #     nerf_fn=self.nerf_model.apply,
+        #     bg_fn=self.bg_model.apply if self.scene_meta.bg else None,
+        #     params={
+        #         "nerf": self.nerf_variables["params"].unfreeze(),
+        #         "bg": self.bg_variables["params"].unfreeze() if self.scene_meta.bg else None,
+        #     },
+        #     tx=self.optimizer,
+        # )
+        # self.state=self.state.mark_untrained_density_grid()
+        # self.camera=PinholeCamera(
+        #     W=self.gui_args.W,
+        #     H=self.gui_args.H,
+        #     fx=self.scene_meta.camera.fx,
+        #     fy=self.scene_meta.camera.fy,
+        #     cx=self.gui_args.W/ 2,
+        #     cy=self.gui_args.H / 2,
+        #     near=self.camera_near,
+        # )
+         # training state
+        #path=Path('/home/cad_83/E/chenyingxi/jaxngp/data/gui/train2/checkpoint_2048')
+            self.logger.info("loading checkpoint from '{}'".format(path))
+            state: NeRFState = checkpoints.restore_checkpoint(
+                path,
+                target=NeRFState.create(
+                            ogrid=OccupancyDensityGrid.create(
+                                cascades=self.scene_meta.cascades,
+                                grid_resolution=self.args.raymarch.density_grid_res,
+                            ),
+                            batch_config=NeRFBatchConfig.create(
+                                mean_effective_samples_per_ray=self.args.raymarch.diagonal_n_steps,
+                                mean_samples_per_ray=self.args.raymarch.diagonal_n_steps,
+                                n_rays=self.args.train.bs // self.args.raymarch.diagonal_n_steps,
+                            ),
+                            raymarch=self.args.raymarch,
+                            render=self.args.render,
+                            scene_options=self.args.scene,
+                            scene_meta=self.scene_meta,
+                            # unfreeze the frozen dict so that the weight_decay mask can apply, see:
+                            #   <https://github.com/deepmind/optax/issues/160>
+                            #   <https://github.com/google/flax/issues/1223>
+                            nerf_fn=self.nerf_model.apply,
+                            bg_fn=self.bg_model.apply if self.scene_meta.bg else None,
+                            params={
+                                "nerf": self.nerf_variables["params"].unfreeze(),
+                                "bg": self.bg_variables["params"].unfreeze() if self.scene_meta.bg else None,
+                            },
+                            tx=self.optimizer,
+                        )
             )
-            self.cur_step=self.cur_step+steps
-            self.loss_log=str(loss_log)
-        loss_db = data.linear_to_db(loss_log, maxval=1)
-        self.logger.info("epoch#{:03d}: loss={:.2e}({:.2f}dB)".format(self.cur_step, loss_log, loss_db))
-        
+            # WARN:
+            #   flax.checkpoints.restore_checkpoint() returns a pytree with all arrays of numpy's array type,
+            #   which slows down inference.  use jax.device_put() to move them to jax's default device.
+            # REF: <https://github.com/google/flax/discussions/1199#discussioncomment-635132>
+            self.state = jax.device_put(state)
+            self.state=self.state.mark_untrained_density_grid()
+            self.logger.info("checkpoint loaded from '{}'".format(path))
+            self.cur_step=step
+            self.loading_ckpt=False
+            return "checkpoint loaded from '{}'".format(path)
+        except BaseException as e:
+            self.logger.error(e)
+            return e
+    def train_steps(self,steps:int)->Tuple[np.array,np.array,np.array]:
+        if self.loading_ckpt:
+            return
+        gc.collect()
+        try:       
+            if self.cur_step<self.gui_args.max_step and self.istraining:
+                self.KEY, key = jran.split(self.KEY, 2)
+                loss_log, self.state = self.gui_train_epoch(
+                    KEY=key,
+                    state=self.state,
+                    scene=self.scene_train,
+                    n_batches=steps,
+                    total_samples=self.gui_args.bs,
+                    #total_samples=self.args.train.bs,
+                    cur_steps=self.cur_step,
+                    logger=self.logger,
+                )
+                self.cur_step=self.cur_step+steps
+                self.loss_log=str(loss_log)
+            loss_db = data.linear_to_db(loss_log, maxval=1)
+            self.logger.info("epoch#{:03d}: loss={:.2e}({:.2f}dB)".format(self.cur_step, loss_log, loss_db))
+        except UnboundLocalError as e:
+            self.logger.exception(e)
     def get_npf32_image(self,img:jnp.array,W,H)->np.array:
         img=Image.fromarray(np.array(img,dtype=np.uint8))
         img=img.resize(size=(W,H), resample=Image.NEAREST)
@@ -438,7 +603,7 @@ class Gui_trainer():
     def get_raysNum(self):
         return self.rays_num
 class TrainThread(threading.Thread):
-    def __init__(self,KEY,args,gui_args,logger,camera_pose,step,back_color):
+    def __init__(self,KEY,args,gui_args,logger,camera_pose,step,back_color,ckpt):
         super(TrainThread,self).__init__()   
         
         self.KEY=KEY
@@ -451,6 +616,7 @@ class TrainThread(threading.Thread):
         self.istraining=True
         self.needUpdate=True
         self.istesting=False
+        self.needtesting=False
         self.step=step
         self.scale=gui_args.resolution_scale
         
@@ -473,11 +639,7 @@ class TrainThread(threading.Thread):
         self.frame_updated=False
         self.mode=Mode.Render
         self.havestart=False
-        try:   
-            pass
-            #self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,H=H,W=W)
-        except Exception as e:
-            self.logger.warning(e)
+        self.ckpt=ckpt
     def initFrame(self):
         img=Image.new("RGB",(self.W,self.H),color_float2int(self.back_color))
         self.framebuff=np.array(img,dtype=np.float32)/255.
@@ -493,7 +655,7 @@ class TrainThread(threading.Thread):
             self.trainer.setBackColor(self.back_color)
     def run(self):
         try:
-            self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,back_color=self.back_color)
+            self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,back_color=self.back_color,ckpt=self.ckpt)
         except Exception as e:
             self.logger.exception(e)
             self.needUpdate=False
@@ -505,7 +667,7 @@ class TrainThread(threading.Thread):
                     end_time=time.time()
                     self.train_infer_time=end_time-start_time
                     self.test()
-                if self.istesting:
+                if self.istesting and self.needtesting:
                     self.havestart=True
                     start_time=time.time()    
                     _,self.rgb,self.depth,self.cost=self.trainer.render_frame(self.scale,self.H,self.W)
@@ -639,7 +801,8 @@ class Mode(Enum):
     Render = 1
     Depth = 2
     Cost=3
-
+           
+    
 @dataclass
 class NeRFGUI():
     
@@ -675,6 +838,9 @@ class NeRFGUI():
     
     mouse_pressed:bool=False
     need_test:bool=True
+    
+    #ckpt
+    ckpt:CKPT=CKPT()
     def __post_init__(self):
         self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
 
@@ -695,6 +861,8 @@ class NeRFGUI():
         def callback_mouseDrag(sender,app_data):
             if not dpg.is_item_focused("_primary_window"):
                 return 
+            if not self.need_test:
+                return
             dx=app_data[1]
             dy=app_data[2]
             self.cameraPoseNext = deepcopy(self.cameraPosePrev)
@@ -706,6 +874,8 @@ class NeRFGUI():
         def callback_midmouseDrag(sender,app_data):
             # if not dpg.is_item_hovered("_primary_window"):
             #     return 
+            if not self.need_test:
+                return
             dx=app_data[1]
             dy=app_data[2]
             self.cameraPoseNext = deepcopy(self.cameraPosePrev)
@@ -717,6 +887,8 @@ class NeRFGUI():
         def callback_mouseDown(sender,app_data):
             if not dpg.is_item_hovered("_primary_window"):
                 return 
+            if not self.need_test:
+                return
             self.mouse_pressed=True
             if app_data[1] < 1e-5:
                 self.cameraPosePrev = self.cameraPose
@@ -725,6 +897,8 @@ class NeRFGUI():
         def callback_mouseRelease(sender,app_data):
             if not dpg.is_item_hovered("_primary_window"):
                 return 
+            if not self.need_test:
+                return
             self.mouse_pressed=False
             self.cameraPose = self.cameraPoseNext
             if self.train_thread:
@@ -732,6 +906,8 @@ class NeRFGUI():
         def callback_mouseWheel(sender,app_data):
             if not dpg.is_item_hovered("_primary_window"):
                 return 
+            if not self.need_test:
+                return
             if self.train_thread:
                 self.cameraPose.change_radius(app_data)
                 self.logger.info("self.cameraPose.radius:{}".format(self.cameraPose.radius))
@@ -755,25 +931,25 @@ class NeRFGUI():
                     self.train_thread.istraining=True
                 else:
                     self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,
-                                                    camera_pose=self.cameraPose.pose,step=self.gui_args.train_steps,back_color=self.back_color)
+                                                    camera_pose=self.cameraPose.pose,step=self.gui_args.train_steps,back_color=self.back_color,ckpt=self.ckpt)
                     self.train_thread.setDaemon(True)
                     self.train_thread.start()
-        def callback_save(sender, app_data):
-            if self.train_thread and self.train_thread.trainer:
-                self.logger.info("saving training state ... ")
-                ckpt_name = checkpoints.save_checkpoint(
-                    self.gui_args.exp_dir,
-                    self.train_thread.get_state(),
-                    step=self.train_thread.get_currentStep(),
-                    overwrite=True,
-                    keep=self.gui_args.keep,
-                )
-                #self.gui_args.keep+=1
-                dpg.set_value("_log_ckpt", "Checkpoint saved path: {}".format(ckpt_name))
-                self.logger.info("training state of step {} saved to: {}".format(self.train_thread.get_logStep(), ckpt_name))
-            else:
-                dpg.set_value("_log_ckpt", "Checkpoint save path: failed ,cause no training")
-                self.logger.info("saving training state failed ,cause no training")
+        def callback_checkpoint(sender, app_data):
+            if sender=="_button_check_save":
+                if self.train_thread and self.train_thread.trainer:
+                    self.logger.info("saving training state ... ")
+                    ckpt_name = checkpoints.save_checkpoint(
+                        self.gui_args.exp_dir,
+                        self.train_thread.get_state(),
+                        step=self.train_thread.get_currentStep(),
+                        overwrite=True,
+                        keep=self.gui_args.keep,
+                    )
+                    dpg.set_value("_log_ckpt", "Checkpoint saved path: {}".format(ckpt_name))
+                    self.logger.info("training state of step {} saved to: {}".format(self.train_thread.get_logStep(), ckpt_name))
+                else:
+                    dpg.set_value("_log_ckpt", "Checkpoint save path: failed ,cause no training")
+                    self.logger.info("saving training state failed ,cause no training")
         def callback_reset(sender, app_data):
             self.need_train=True
             if self.train_thread:
@@ -781,9 +957,9 @@ class NeRFGUI():
                 dpg.configure_item("_button_train", label="start")
                 self.train_thread=None
             self.framebuff=np.ones(shape=(self.texture_H,self.texture_W,3),dtype=np.float32) 
-            self.data_step.clear()
-            self.data_loss.clear() 
-            self.update_plot()
+            self.clear_plot()
+            self.ckpt=CKPT()
+            dpg.set_value("_log_ckpt", "")
         def callback_Render(sender, app_data):
             if self.need_test:
                 dpg.configure_item("_button_Render", label="continue rendering")
@@ -798,12 +974,24 @@ class NeRFGUI():
                 self.mode=Mode.Depth
             else:
                 self.mode=Mode.Cost
+        def callback_loadCheckpoint(sender,app_data):
+            file_name=app_data['file_name']
+            file_path_name=app_data['file_path_name'][:-2]
+            dpg.set_value('_log_ckpt',self.ckpt.parse_ckpt(file_name,file_path_name))
+
         self.View_W,self.View_H=self.W+self.gui_args.control_window_width,self.H
         dpg.create_viewport(title='NeRF', width=self.View_W, height=self.View_H,
                             min_width=250+self.gui_args.control_window_width,min_height=250,x_pos=0, y_pos=0)
-        with dpg.window(tag="_main_window",no_scrollbar=True
-               ) as main_window:
+        def cancel_callback(sender, app_data):
+            pass
+            # dpg.disable_item('checkpoint_file_dialog')
+        with dpg.window(tag="_main_window",no_scrollbar=True) as main_window:
             dpg.set_primary_window("_main_window", True)
+            
+            with dpg.file_dialog(directory_selector=False, show=False, callback=callback_loadCheckpoint, cancel_callback=cancel_callback,tag="checkpoint_file_dialog", width=700 ,height=400):
+                dpg.add_file_extension(".*")
+                dpg.add_file_extension("", color=(150, 255, 150, 255),custom_text="[Checkpoint]")
+                
             with dpg.group(horizontal=True):
                 #texture
                 with dpg.group(tag="_render_texture"):
@@ -836,7 +1024,8 @@ class NeRFGUI():
                         # save ckpt
                         with dpg.group(horizontal=True):
                             dpg.add_text("Checkpoint: ")
-                            dpg.add_button(label="save", tag="_button_save", callback=callback_save)
+                            dpg.add_button(label="save", tag="_button_check_save", callback=callback_checkpoint)
+                            dpg.add_button(label="load", tag="_button_check_load", callback=lambda:dpg.show_item('checkpoint_file_dialog'))
                         dpg.add_text("", tag="_log_ckpt",wrap=self.gui_args.control_window_width-40)    
                         #resolution
                         dpg.add_text("resolution scale:")
@@ -981,6 +1170,10 @@ class NeRFGUI():
             img=Image.new("RGB",(self.texture_W,self.texture_H),color_float2int(self.back_color))
             self.framebuff=np.array(img,dtype=np.float32)/255.
         dpg.set_value("_texture", self.framebuff)
+    def clear_plot(self):
+        self.data_step.clear()
+        self.data_loss.clear() 
+        self.update_plot()
     def update_plot(self):
         if len(self.data_loss)>self.gui_args.max_show_loss_step:
             self.data_loss=self.data_loss[-self.gui_args.max_show_loss_step-1:]
@@ -1072,12 +1265,18 @@ class NeRFGUI():
         dpg.set_value("_rays_num","{}".format(self.train_thread.get_raysNum()))
         self.data_step,self.data_loss=self.train_thread.get_plotData()
         self.update_plot()
-    
+    def load_ckpt(self):
+        if self.train_thread and self.train_thread.havestart:
+            self.train_thread.trainer.load_checkpoint(self.ckpt.ckpt_file_path,self.ckpt.step)
+            self.clear_plot()
+            self.ckpt.need_load_ckpt=False
     def render(self):            
         while dpg.is_dearpygui_running():
             try:
                 self.adapt_size()
                 if self.train_thread:
+                    if self.ckpt.need_load_ckpt:
+                        self.load_ckpt()
                     if not self.mouse_pressed:
                         self.set_cam_angle()
                         self.set_cam_centroid()
@@ -1087,11 +1286,12 @@ class NeRFGUI():
                     self.change_scale()
                     self.update_panel()
                     if self.need_test:
+                        self.train_thread.needtesting=True
                         if self.train_thread.canUpdate():
                             self.update_frame()
                             self.train_thread.finishUpdate()
                     else:
-                        self.train_thread.istesting=False
+                        self.train_thread.needtesting=False
                 else:
                     dpg.set_value("_texture", self.framebuff)
                 dpg.render_dearpygui_frame()
@@ -1116,8 +1316,6 @@ def gui_exit():
     sys.exit()
 
 def GuiWindow(KEY: jran.KeyArray, args: GuiWindowArgs, logger: logging.Logger):
-    # import keyboard
-    # keyboard.add_hotkey('q', gui_exit)
     nerfGui=NeRFGUI(gui_args=args,KEY=KEY,logger=logger)
     nerfGui.render()
     
