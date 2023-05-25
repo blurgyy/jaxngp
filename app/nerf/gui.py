@@ -888,12 +888,11 @@ class NeRFGUI():
         self.View_W,self.View_H=self.W+self.args.viewport.control_window_width,self.H
         dpg.create_viewport(title='NeRF', width=self.View_W, height=self.View_H,
                             min_width=250+self.args.viewport.control_window_width,min_height=250,x_pos=0, y_pos=0)
-        def cancel_callback():
-            pass
+
         with dpg.window(tag="_main_window",no_scrollbar=True):
             dpg.set_primary_window("_main_window", True)
-
-            with dpg.file_dialog(directory_selector=False, show=False, callback=callback_loadCheckpoint, cancel_callback=cancel_callback,tag="checkpoint_file_dialog", width=700 ,height=400):
+            
+            with dpg.file_dialog(directory_selector=False, show=False, callback=callback_loadCheckpoint,tag="checkpoint_file_dialog", width=700 ,height=400):
                 dpg.add_file_extension(".*")
                 dpg.add_file_extension("", color=(150, 255, 150, 255),custom_text="[Checkpoint]")
 
