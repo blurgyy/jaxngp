@@ -31,15 +31,13 @@ def integrate_rays_abstract(
     shapes = {
         "helper.counter": (1,),
 
-        "out.final_rgbs": (n_rays, 3),
-        "out.depths": (n_rays,),
+        "out.final_rgbds": (n_rays, 4),
     }
 
     return (
         jax.ShapedArray(shape=shapes["helper.counter"], dtype=jnp.uint32),
 
-        jax.ShapedArray(shape=shapes["out.final_rgbs"], dtype=jnp.float32),
-        jax.ShapedArray(shape=shapes["out.depths"], dtype=jnp.float32),
+        jax.ShapedArray(shape=shapes["out.final_rgbds"], dtype=jnp.float32),
     )
 
 def integrate_rays_backward_abstract(
@@ -53,12 +51,10 @@ def integrate_rays_backward_abstract(
     drgbs: jax.Array,
 
     # original outputs
-    final_rgbs: jax.Array,
-    depths: jax.Array,
+    final_rgbds: jax.Array,
 
     # gradient inputs
-    dL_dfinal_rgbs: jax.Array,
-    dL_ddepths: jax.Array,
+    dL_dfinal_rgbds: jax.Array,
 ):
     (n_rays,), (total_samples,) = rays_sample_startidx.shape, dss.shape
 
@@ -66,8 +62,7 @@ def integrate_rays_backward_abstract(
     chex.assert_shape(bgs, (n_rays, 3))
     chex.assert_shape(z_vals, (total_samples,))
     chex.assert_shape(drgbs, (total_samples, 4))
-    chex.assert_shape([final_rgbs, dL_dfinal_rgbs], (n_rays, 3))
-    chex.assert_shape([depths, dL_ddepths], (n_rays,))
+    chex.assert_shape([final_rgbds, dL_dfinal_rgbds], (n_rays, 4))
 
     dtype = jax.dtypes.canonicalize_dtype(drgbs.dtype)
     if dtype != jnp.float32:

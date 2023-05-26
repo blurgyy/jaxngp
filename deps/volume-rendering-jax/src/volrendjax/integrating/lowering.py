@@ -43,16 +43,14 @@ def integrate_rays_lowering_rule(
 
         "helper.counter": (1,),
 
-        "out.final_rgbs": (n_rays, 3),
-        "out.depths": (n_rays,),
+        "out.final_rgbds": (n_rays, 4),
     }
 
     return custom_call(
         call_target_name="integrate_rays",
         out_types=[
             ir.RankedTensorType.get(shapes["helper.counter"], ir.IntegerType.get_unsigned(32)),
-            ir.RankedTensorType.get(shapes["out.final_rgbs"], ir.F32Type.get()),
-            ir.RankedTensorType.get(shapes["out.depths"], ir.F32Type.get()),
+            ir.RankedTensorType.get(shapes["out.final_rgbds"], ir.F32Type.get()),
         ],
         operands=[
             rays_sample_startidx,
@@ -73,8 +71,7 @@ def integrate_rays_lowering_rule(
         ),
         result_layouts=default_layouts(
             shapes["helper.counter"],
-            shapes["out.final_rgbs"],
-            shapes["out.depths"],
+            shapes["out.final_rgbds"],
         ),
     )
 
@@ -92,12 +89,10 @@ def integrate_rays_backward_lowring_rule(
     drgbs: ir.Value,
 
     # original outputs
-    final_rgbs: ir.Value,
-    depths: ir.Value,
+    final_rgbds: ir.Value,
 
     # gradient inputs
-    dL_dfinal_rgbs: ir.Value,
-    dL_ddepths: ir.Value,
+    dL_dfinal_rgbds: ir.Value,
 ):
     n_rays, = ir.RankedTensorType(rays_sample_startidx.type).shape
     total_samples, = ir.RankedTensorType(z_vals.type).shape
@@ -113,11 +108,9 @@ def integrate_rays_backward_lowring_rule(
         "in.z_vals": (total_samples,),
         "in.drgbs": (total_samples, 4),
 
-        "in.final_rgbs": (n_rays, 3),
-        "in.depths": (n_rays,),
+        "in.final_rgbds": (n_rays, 4),
 
-        "in.dL_dfinal_rgbs": (n_rays, 3),
-        "in.dL_ddepths": (n_rays,),
+        "in.dL_dfinal_rgbds": (n_rays, 4),
 
         "out.dL_dbgs": (n_rays, 3),
         "out.dL_dz_vals": (total_samples,),
@@ -140,11 +133,9 @@ def integrate_rays_backward_lowring_rule(
             z_vals,
             drgbs,
 
-            final_rgbs,
-            depths,
+            final_rgbds,
 
-            dL_dfinal_rgbs,
-            dL_ddepths
+            dL_dfinal_rgbds,
         ],
         backend_config=opaque,
         operand_layouts=default_layouts(
@@ -155,11 +146,9 @@ def integrate_rays_backward_lowring_rule(
             shapes["in.z_vals"],
             shapes["in.drgbs"],
 
-            shapes["in.final_rgbs"],
-            shapes["in.depths"],
+            shapes["in.final_rgbds"],
 
-            shapes["in.dL_dfinal_rgbs"],
-            shapes["in.dL_ddepths"],
+            shapes["in.dL_dfinal_rgbds"],
         ),
         result_layouts=default_layouts(
             shapes["out.dL_dbgs"],

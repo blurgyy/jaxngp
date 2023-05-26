@@ -115,7 +115,7 @@ def render_rays_train(
         ray_dirs,
     )
 
-    effective_samples, final_rgbs, depths = integrate_rays(
+    effective_samples, final_rgbds = integrate_rays(
         rays_sample_startidx=rays_sample_startidx,
         rays_n_samples=rays_n_samples,
         bgs=bg,
@@ -129,7 +129,7 @@ def render_rays_train(
         "measured_batch_size": jnp.where(effective_samples > 0, effective_samples, 0).sum(),
     }
 
-    return batch_metrics, final_rgbs, depths
+    return batch_metrics, final_rgbds
 
 
 @dataclass(frozen=True, kw_only=True)

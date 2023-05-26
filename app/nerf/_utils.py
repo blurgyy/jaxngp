@@ -70,7 +70,7 @@ def train_step(
         else:
             bg = jnp.asarray(state.render.bg)
         KEY, key = jran.split(KEY, 2)
-        batch_metrics, pred_rgbs, _ = render_rays_train(
+        batch_metrics, pred_rgbds = render_rays_train(
             KEY=key,
             o_world=o_world,
             d_world=d_world,
@@ -78,6 +78,7 @@ def train_step(
             total_samples=total_samples,
             state=state.replace(params=params),
         )
+        pred_rgbs, pred_depths = jnp.array_split(pred_rgbds, [3], axis=-1)
         gt_rgbs = data.blend_rgba_image_array(imgarr=gt_rgba_f32, bg=bg)
         # from NVlabs/instant-ngp/commit/d6c7241de9be5be1b6d85fe43e446d2eb042511b
         # Note: we divide the huber loss by a factor of 5 such that its L2 region near zero

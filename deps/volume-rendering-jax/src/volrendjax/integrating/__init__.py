@@ -38,10 +38,10 @@ def integrate_rays(
 
     Returns:
         measured_batch_size `uint`: total number of samples that got composited into output
-        final_rgbs `[n_rays, 3]~: integrated ray colors according to input densities and rgbs.
-        depths `[n_rays]`: estimated termination depth of each ray
+        final_rgbds `[n_rays, 4]`: integrated ray colors and estimated depths according to input
+                                   densities and rgbs.
     """
-    counter, final_rgbs, depths = impl.__integrate_rays(
+    counter, final_rgbds = impl.__integrate_rays(
         rays_sample_startidx,
         rays_n_samples,
         bgs,
@@ -50,7 +50,7 @@ def integrate_rays(
         drgbs
     )
 
-    return counter[0], final_rgbs, depths
+    return counter[0], final_rgbds
 
 
 def integrate_rays_inference(
