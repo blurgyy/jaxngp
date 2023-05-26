@@ -152,10 +152,10 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
             common.compose(
                 np.asarray,
                 Image.fromarray
-            )(img.rgb).save(dest_rgb.joinpath("{:03d}.png".format(save_i)))
+            )(img.rgb).save(dest_rgb.joinpath("{:04d}.png".format(save_i)))
             common.compose(
                 data.mono_to_rgb,
                 data.f32_to_u8,
                 np.asarray,
                 Image.fromarray
-            )(img.depth).save(dest_depth.joinpath("{:03d}.png".format(save_i)))
+            )(img.depth).save(dest_depth.joinpath("{:04d}.png".format(save_i)))
