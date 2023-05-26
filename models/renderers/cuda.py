@@ -230,10 +230,9 @@ def render_image_inference(
         bg = state.render.bg
     rays_bg = jnp.broadcast_to(jnp.asarray(bg), (state.scene_meta.camera.n_pixels, 3))
 
-    o_world, d_world, t_starts, t_ends, rays_bg, rays_rgbd, rays_T = map(
-        jax.lax.stop_gradient,
-        [o_world, d_world, t_starts, t_ends, rays_bg, rays_rgbd, rays_T],
-    )
+    o_world, d_world, t_starts, t_ends, rays_bg, rays_rgbd, rays_T = jax.lax.stop_gradient((
+        o_world, d_world, t_starts, t_ends, rays_bg, rays_rgbd, rays_T
+    ))
 
     if state.batch_config.mean_effective_samples_per_ray > 7:
         march_steps_cap = max(4, min(state.batch_config.mean_effective_samples_per_ray // 2 + 1, 8))
