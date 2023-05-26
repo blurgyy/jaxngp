@@ -162,9 +162,8 @@ def integrate_rays_inference_lowering_rule(
     ctx: mlir.LoweringRuleContext,
 
     rays_bg: ir.Value,
-    rays_rgb: ir.Value,
+    rays_rgbd: ir.Value,
     rays_T: ir.Value,
-    rays_depth: ir.Value,
 
     n_samples: ir.Value,
     indices: ir.Value,
@@ -172,16 +171,15 @@ def integrate_rays_inference_lowering_rule(
     z_vals: ir.Value,
     drgbs: ir.Value,
 ):
-    (n_total_rays, _) = ir.RankedTensorType(rays_rgb.type).shape
+    (n_total_rays, _) = ir.RankedTensorType(rays_rgbd.type).shape
     (n_rays, march_steps_cap) = ir.RankedTensorType(dss.type).shape
 
     opaque = volrendutils_cuda.make_integrating_inference_descriptor(n_total_rays, n_rays, march_steps_cap)
 
     shapes = {
         "in.rays_bg": (n_total_rays, 3),
-        "in.rays_rgb": (n_total_rays, 3),
+        "in.rays_rgbd": (n_total_rays, 4),
         "in.rays_T": (n_total_rays,),
-        "in.rays_depth": (n_total_rays,),
 
         "in.n_samples": (n_rays,),
         "in.indices": (n_rays,),
@@ -191,9 +189,8 @@ def integrate_rays_inference_lowering_rule(
 
         "out.terminate_cnt": (1,),
         "out.terminated": (n_rays,),
-        "out.rays_rgb": (n_rays, 3),
+        "out.rays_rgbd": (n_rays, 4),
         "out.rays_T": (n_rays,),
-        "out.rays_depth": (n_rays,),
     }
 
     return custom_call(
@@ -201,15 +198,13 @@ def integrate_rays_inference_lowering_rule(
         out_types=[
             ir.RankedTensorType.get(shapes["out.terminate_cnt"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.terminated"], ir.IntegerType.get_signless(1)),
-            ir.RankedTensorType.get(shapes["out.rays_rgb"], ir.F32Type.get()),
+            ir.RankedTensorType.get(shapes["out.rays_rgbd"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.rays_T"], ir.F32Type.get()),
-            ir.RankedTensorType.get(shapes["out.rays_depth"], ir.F32Type.get()),
         ],
         operands=[
             rays_bg,
-            rays_rgb,
+            rays_rgbd,
             rays_T,
-            rays_depth,
 
             n_samples,
             indices,
@@ -220,9 +215,8 @@ def integrate_rays_inference_lowering_rule(
         backend_config=opaque,
         operand_layouts=default_layouts(
             shapes["in.rays_bg"],
-            shapes["in.rays_rgb"],
+            shapes["in.rays_rgbd"],
             shapes["in.rays_T"],
-            shapes["in.rays_depth"],
 
             shapes["in.n_samples"],
             shapes["in.indices"],
@@ -233,8 +227,7 @@ def integrate_rays_inference_lowering_rule(
         result_layouts=default_layouts(
             shapes["out.terminate_cnt"],
             shapes["out.terminated"],
-            shapes["out.rays_rgb"],
+            shapes["out.rays_rgbd"],
             shapes["out.rays_T"],
-            shapes["out.rays_depth"],
         ),
     )

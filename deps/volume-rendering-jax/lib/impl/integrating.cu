@@ -220,9 +220,8 @@ __global__ void integrate_rays_inference_kernel(
     , std::uint32_t const march_steps_cap
 
     , float const * const __restrict__ rays_bg  // [n_total_rays, 3]
-    , float const * const __restrict__ rays_rgb  // [n_total_rays, 3]
+    , float const * const __restrict__ rays_rgbd  // [n_total_rays, 4]
     , float const * const __restrict__ rays_T  // [n_total_rays]
-    , float const * const __restrict__ rays_depth  // [n_total_rays]
 
     , std::uint32_t const * const __restrict__ n_samples  // [n_rays]
     , std::uint32_t const * const __restrict__ indices  // [n_rays]
@@ -230,11 +229,10 @@ __global__ void integrate_rays_inference_kernel(
     , float const * const __restrict__ z_vals  // [n_rays, march_steps_cap]
     , float const * const __restrict__ drgbs  // [n_rays, march_steps_cap, 4]
 
-    , std::uint32_t * const __restrict__ terminate_cnt
-    , bool * const __restrict__ terminated
-    , float * const __restrict__ rays_rgb_out
-    , float * const __restrict__ rays_T_out
-    , float * const __restrict__ rays_depth_out
+    , std::uint32_t * const __restrict__ terminate_cnt  // []
+    , bool * const __restrict__ terminated  // [n_rays]
+    , float * const __restrict__ rays_rgbd_out  // [n_rays, 4]
+    , float * const __restrict__ rays_T_out  // [n_rays]
 ) {
     std::uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_rays) { return; }
@@ -248,10 +246,10 @@ __global__ void integrate_rays_inference_kernel(
         float const * const __restrict__ ray_drgbs = drgbs + i * march_steps_cap * 4;
 
         float ray_T = rays_T[ray_idx];
-        float r = rays_rgb[ray_idx * 3 + 0];
-        float g = rays_rgb[ray_idx * 3 + 1];
-        float b = rays_rgb[ray_idx * 3 + 2];
-        float ray_depth = rays_depth[ray_idx];
+        float r = rays_rgbd[ray_idx * 4 + 0];
+        float g = rays_rgbd[ray_idx * 4 + 1];
+        float b = rays_rgbd[ray_idx * 4 + 2];
+        float ray_depth = rays_rgbd[ray_idx * 4 + 3];
         for (std::uint32_t sample_idx = 0; ray_T > T_THRESHOLD && sample_idx < ray_n_samples; ++sample_idx) {
             float const ds = ray_dss[sample_idx];
             float const density = ray_drgbs[sample_idx * 4];
@@ -268,23 +266,23 @@ __global__ void integrate_rays_inference_kernel(
             float const denom = 1.f - ray_T;
             float const idenom = 1.f / denom;
             terminated[i] = true;
-            rays_depth_out[i] = ray_depth * idenom;
             rays_T_out[i] = 0.f;
-            rays_rgb_out[i*3+0] = r * idenom;
-            rays_rgb_out[i*3+1] = g * idenom;
-            rays_rgb_out[i*3+2] = b * idenom;
+            rays_rgbd_out[i*4+0] = r * idenom;
+            rays_rgbd_out[i*4+1] = g * idenom;
+            rays_rgbd_out[i*4+2] = b * idenom;
+            rays_rgbd_out[i*4+3] = ray_depth * idenom;
         } else {
             terminated[i] = ray_n_samples < march_steps_cap;
-            rays_depth_out[i] = ray_depth;
+            rays_rgbd_out[i*4+3] = ray_depth;
             rays_T_out[i] = ray_T;
             if (terminated[i]) {
-                rays_rgb_out[i*3+0] = r + ray_T * rays_bg[ray_idx*3+0];
-                rays_rgb_out[i*3+1] = g + ray_T * rays_bg[ray_idx*3+1];
-                rays_rgb_out[i*3+2] = b + ray_T * rays_bg[ray_idx*3+2];
+                rays_rgbd_out[i*4+0] = r + ray_T * rays_bg[ray_idx*3+0];
+                rays_rgbd_out[i*4+1] = g + ray_T * rays_bg[ray_idx*3+1];
+                rays_rgbd_out[i*4+2] = b + ray_T * rays_bg[ray_idx*3+2];
             } else {
-                rays_rgb_out[i*3+0] = r;
-                rays_rgb_out[i*3+1] = g;
-                rays_rgb_out[i*3+2] = b;
+                rays_rgbd_out[i*4+0] = r;
+                rays_rgbd_out[i*4+1] = g;
+                rays_rgbd_out[i*4+2] = b;
             }
         }
     }
@@ -429,9 +427,8 @@ void integrate_rays_inference_launcher(cudaStream_t stream, void **buffers, char
 
     /// arrays
     float const * const __restrict__ rays_bg = static_cast<float *>(next_buffer());  // [n_total_rays, 3]
-    float const * const __restrict__ rays_rgb = static_cast<float *>(next_buffer());  // [n_total_rays, 3]
+    float const * const __restrict__ rays_rgbd = static_cast<float *>(next_buffer());  // [n_total_rays, 4]
     float const * const __restrict__ rays_T = static_cast<float *>(next_buffer());  // [n_total_rays]
-    float const * const __restrict__ rays_depth = static_cast<float *>(next_buffer());  // [n_total_rays]
 
     std::uint32_t const * const __restrict__ n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     std::uint32_t const * const __restrict__ indices = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
@@ -442,16 +439,14 @@ void integrate_rays_inference_launcher(cudaStream_t stream, void **buffers, char
     // outputs
     std::uint32_t * const __restrict__ terminate_cnt = static_cast<std::uint32_t *>(next_buffer());  // [1]
     bool * const __restrict__ terminated = static_cast<bool *>(next_buffer());  // [n_rays]
-    float * const __restrict__ rays_rgb_out = static_cast<float *>(next_buffer());  // [n_rays, 3]
+    float * const __restrict__ rays_rgbd_out = static_cast<float *>(next_buffer());  // [n_rays, 4]
     float * const __restrict__ rays_T_out = static_cast<float *>(next_buffer());  // [n_rays]
-    float * const __restrict__ rays_depth_out = static_cast<float *>(next_buffer());  // [n_rays]
 
     CUDA_CHECK_THROW(cudaMemsetAsync(terminate_cnt, 0x00, sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(terminated, false, n_rays * sizeof(bool), stream));
 
-    CUDA_CHECK_THROW(cudaMemsetAsync(rays_rgb_out, 0x00, n_rays * 3 * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(rays_rgbd_out, 0x00, n_rays * 4 * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(rays_T_out, 0x00, n_rays * sizeof(float), stream));
-    CUDA_CHECK_THROW(cudaMemsetAsync(rays_depth_out, 0x00, n_rays * sizeof(float), stream));
 
     // kernel launch
     std::uint32_t static constexpr blockSize = 512;
@@ -462,9 +457,8 @@ void integrate_rays_inference_launcher(cudaStream_t stream, void **buffers, char
         , march_steps_cap
 
         , rays_bg
-        , rays_rgb
+        , rays_rgbd
         , rays_T
-        , rays_depth
 
         , n_samples
         , indices
@@ -474,9 +468,8 @@ void integrate_rays_inference_launcher(cudaStream_t stream, void **buffers, char
 
         , terminate_cnt
         , terminated
-        , rays_rgb_out
+        , rays_rgbd_out
         , rays_T_out
-        , rays_depth_out
     );
 }
 
