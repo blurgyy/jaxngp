@@ -62,10 +62,12 @@ class HashGridEncoder(Encoder):
         # Essentially, it is $(n_max / n_min) ** (1/(L - 1))$
         b = math.exp((math.log(self.N_max) - math.log(self.N_min)) / (self.L - 1))
 
-        resolutions, first_hash_level, offsets = [], 0, [0]
+        scales, resolutions, first_hash_level, offsets = [], [], 0, [0]
         for i in range(self.L):
-            res = int(self.N_min * (b**i))
-            resolutions.append(res - 1)
+            scale = self.N_min * (b**i) - 1
+            scales.append(scale)
+            res = math.ceil(scale) + 1
+            resolutions.append(res)
 
             n_entries = res ** self.dim
 
@@ -110,9 +112,9 @@ class HashGridEncoder(Encoder):
             """
             # [dim]
             if self.dim == 2:
-                strides = jnp.stack([res + 1, jnp.ones_like(res)]).T
+                strides = jnp.stack([jnp.ones_like(res), res]).T
             elif self.dim == 3:
-                strides = jnp.stack([(res + 1) ** 2, res + 1, jnp.ones_like(res)]).T
+                strides = jnp.stack([jnp.ones_like(res), res, res ** 2]).T
             else:
                 raise NotImplementedError("{} is only implemented for 2D and 3D data".format(__class__.__name__))
             # [2**dim]
@@ -139,7 +141,6 @@ class HashGridEncoder(Encoder):
                 indices = vert_pos[:, 0] ^ (vert_pos[:, 1] * primes[1]) ^ (vert_pos[:, 2] * primes[2])
             else:
                 raise NotImplementedError("{} is only implemented for 2D and 3D data".format(__class__.__name__))
-            indices = jnp.mod(indices, self.T)
             return indices
 
         @vmap_jaxfn_with(in_axes=(0, 0))
@@ -170,18 +171,21 @@ class HashGridEncoder(Encoder):
             return jnp.prod(widths, axis=-1)
 
         # [L]
-        resolutions = jnp.asarray(resolutions, dtype=jnp.uint32)
+        scales = jnp.asarray(scales, dtype=jnp.float32)
         # [L, n_points, dim]
-        pos_scaled = pos[None, :, :] * resolutions[:, None, None]
+        pos_scaled = pos[None, :, :] * scales[:, None, None] + 0.5
         # [L, n_points, 2**dim, dim]
         vert_pos = make_vert_pos(pos_scaled)
         # [L, n_points, 2**dim]
         if first_hash_level > 0:
+            resolutions = jnp.asarray(resolutions, dtype=jnp.uint32)
             indices = make_tiled_indices(resolutions[:first_hash_level], vert_pos[:first_hash_level, ...])
         else:
             indices = jnp.empty(0, dtype=jnp.uint32)
         if first_hash_level < self.L:
             indices = jnp.concatenate([indices, make_hash_indices(vert_pos[first_hash_level:, ...])], axis=0)
+
+        indices = jnp.mod(indices, self.T)
 
         # [L, n_points, 2**dim, F]
         vert_latents = latents[indices]
