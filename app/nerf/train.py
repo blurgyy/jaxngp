@@ -146,7 +146,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
 
     # model parameters
     nerf_model, init_input = (
-        make_nerf_ngp(bound=scene_meta.bound),
+        make_nerf_ngp(bound=scene_meta.bound, inference=False),
         (jnp.zeros((1, 3), dtype=jnp.float32), jnp.zeros((1, 3), dtype=jnp.float32))
     )
     KEY, key = jran.split(KEY, 2)

@@ -383,11 +383,19 @@ def make_skysphere_background_model_ngp(bound: float) -> SkySphereBg:
     )
 
 
-def make_nerf_ngp(bound: float) -> NeRF:
+def make_nerf_ngp(bound: float, inference: bool) -> NeRF:
     return make_nerf(
         bound=bound,
 
-        pos_enc="hashgrid",
+        pos_enc=(
+            # TCNN's hash grid encoding runs faster at inference-time, but during training the JAX
+            # implementation is slightly faster.  It's possible to use one at training-time and
+            # another at inference-time, because the two implementations optimizes in an identical
+            # way (up to numerical error).
+            "tcnn-hashgrid"
+            if inference
+            else "hashgrid"
+        ),
         dir_enc="sh",
 
         pos_levels=16,

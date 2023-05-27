@@ -36,72 +36,6 @@ cell_vert_offsets = {
 class Encoder(nn.Module): ...
 
 
-@empty_impl
-class TCNNHashGridEncoder(Encoder):
-    dim: int
-    # Let's use the same notations as in the paper
-
-    # Number of levels (16).
-    L: int
-    # Maximum entries per level (hash table size) (2**14 to 2**24).
-    T: int
-    # Number of feature dimensions per entry (2).
-    F: int
-    # Coarsest resolution (16).
-    N_min: int
-    # Finest resolution (512 to 524288).
-    N_max: int
-
-    param_dtype: Dtype = jnp.float32
-
-    @nn.compact
-    def __call__(self, pos: jax.Array) -> jax.Array:
-        chex.assert_axis_dimension(pos, -1, self.dim)
-
-        # Equation(3)
-        # Essentially, it is $(n_max / n_min) ** (1/(L - 1))$
-        b = math.exp((math.log(self.N_max) - math.log(self.N_min)) / (self.L - 1))
-
-        scales, resolutions, first_hash_level, offsets = [], [], 0, [0]
-        for i in range(self.L):
-            scale = self.N_min * (b**i) - 1
-            scales.append(scale)
-            res = math.ceil(scale) + 1
-            resolutions.append(res)
-
-            n_entries = res ** self.dim
-
-            if n_entries <= self.T:
-                first_hash_level += 1
-            else:
-                n_entries = self.T
-
-            offsets.append(offsets[-1] + n_entries)
-
-        latents = self.param(
-            "latent codes stored on grid vertices",
-            # paper:
-            #   We initialize the hash table entries using the uniform distribution U(−10^{−4}, 10^{−4})
-            #   to provide a small amount of randomness while encouraging initial predictions close
-            #   to zero.
-            lambda key, shape, dtype: jran.uniform(key, shape, dtype, -1e-4, 1e-4),
-            (offsets[-1], self.F),
-            self.param_dtype,
-        )
-
-        return hashgrid_encode(
-            desc=HashGridMetadata(
-                L=self.L,
-                F=self.F,
-                N_min=self.N_min,
-                per_level_scale=b,
-            ),
-            offset_table_data=jnp.asarray(offsets, dtype=jnp.uint32),
-            coords_rm=pos.T,
-            params=latents,
-        ).T
-
-
 # TODO: enforce types used in arrays
 @empty_impl
 class HashGridEncoder(Encoder):
@@ -121,17 +55,19 @@ class HashGridEncoder(Encoder):
 
     param_dtype: Dtype = jnp.float32
 
+    @property
+    def b(self) -> float:
+        # Equation(3)
+        # Essentially, it is $(n_max / n_min) ** (1/(L - 1))$
+        return math.exp((math.log(self.N_max) - math.log(self.N_min)) / (self.L - 1))
+
     @nn.compact
     def __call__(self, pos: jax.Array) -> jax.Array:
         chex.assert_axis_dimension(pos, -1, self.dim)
 
-        # Equation(3)
-        # Essentially, it is $(n_max / n_min) ** (1/(L - 1))$
-        b = math.exp((math.log(self.N_max) - math.log(self.N_min)) / (self.L - 1))
-
         scales, resolutions, first_hash_level, offsets = [], [], 0, [0]
         for i in range(self.L):
-            scale = self.N_min * (b**i) - 1
+            scale = self.N_min * (self.b**i) - 1
             scales.append(scale)
             res = math.ceil(scale) + 1
             resolutions.append(res)
@@ -262,6 +198,52 @@ class HashGridEncoder(Encoder):
         # [pos.shape[0], L*F]
         encodings = encodings.transpose(1, 0, 2).reshape(-1, self.L * self.F)
         return encodings
+
+
+@empty_impl
+class TCNNHashGridEncoder(HashGridEncoder):
+    @nn.compact
+    def __call__(self, pos: jax.Array) -> jax.Array:
+        chex.assert_axis_dimension(pos, -1, self.dim)
+
+        scales, resolutions, first_hash_level, offsets = [], [], 0, [0]
+        for i in range(self.L):
+            scale = self.N_min * (self.b**i) - 1
+            scales.append(scale)
+            res = math.ceil(scale) + 1
+            resolutions.append(res)
+
+            n_entries = res ** self.dim
+
+            if n_entries <= self.T:
+                first_hash_level += 1
+            else:
+                n_entries = self.T
+
+            offsets.append(offsets[-1] + n_entries)
+
+        latents = self.param(
+            "latent codes stored on grid vertices",
+            # paper:
+            #   We initialize the hash table entries using the uniform distribution U(−10^{−4}, 10^{−4})
+            #   to provide a small amount of randomness while encouraging initial predictions close
+            #   to zero.
+            lambda key, shape, dtype: jran.uniform(key, shape, dtype, -1e-4, 1e-4),
+            (offsets[-1], self.F),
+            self.param_dtype,
+        )
+
+        return hashgrid_encode(
+            desc=HashGridMetadata(
+                L=self.L,
+                F=self.F,
+                N_min=self.N_min,
+                per_level_scale=self.b,
+            ),
+            offset_table_data=jnp.asarray(offsets, dtype=jnp.uint32),
+            coords_rm=pos.T,
+            params=latents,
+        ).T
 
 
 @empty_impl

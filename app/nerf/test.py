@@ -58,7 +58,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
             render=args.render,
             scene_options=args.scene,
             scene_meta=scene_meta,
-            nerf_fn=make_nerf_ngp(bound=scene_meta.bound).apply,
+            nerf_fn=make_nerf_ngp(bound=scene_meta.bound, inference=True).apply,
             bg_fn=make_skysphere_background_model_ngp(bound=scene_meta.bound).apply if scene_meta.bg else None,
         ),
     )
