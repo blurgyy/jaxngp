@@ -89,8 +89,8 @@ class HashGridEncoder(Encoder):
             self.param_dtype,
         )
 
-        @vmap_jaxfn_with(in_axes=[0])
-        @vmap_jaxfn_with(in_axes=[0])
+        @jax.vmap
+        @jax.vmap
         def make_vert_pos(pos_scaled: jax.Array):
             # [dim]
             pos_floored = jnp.floor(pos_scaled).astype(jnp.uint32)
@@ -121,8 +121,8 @@ class HashGridEncoder(Encoder):
             indices = jnp.sum(strides[None, :] * vert_pos, axis=-1)
             return indices
 
-        @vmap_jaxfn_with(in_axes=[0])
-        @vmap_jaxfn_with(in_axes=[0])
+        @jax.vmap
+        @jax.vmap
         def make_hash_indices(vert_pos):
             """(first 2 axes `[L, n_points]` are vmapped away)
             Inputs:
@@ -143,27 +143,24 @@ class HashGridEncoder(Encoder):
                 raise NotImplementedError("{} is only implemented for 2D and 3D data".format(__class__.__name__))
             return indices
 
-        @vmap_jaxfn_with(in_axes=(0, 0))
-        @vmap_jaxfn_with(in_axes=(0, 0))
-        def lerp_weights(pos_scaled: jax.Array, vert_pos: jax.Array):
+        @jax.vmap
+        @jax.vmap
+        def lerp_weights(pos_scaled: jax.Array):
             """(first 2 axes `[L, n_points]` are vmapped away)
             Inputs:
                 pos_scaled `float` `[L, n_points, dim]`: coordinates of query points, scaled to the
                                                          hierarchy in question
-                vert_pos `uint32` `[L, n_points, 2**dim, dim]`: integer coordinates of the grid
-                                                                cells' vertices that enclose each of
-                                                                `pos_scaled`
 
             Returns:
                 weights `float` `[L, n_points, 2**dim]`: linear interpolation weights for each cell
                                                          vertex
             """
-            # [1, dim]
-            pos_offset = pos_scaled[None, :] - vert_pos[0:1, :]
+            # [dim]
+            pos_offset, _ = jnp.modf(pos_scaled)
             # [2**dim, dim]
             widths = jnp.clip(
                 # cell_vert_offsets: [2**dim, dim]
-                (1 - cell_vert_offsets[self.dim]) + (2 * cell_vert_offsets[self.dim] - 1) * pos_offset,
+                (1 - cell_vert_offsets[self.dim]) + (2 * cell_vert_offsets[self.dim] - 1) * pos_offset[None, :],
                 0,
                 1,
             )
@@ -190,7 +187,7 @@ class HashGridEncoder(Encoder):
         # [L, n_points, 2**dim, F]
         vert_latents = latents[indices]
         # [L, n_points, 2**dim]
-        vert_weights = lerp_weights(pos_scaled, vert_pos)
+        vert_weights = lerp_weights(pos_scaled)
 
         # [L, pos.shape[0], F]
         encodings = (vert_latents * vert_weights[..., None]).sum(axis=-2)
