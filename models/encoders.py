@@ -173,7 +173,6 @@ class HashGridEncoder(Encoder):
         pos_scaled = pos[None, :, :] * scales[:, None, None] + 0.5
         # [L, n_points, 2**dim, dim]
         vert_pos = make_vert_pos(pos_scaled)
-        # [L, n_points, 2**dim]
         if first_hash_level > 0:
             resolutions = jnp.asarray(resolutions, dtype=jnp.uint32)
             indices = make_tiled_indices(resolutions[:first_hash_level], vert_pos[:first_hash_level, ...])
@@ -182,7 +181,9 @@ class HashGridEncoder(Encoder):
         if first_hash_level < self.L:
             indices = jnp.concatenate([indices, make_hash_indices(vert_pos[first_hash_level:, ...])], axis=0)
 
+        # [L, n_points, 2**dim]
         indices = jnp.mod(indices, self.T)
+        indices += jnp.asarray(offsets[:-1], dtype=jnp.uint32)[:, None, None]
 
         # [L, n_points, 2**dim, F]
         vert_latents = latents[indices]
