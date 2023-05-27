@@ -6,6 +6,7 @@ from flax.linen.dtypes import Dtype
 import jax
 import jax.numpy as jnp
 import jax.random as jran
+from jaxtcnn import hashgrid_encode, HashGridMetadata
 import shjax
 
 from utils.common import jit_jaxfn_with, vmap_jaxfn_with
@@ -33,6 +34,72 @@ cell_vert_offsets = {
 
 
 class Encoder(nn.Module): ...
+
+
+@empty_impl
+class TCNNHashGridEncoder(Encoder):
+    dim: int
+    # Let's use the same notations as in the paper
+
+    # Number of levels (16).
+    L: int
+    # Maximum entries per level (hash table size) (2**14 to 2**24).
+    T: int
+    # Number of feature dimensions per entry (2).
+    F: int
+    # Coarsest resolution (16).
+    N_min: int
+    # Finest resolution (512 to 524288).
+    N_max: int
+
+    param_dtype: Dtype = jnp.float32
+
+    @nn.compact
+    def __call__(self, pos: jax.Array) -> jax.Array:
+        chex.assert_axis_dimension(pos, -1, self.dim)
+
+        # Equation(3)
+        # Essentially, it is $(n_max / n_min) ** (1/(L - 1))$
+        b = math.exp((math.log(self.N_max) - math.log(self.N_min)) / (self.L - 1))
+
+        scales, resolutions, first_hash_level, offsets = [], [], 0, [0]
+        for i in range(self.L):
+            scale = self.N_min * (b**i) - 1
+            scales.append(scale)
+            res = math.ceil(scale) + 1
+            resolutions.append(res)
+
+            n_entries = res ** self.dim
+
+            if n_entries <= self.T:
+                first_hash_level += 1
+            else:
+                n_entries = self.T
+
+            offsets.append(offsets[-1] + n_entries)
+
+        latents = self.param(
+            "latent codes stored on grid vertices",
+            # paper:
+            #   We initialize the hash table entries using the uniform distribution U(−10^{−4}, 10^{−4})
+            #   to provide a small amount of randomness while encouraging initial predictions close
+            #   to zero.
+            lambda key, shape, dtype: jran.uniform(key, shape, dtype, -1e-4, 1e-4),
+            (offsets[-1], self.F),
+            self.param_dtype,
+        )
+
+        return hashgrid_encode(
+            desc=HashGridMetadata(
+                L=self.L,
+                F=self.F,
+                N_min=self.N_min,
+                per_level_scale=b,
+            ),
+            offset_table_data=jnp.asarray(offsets, dtype=jnp.uint32),
+            coords_rm=pos.T,
+            params=latents,
+        ).T
 
 
 # TODO: enforce types used in arrays
@@ -410,27 +477,72 @@ def bench_sh():
 def bench_hg():
     import time
 
+    dim=3
     L=16
+    F=2
+    T=2**19
+    N_min=16
+    per_level_scale=2.
+    N_max=int(N_min * per_level_scale**(L - 1))
 
     hg = HashGridEncoder(
-        dim=3,
-        L=16,
-        T=2**19,
-        F=2,
-        N_min=16,
-        N_max=2**12,
+        dim=dim,
+        L=L,
+        T=T,
+        F=F,
+        N_min=N_min,
+        N_max=N_max,
     )
     K = jran.PRNGKey(0xabcdef)
+
     variables = hg.init(K, jnp.zeros([5, 3]))
+    (params_array,) = variables["params"]["latent codes stored on grid vertices"],
+
+    print(params_array.shape)
 
     @jax.jit
     def hgjax_jitted(d):
         return hg.apply(variables, d)
 
+    hgmeta = HashGridMetadata(
+        L=L,
+        F=F,
+        N_min=N_min,
+        per_level_scale=per_level_scale,
+    )
+
+    resolutions, offsets = [], [0]
+    for i in range(L):
+        res = int(N_min * (per_level_scale**i))
+        resolutions.append(res)
+
+        n_entries = (res + 1) ** dim
+
+        if n_entries <= T:
+            pass
+        else:
+            n_entries = T
+
+        offsets.append(offsets[-1] + n_entries)
+
+    assert offsets[-1] == params_array.shape[0]
+
+    @jax.jit
+    def hgtcnn_jitted(d_row_major):  # expects input coordinates to have shape (dim, n_coords)
+        return hashgrid_encode(
+            desc=hgmeta,
+            offset_table_data=jnp.asarray(offsets, dtype=jnp.uint32),
+            coords_rm=d_row_major,
+            params=params_array,
+        )
+
+    print("starting!")
+
     for i in range(100):
         K, key = jran.split(K, 2)
         n = 256_000
         d = jran.uniform(key, (n, 3), minval=0, maxval=1.)
+        d_T = jran.uniform(key, (3, n), minval=0, maxval=1.)
 
         print("{:03d}-th check ({} coordinates, degree={}): ".format(i+1, n, L), end="")
 
@@ -439,15 +551,22 @@ def bench_hg():
         result = hgjax_jitted(d).block_until_ready()
         etime = time.time()
         durms = 1000 * (etime - stime)
+        print("{:.2f}ms".format(durms), end="")
+
+        stime = time.time()
+        print("|tcnn...", end="")
+        result = hgtcnn_jitted(d_T).block_until_ready()
+        etime = time.time()
+        durms = 1000 * (etime - stime)
         print("{:.2f}ms|".format(durms), end="")
 
         print()
 
 
 if __name__ == "__main__":
-    # print("bench_hg")
-    # bench_hg()
+    print("bench_hg")
+    bench_hg()
 
-    print()
-    print("bench_sh:")
-    bench_sh()
+    # print()
+    # print("bench_sh:")
+    # bench_sh()

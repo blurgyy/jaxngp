@@ -11,6 +11,9 @@ let
       (filterAttrs
         (name: type: type == "directory" && name != "_sources")
         (readDir basedir));
+  # Compute capability, used for building tiny-cuda-nn
+  # REF: <https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/>
+  cudaCapabilities = [ "6.1" ];  # 1080Ti
 in {
   inherit filterAttrs;
   packages = pkgs: mapPackage ./. (name: pkgs.${name});
@@ -18,9 +21,10 @@ in {
     generated = final.callPackage ./_sources/generated.nix {};
     package = import ./${name};
     args = with builtins; intersectAttrs (functionArgs package) {
-      inherit generated;
+      inherit generated cudaCapabilities;
       version = "0.1.0";
       source = generated.${name};
+      buildSharedLib = false;
     };
   in
     final.python3.pkgs.callPackage package args
