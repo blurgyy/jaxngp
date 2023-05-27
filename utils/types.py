@@ -21,7 +21,7 @@ from volrendjax import morton3d_invert, packbits
 from ._constants import tqdm_format
 
 
-PositionalEncodingType = Literal["identity", "frequency", "hashgrid"]
+PositionalEncodingType = Literal["identity", "frequency", "hashgrid", "tcnn-hashgrid"]
 DirectionalEncodingType = Literal["identity", "sh", "shcuda"]
 EncodingType = Literal[PositionalEncodingType, DirectionalEncodingType]
 ActivationType = Literal[

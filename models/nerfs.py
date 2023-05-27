@@ -12,6 +12,7 @@ from models.encoders import (
     HashGridEncoder,
     SphericalHarmonicsEncoder,
     SphericalHarmonicsEncoderCuda,
+    TCNNHashGridEncoder,
 )
 from utils.common import mkValueError
 from utils.types import (
@@ -282,8 +283,9 @@ def make_nerf(
     elif pos_enc == "frequency":
         raise NotImplementedError("Frequency encoding for NeRF is not tuned")
         position_encoder = FrequencyEncoder(dim=3, L=10)
-    elif pos_enc == "hashgrid":
-        position_encoder = HashGridEncoder(
+    elif "hashgrid" in pos_enc:
+        HGEncoder = TCNNHashGridEncoder if "tcnn" in pos_enc else HashGridEncoder
+        position_encoder = HGEncoder(
             dim=3,
             L=pos_levels,
             T=2**19,
