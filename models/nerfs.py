@@ -37,16 +37,20 @@ class NeRF(nn.Module):
     rgb_activation: Callable
 
     @nn.compact
-    def __call__(self, xyz: jax.Array, dir: jax.Array | None) -> Tuple[jax.Array, jax.Array]:
+    def __call__(
+        self,
+        xyz: jax.Array,
+        dir: jax.Array | None,
+    ) -> jax.Array | Tuple[jax.Array, jax.Array]:
         """
         Inputs:
-            xyz [..., 3]: coordinates in $\R^3$.
-            dir [..., 3]: **unit** vectors, representing viewing directions.  If `None`, only
-                           return densities.
+            xyz `[..., 3]`: coordinates in $\R^3$.
+            dir `[..., 3]`: **unit** vectors, representing viewing directions.  If `None`, only
+                            return densities.
 
         Returns:
-            density [..., 1]: density (ray terminating probability) of each query points
-            rgb [..., 3]: predicted color for each query point
+            density `[..., 1]`: density (ray terminating probability) of each query points
+            rgb `[..., 3]`: predicted color for each query point
         """
         original_aux_shapes = xyz.shape[:-1]
         xyz = xyz.reshape(-1, 3)
