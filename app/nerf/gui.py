@@ -146,7 +146,7 @@ class Gui_trainer():
     back_color:Tuple[float,float,float]=(1.0,1.0,1.0)
     
     data_step:List[int]=field(default_factory=list,init=False)
-    data_loss:List[float]=field(default_factory=list,init=False)
+    data_pixel_quality:List[float]=field(default_factory=list,init=False)
     
     compacted_batch:int=-1
     not_compacted_batch:int=-1
@@ -159,7 +159,7 @@ class Gui_trainer():
     ckpt:CKPT=CKPT()
     def __post_init__(self):
         self.data_step=[]
-        self.data_loss=[]
+        self.data_pixel_quality=[]
         self.cur_step=0
         
         self.istraining=True
@@ -542,7 +542,7 @@ class Gui_trainer():
                 )
 
             self.data_step.append(self.log_step+self.cur_step)
-            self.data_loss.append(loss["rgb"])
+            self.data_pixel_quality.append(data.linear_to_db(loss["rgb"], maxval=1))
             pbar.set_description_str(
                 desc="Training step#{:03d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss:{{rgb={:.2e}({:.2f}dB),tv={:.2e}}}".format(
                     cur_steps,
@@ -601,7 +601,7 @@ class Gui_trainer():
     def get_state(self):
         return self.state
     def get_plotData(self):
-        return(self.data_step,self.data_loss)
+        return(self.data_step,self.data_pixel_quality)
     def get_effective_samples_nums(self):
         return self.get_state().batch_config.running_mean_effective_samples_per_ray
     def get_samples_nums(self):
@@ -641,7 +641,7 @@ class TrainThread(threading.Thread):
         self.train_infer_time=-1
         self.render_infer_time=-1
         self.data_step=[]
-        self.data_loss=[]
+        self.data_pixel_quality=[]
         
         self.compacted_batch=-1
         self.not_compacted_batch=-1
@@ -781,8 +781,8 @@ class TrainThread(threading.Thread):
         return 0
     def get_plotData(self):
         if self.trainer:
-            self.data_step,self.data_loss=self.trainer.get_plotData()
-        return(self.data_step,self.data_loss)
+            self.data_step,self.data_pixel_quality=self.trainer.get_plotData()
+        return(self.data_step,self.data_pixel_quality)
     def get_effective_samples_nums(self):
         if self.trainer:
             return "{:.3f}".format(self.get_state().batch_config.running_mean_effective_samples_per_ray)
@@ -837,7 +837,7 @@ class NeRFGUI():
     back_color:Tuple[float,float,float]=(1.0,1.0,1.0)
     scale:float=1.0
     data_step:List[int]=field(default_factory=list,init=False)
-    data_loss:List[float]=field(default_factory=list,init=False)
+    data_pixel_quality:List[float]=field(default_factory=list,init=False)
     
     texture_H:int= field(init=False)
     texture_W:int= field(init=False)
@@ -1102,15 +1102,15 @@ class NeRFGUI():
                             dpg.add_text("Number of rays: ")
                             dpg.add_text("no data", tag="_rays_num")
                         # create plot
-                        with dpg.plot(label="Loss", height=self.gui_args.control_window_width-40, width=self.gui_args.control_window_width-40):
+                        with dpg.plot(label="pixel quality", height=self.gui_args.control_window_width-40, width=self.gui_args.control_window_width-40):
                             # optionally create legend
                             dpg.add_plot_legend()
 
                             # REQUIRED: create x and y axes
                             dpg.add_plot_axis(dpg.mvXAxis, label="step",tag="x_axis")
-                            dpg.add_plot_axis(dpg.mvYAxis, label="loss", tag="y_axis")
+                            dpg.add_plot_axis(dpg.mvYAxis, label="PSNR (estimated)", tag="y_axis")
                             # series belong to a y axis
-                            dpg.add_line_series(self.data_step, self.data_loss, label="loss", parent="y_axis",tag="_plot")
+                            dpg.add_line_series(self.data_step, self.data_pixel_quality, label="~PSNR", parent="y_axis",tag="_plot")
                     with dpg.collapsing_header(tag="_tip_panel",label="Tips", default_open=True):
                         dpg.bind_item_theme("_tip_panel", theme_head)
                         tip1="* Drag the left mouse button to rotate the camera\n"
@@ -1183,13 +1183,13 @@ class NeRFGUI():
         dpg.set_value("_texture", self.framebuff)
     def clear_plot(self):
         self.data_step.clear()
-        self.data_loss.clear() 
+        self.data_pixel_quality.clear() 
         self.update_plot()
     def update_plot(self):
-        if len(self.data_loss)>self.gui_args.max_show_loss_step:
-            self.data_loss=self.data_loss[-self.gui_args.max_show_loss_step-1:]
+        if len(self.data_pixel_quality)>self.gui_args.max_show_loss_step:
+            self.data_pixel_quality=self.data_pixel_quality[-self.gui_args.max_show_loss_step-1:]
             self.data_step=self.data_step[-self.gui_args.max_show_loss_step-1:]
-        dpg.set_value('_plot', [self.data_step,self.data_loss])
+        dpg.set_value('_plot', [self.data_step,self.data_pixel_quality])
         dpg.fit_axis_data("y_axis")
         dpg.fit_axis_data("x_axis") 
     def set_cam_angle(self):
@@ -1274,7 +1274,7 @@ class NeRFGUI():
         dpg.set_value("_compacted_batch_size","{}".format(self.train_thread.get_compactedBatch()))
         dpg.set_value("_not_compacted_batch_size","{}".format(self.train_thread.get_notCompactedBatch()))
         dpg.set_value("_rays_num","{}".format(self.train_thread.get_raysNum()))
-        self.data_step,self.data_loss=self.train_thread.get_plotData()
+        self.data_step,self.data_pixel_quality=self.train_thread.get_plotData()
         self.update_plot()
     def load_ckpt(self):
         if self.train_thread and self.train_thread.havestart:
