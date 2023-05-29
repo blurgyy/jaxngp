@@ -17,6 +17,7 @@ from utils.args import NeRFGUIArgs
 from .train import *
 from utils.data import load_transform_json_recursive,merge_transforms,mono_to_rgb
 from utils.types import (
+    RGBColor,
     SceneData,
     SceneMeta,
     ViewMetadata,
@@ -118,6 +119,7 @@ class Gui_trainer():
     args: NeRFGUIArgs
     logger: common.Logger
     camera_pose:jnp.array
+    back_color:RGBColor
 
     scene_train:SceneData=field(init=False)
     scene_meta:SceneMeta=field(init=False)
@@ -126,7 +128,7 @@ class Gui_trainer():
     nerf_model_inference:NeRF=field(init=False)
     init_input: tuple=field(init=False)
     nerf_variables: Any=field(init=False)
-    bg_model: SkySphereBg=field(init=False)
+    bg_model: SkySphereBg=field(init=False, default=None)
     bg_variables: Any=field(init=False)
     optimizer: Any=field(init=False)
 
@@ -136,7 +138,6 @@ class Gui_trainer():
     loss_log:str="--"
 
     istraining:bool=field(init=False)
-    back_color:Tuple[float,float,float]=(1.0,1.0,1.0)
 
     data_step:List[int]=field(default_factory=list,init=False)
     data_pixel_quality:List[float]=field(default_factory=list,init=False)
@@ -159,11 +160,11 @@ class Gui_trainer():
         logs_dir = self.args.exp_dir.joinpath("logs")
         logs_dir.mkdir(parents=True, exist_ok=True)
         self.logger = common.setup_logging(
-        "nerf.train",
-        file=logs_dir.joinpath("train.log"),
-        with_tensorboard=True,
-        level=self.args.common.logging.upper(),
-        file_level="DEBUG",
+            "nerf.train",
+            file=logs_dir.joinpath("train.log"),
+            with_tensorboard=True,
+            level=self.args.common.logging.upper(),
+            file_level="DEBUG",
         )
         self.args.exp_dir.joinpath("config.yaml").write_text(tyro.to_yaml(self.args))
         self.logger.write_hparams(dataclasses.asdict(self.args))
@@ -595,7 +596,7 @@ class Gui_trainer():
         return state
     def stop_trainer(self):
         self.istraining=False
-    def setBackColor(self,color:Tuple[float,float,float]):
+    def setBackColor(self,color:RGBColor):
         self.back_color=color
     def get_currentStep(self):
         return self.cur_step
@@ -661,7 +662,7 @@ class TrainThread(threading.Thread):
         self.frame_updated=True
     def setMode(self,mode):
         self.mode=mode
-    def setBackColor(self,color:Tuple[float,float,float]):
+    def setBackColor(self,color:RGBColor):
         self.back_color=color
         if self.trainer:
             self.trainer.setBackColor(self.back_color)
@@ -682,6 +683,7 @@ class TrainThread(threading.Thread):
                 if self.istesting and self.needtesting:
                     self.havestart=True
                     start_time=time.time()
+                    self.trainer.setBackColor(self.back_color)
                     _,self.rgb,self.depth,self.cost=self.trainer.render_frame(self.scale,self.H,self.W)
                     if self.mode==Mode.Render:
                         self.framebuff=self.rgb
@@ -833,7 +835,7 @@ class NeRFGUI():
     cameraPosePrev:CameraPose=CameraPose()
     cameraPoseNext:CameraPose=CameraPose()
     scale_slider:Union[int,str]=field(init=False)
-    back_color:Tuple[float,float,float]=(1.0,1.0,1.0)
+    back_color:RGBColor=field(init=False)
     scale:float=1.0
     data_step:List[int]=field(default_factory=list,init=False)
     data_pixel_quality:List[float]=field(default_factory=list,init=False)
@@ -853,8 +855,9 @@ class NeRFGUI():
     ckpt:CKPT=CKPT()
     def __post_init__(self):
         self.H,self.W=self.args.viewport.H,self.args.viewport.W
+        self.back_color = self.args.render_eval.bg
         self.texture_H,self.texture_W=self.H,self.W
-        self.framebuff=np.ones(shape=(self.H,self.W,3),dtype=np.float32)#default background is white
+        self.framebuff=np.tile(np.asarray(self.back_color, dtype=np.float32), (self.H, self.W, 3))
         dpg.create_context()
         self.train_thread=None
         self.ItemsLayout()
@@ -1036,7 +1039,7 @@ class NeRFGUI():
                         self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.args.viewport.resolution_scale,
                                                             clamped=True,min_value=0.1,max_value=1.0,width=self.args.viewport.control_window_width-40,format="%.1f")
                         dpg.add_text("Background color: ")
-                        dpg.add_color_edit(tag="_BackColor", default_value=[255, 255, 255], no_alpha=True,
+                        dpg.add_color_edit(tag="_BackColor", default_value=tuple(map(lambda val: int(val * 255 + .5), self.args.render_eval.bg)), no_alpha=True,
                                                          width=self.args.viewport.control_window_width-40, callback=callback_backgroundColor)
                         with dpg.value_registry():
                             dpg.add_float_value(default_value=0.0, tag="float_value")
@@ -1166,7 +1169,7 @@ class NeRFGUI():
                 self.train_thread.test()
             #dpg.configure_item("_texture",width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb)
     def setFrameColor(self):
-        if self.train_thread :
+        if self.train_thread:
             self.train_thread.setBackColor(self.back_color)
         if self.train_thread and self.train_thread.havestart:
             self.train_thread.test()
