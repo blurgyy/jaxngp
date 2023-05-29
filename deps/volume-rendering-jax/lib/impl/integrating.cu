@@ -79,7 +79,7 @@ __global__ void integrate_rays_kernel(
     // write to global memory at last
     // stop ray marching and **set the remaining contribution to zero** as soon as the transmittance
     // of the ray drops below a threshold
-    if (ray_transmittance < T_THRESHOLD){ 
+    if (ray_transmittance <= T_THRESHOLD){ 
         float const denom = 1 - ray_transmittance;
         float idenom = 1.f / denom;
         final_rgbds[i*4+0] = r * idenom;
