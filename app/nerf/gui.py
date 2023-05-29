@@ -174,13 +174,6 @@ class Gui_trainer():
             scene_options=self.args.scene,
         )
         self.scene_meta=self.scene_train.meta
-        radius_init = self.scene_meta.bound * 2**.5 * 1.5
-        self.cameraPose,self.cameraPosePrev,self.cameraPoseNext=(
-            CameraPose(radius=radius_init),
-            CameraPose(radius=radius_init),
-            CameraPose(radius=radius_init),
-        )
-        dpg.set_value("_radius", radius_init)
 
         # model parameters
         self.nerf_model_train, self.nerf_model_inference, self.init_input = (
@@ -862,6 +855,12 @@ class NeRFGUI():
         self.scale = self.args.viewport.resolution_scale
         self.texture_H,self.texture_W=self.H,self.W
         self.framebuff=np.tile(np.asarray(self.back_color, dtype=np.float32), (self.H, self.W, 3))
+        radius_init = 4.
+        self.cameraPose,self.cameraPosePrev,self.cameraPoseNext=(
+            CameraPose(radius=radius_init),
+            CameraPose(radius=radius_init),
+            CameraPose(radius=radius_init),
+        )
         dpg.create_context()
         self.train_thread=None
         self.ItemsLayout()
