@@ -125,7 +125,6 @@ class Gui_trainer():
     gui_args:GuiWindowArgs
 
     scene_train:SceneData=field(init=False)
-    scene_val:SceneData=field(init=False)
     scene_meta:SceneMeta=field(init=False)
     val_views:ViewMetadata=field(init=False)
     
