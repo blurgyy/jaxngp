@@ -967,7 +967,7 @@ class NeRFGUI():
                 self.train_thread.stop()
                 dpg.configure_item("_button_train", label="start")
                 self.train_thread=None
-            self.framebuff=np.ones(shape=(self.texture_H,self.texture_W,3),dtype=np.float32) 
+            self.framebuff = np.tile(np.asarray(self.back_color, dtype=np.float32), (self.texture_H, self.texture_W, 3))
             self.clear_plot()
             self.ckpt=CKPT()
             dpg.set_value("_log_ckpt", "")
