@@ -24,10 +24,6 @@ from utils.types import (
     TransformJsonNGP,
     PinholeCamera
 )
-from ._utils import(
-    color_float2int,
-    color_int2float
-)
 from models.nerfs import (NeRF,SkySphereBg)
 # from guis import *
 from PIL import Image
@@ -654,11 +650,11 @@ class TrainThread(threading.Thread):
         self.havestart=False
         self.ckpt=ckpt
     def initFrame(self):
-        img=Image.new("RGB",(self.W,self.H),color_float2int(self.back_color))
-        self.framebuff=np.array(img,dtype=np.float32)/255.
-        self.rgb=np.array(img,dtype=np.float32)/255.
-        self.depth=np.array(img,dtype=np.float32)/255.
-        self.cost=np.array(img,dtype=np.float32)/255.
+        frame_init = np.tile(np.asarray(self.back_color, dtype=np.float32), (self.H, self.W, 1))
+        self.framebuff=frame_init.copy()
+        self.rgb=frame_init.copy()
+        self.depth=frame_init.copy()
+        self.cost=frame_init.copy()
         self.frame_updated=True
     def setMode(self,mode):
         self.mode=mode
@@ -859,7 +855,7 @@ class NeRFGUI():
 
         self.H,self.W=self.gui_args.H,self.gui_args.W
         self.texture_H,self.texture_W=self.H,self.W
-        self.framebuff=np.ones(shape=(self.W,self.H,3),dtype=np.float32)#default background is white
+        self.framebuff=np.ones(shape=(self.H,self.W,3),dtype=np.float32)#default background is white
         dpg.create_context()
         self.train_thread=None
         self.cameraPose,self.cameraPosePrev,self.cameraPoseNext=CameraPose(radius=self.gui_args.bound*1.5),\
@@ -868,8 +864,7 @@ class NeRFGUI():
         self.ItemsLayout()
     def ItemsLayout(self):
         def callback_backgroundColor(sender,app_data):
-            self.back_color= color_int2float(dpg.get_value("_BackColor"))
-            self.logger.info("get color:{}".format(color_int2float(dpg.get_value("_BackColor"))))
+            self.back_color=tuple(map(lambda val: val / 255, dpg.get_value("_BackColor")[:3]))
             self.setFrameColor()
         def callback_mouseDrag(sender,app_data):
             if not dpg.is_item_focused("_primary_window"):
@@ -1180,8 +1175,7 @@ class NeRFGUI():
         if self.train_thread and self.train_thread.havestart:
             self.train_thread.test()
         else:              
-            img=Image.new("RGB",(self.texture_W,self.texture_H),color_float2int(self.back_color))
-            self.framebuff=np.array(img,dtype=np.float32)/255.
+            self.framebuff=np.tile(np.asarray(self.back_color, dtype=np.float32), (self.texture_H, self.texture_W, 1))
         dpg.set_value("_texture", self.framebuff)
     def clear_plot(self):
         self.data_step.clear()
