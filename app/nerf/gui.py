@@ -508,7 +508,7 @@ class Gui_trainer():
         n_processed_rays = 0
         total_loss = None
         self.log_step=0
-        for _ in (pbar := tqdm(range(n_batches), desc="Training epoch#{:03d}".format(cur_steps), bar_format=common.tqdm_format)):
+        for _ in (pbar := tqdm(range(n_batches), desc="Training step#{:03d}".format(cur_steps), bar_format=common.tqdm_format)):
             if self.need_exit:
                 raise KeyboardInterrupt
             if not self.istraining:
