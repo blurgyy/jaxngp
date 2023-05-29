@@ -540,8 +540,11 @@ class Gui_trainer():
                     loss,
                 )
 
-            self.data_step.append(self.log_step+self.cur_step)
-            self.data_pixel_quality.append(data.linear_to_db(loss["rgb"], maxval=1))
+            self.data_step, self.data_pixel_quality = (  # the 2 lists are ploted so should be updated simultaneously
+                self.data_step + [self.log_step + self.cur_step],
+                self.data_pixel_quality + [data.linear_to_db(loss["rgb"], maxval=1)]
+            )
+
             pbar.set_description_str(
                 desc="Training step#{:03d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss:{{rgb={:.2e}({:.2f}dB),tv={:.2e}}}".format(
                     cur_steps,
