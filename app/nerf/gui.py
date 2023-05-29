@@ -129,7 +129,8 @@ class Gui_trainer():
     scene_meta:SceneMeta=field(init=False)
     val_views:ViewMetadata=field(init=False)
     
-    nerf_model:NeRF=field(init=False)
+    nerf_model_train:NeRF=field(init=False)
+    nerf_model_inference:NeRF=field(init=False)
     init_input: tuple=field(init=False)
     nerf_variables: Any=field(init=False)
     bg_model: SkySphereBg=field(init=False)
@@ -183,14 +184,15 @@ class Gui_trainer():
         self.scene_meta=self.scene_train.meta
 
         # model parameters
-        self.nerf_model, self.init_input = (
-            make_nerf_ngp(bound=self.scene_meta.bound),
+        self.nerf_model_train, self.nerf_model_inference, self.init_input = (
+            make_nerf_ngp(bound=self.scene_meta.bound, inference=False),  # TODO: add `tv_scale`
+            make_nerf_ngp(bound=self.scene_meta.bound, inference=True),
             (jnp.zeros((1, 3), dtype=jnp.float32), jnp.zeros((1, 3), dtype=jnp.float32))
         )
         self.KEY, key = jran.split(self.KEY, 2)
-        self.nerf_variables =self.nerf_model.init(key, *self.init_input)
+        self.nerf_variables =self.nerf_model_train.init(key, *self.init_input)
         if self.args.common.summary:
-            print(self.nerf_model.tabulate(key, *self.init_input))
+            print(self.nerf_model_train.tabulate(key, *self.init_input))
         
         if self.scene_meta.bg:
             self.bg_model, self.init_input = (
@@ -255,7 +257,7 @@ class Gui_trainer():
                 # unfreeze the frozen dict so that the weight_decay mask can apply, see:
                 #   <https://github.com/deepmind/optax/issues/160>
                 #   <https://github.com/google/flax/issues/1223>
-                nerf_fn=self.nerf_model.apply,
+                nerf_fn=self.nerf_model_train.apply,
                 bg_fn=self.bg_model.apply if self.scene_meta.bg else None,
                 params={
                     "nerf": self.nerf_variables["params"].unfreeze(),
@@ -335,7 +337,13 @@ class Gui_trainer():
         bg, rgb, depth, cost = render_image_inference(
             KEY=key,
             transform_cw=transform,
-            state=self.state.replace(render=self.state.render.replace(random_bg=False,bg=self.back_color)),
+            state=self.state.replace(
+                render=self.state.render.replace(
+                    random_bg=False,
+                    bg=self.back_color,
+                ),
+                nerf_fn=self.nerf_model_inference.apply,
+            ),
             #state=self.state.replace(render=self.state.render.replace(random_bg=False)),
             camera_override=self.camera,
             render_cost=True
@@ -439,7 +447,7 @@ class Gui_trainer():
                             # unfreeze the frozen dict so that the weight_decay mask can apply, see:
                             #   <https://github.com/deepmind/optax/issues/160>
                             #   <https://github.com/google/flax/issues/1223>
-                            nerf_fn=self.nerf_model.apply,
+                            nerf_fn=self.nerf_model_train.apply,
                             bg_fn=self.bg_model.apply if self.scene_meta.bg else None,
                             params={
                                 "nerf": self.nerf_variables["params"].unfreeze(),
@@ -468,7 +476,7 @@ class Gui_trainer():
         try:       
             if self.cur_step<self.gui_args.max_step and self.istraining:
                 self.KEY, key = jran.split(self.KEY, 2)
-                loss_log, self.state = self.gui_train_epoch(
+                self.state = self.gui_train_epoch(
                     KEY=key,
                     state=self.state,
                     scene=self.scene_train,
@@ -479,9 +487,6 @@ class Gui_trainer():
                     logger=self.logger,
                 )
                 self.cur_step=self.cur_step+steps
-                self.loss_log=str(loss_log)
-            loss_db = data.linear_to_db(loss_log, maxval=1)
-            self.logger.info("epoch#{:03d}: loss={:.2e}({:.2f}dB)".format(self.cur_step, loss_log, loss_db))
         except UnboundLocalError as e:
             self.logger.exception(e)
     def get_npf32_image(self,img:jnp.array,W,H)->np.array:
@@ -501,7 +506,7 @@ class Gui_trainer():
         logger: common.Logger,
     ):
         n_processed_rays = 0
-        total_loss = 0
+        total_loss = None
         self.log_step=0
         for _ in (pbar := tqdm(range(n_batches), desc="Training epoch#{:03d}".format(cur_steps), bar_format=common.tqdm_format)):
             if self.need_exit:
@@ -526,24 +531,29 @@ class Gui_trainer():
             self.log_step+=1
             cur_steps=cur_steps+1
             n_processed_rays += state.batch_config.n_rays
-            total_loss += metrics["loss"]
-            loss_log = metrics["loss"] / state.batch_config.n_rays
+            loss = metrics["loss"]
+            if total_loss is None:
+                total_loss = loss
+            else:
+                total_loss = jax.tree_util.tree_map(
+                    lambda total, new: total + new * state.batch_config.n_rays,
+                    total_loss,
+                    loss,
+                )
 
-            loss_db = data.linear_to_db(loss_log, maxval=1)
             self.data_step.append(self.log_step+self.cur_step)
-            temp_db=float(loss_log)
-            # temp_db=np.array(loss_db,dtype=np.float32)
-            self.data_loss.append(temp_db)
+            self.data_loss.append(loss["rgb"])
             pbar.set_description_str(
-                desc="Training step#{:03d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss={:.3e}({:.2f}dB)".format(
+                desc="Training step#{:03d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss:{{rgb={:.2e}({:.2f}dB),tv={:.2e}}}".format(
                     cur_steps,
                     metrics["measured_batch_size"],
                     metrics["measured_batch_size_before_compaction"],
                     state.batch_config.running_mean_effective_samples_per_ray,
                     state.batch_config.running_mean_samples_per_ray,
                     state.batch_config.n_rays,
-                    loss_log,
-                    loss_db,
+                    loss["rgb"],
+                    data.linear_to_db(loss["rgb"], maxval=1),
+                    loss["total_variation"],
                 )
             )
     
@@ -569,8 +579,9 @@ class Gui_trainer():
             self.not_compacted_batch=metrics["measured_batch_size_before_compaction"]
             self.rays_num=state.batch_config.n_rays
             if state.should_write_batch_metrics:
-                logger.write_scalar("batch/↓loss", loss_log, state.step)
-                logger.write_scalar("batch/↑loss (db)", loss_db, state.step)
+                logger.write_scalar("batch/↓loss (rgb)", loss["rgb"], state.step)
+                logger.write_scalar("batch/↑estimated PSNR (db)", data.linear_to_db(loss["rgb"], maxval=1), state.step)
+                logger.write_scalar("batch/↓loss (total variation)", loss["total_variation"], state.step)
                 logger.write_scalar("batch/effective batch size (not compacted)", metrics["measured_batch_size_before_compaction"], state.step)
                 logger.write_scalar("batch/↑effective batch size (compacted)", metrics["measured_batch_size"], state.step)
                 logger.write_scalar("rendering/↓effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
@@ -578,7 +589,7 @@ class Gui_trainer():
                 logger.write_scalar("rendering/↑number of rays", state.batch_config.n_rays, state.step)
     
             
-        return total_loss / n_processed_rays, state
+        return state
     def stop_trainer(self):
         self.istraining=False
     def setBackColor(self,color:Tuple[float,float,float]):
