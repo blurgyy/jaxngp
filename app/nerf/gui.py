@@ -836,7 +836,7 @@ class NeRFGUI():
     cameraPoseNext:CameraPose=CameraPose()
     scale_slider:Union[int,str]=field(init=False)
     back_color:RGBColor=field(init=False)
-    scale:float=1.0
+    scale:float=field(init=False)
     data_step:List[int]=field(default_factory=list,init=False)
     data_pixel_quality:List[float]=field(default_factory=list,init=False)
 
@@ -853,9 +853,15 @@ class NeRFGUI():
 
     #ckpt
     ckpt:CKPT=CKPT()
+
+    @property
+    def _effective_resolution_display(self) -> str:
+        return "{}x{}".format(*map(lambda val: int(val * self.scale), (self.W, self.H)))
+
     def __post_init__(self):
         self.H,self.W=self.args.viewport.H,self.args.viewport.W
         self.back_color = self.args.render_eval.bg
+        self.scale = self.args.viewport.resolution_scale
         self.texture_H,self.texture_W=self.H,self.W
         self.framebuff=np.tile(np.asarray(self.back_color, dtype=np.float32), (self.H, self.W, 3))
         dpg.create_context()
@@ -957,6 +963,13 @@ class NeRFGUI():
                 else:
                     dpg.set_value("_log_ckpt", "Checkpoint save path: failed ,cause no training")
                     self.logger.info("saving training state failed ,cause no training")
+        def callback_change_scale(sender, new_scale):
+            self.scale = new_scale
+            dpg.set_value("_cam_WH", self._effective_resolution_display)
+            if self.train_thread:
+                self.train_thread.set_scale(self.scale)
+                if self.train_thread.havestart:
+                    self.train_thread.test()
         def callback_reset(sender, app_data):
             self.need_train=True
             if self.train_thread:
@@ -1036,8 +1049,17 @@ class NeRFGUI():
                         dpg.add_text("", tag="_log_ckpt",wrap=self.args.viewport.control_window_width-40)
                         #resolution
                         dpg.add_text("resolution scale:")
-                        self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.args.viewport.resolution_scale,
-                                                            clamped=True,min_value=0.1,max_value=1.0,width=self.args.viewport.control_window_width-40,format="%.1f")
+                        self.scale_slider=dpg.add_slider_float(
+                            tag="_resolutionScale",
+                            label="",
+                            default_value=self.args.viewport.resolution_scale,
+                            clamped=True,
+                            min_value=0.1,
+                            max_value=1.0,
+                            width=self.args.viewport.control_window_width-40,
+                            format="%.1f",
+                            callback=callback_change_scale,
+                        )
                         dpg.add_text("Background color: ")
                         dpg.add_color_edit(tag="_BackColor", default_value=tuple(map(lambda val: int(val * 255 + .5), self.args.render_eval.bg)), no_alpha=True,
                                                          width=self.args.viewport.control_window_width-40, callback=callback_backgroundColor)
@@ -1067,8 +1089,8 @@ class NeRFGUI():
                     with dpg.collapsing_header(tag="_para_panel",label="Parameter Monitor", default_open=True):
                         dpg.bind_item_theme("_para_panel", theme_head)
                         with dpg.group(horizontal=True):
-                            dpg.add_text("Resolution(H*W): ")
-                            dpg.add_text("{}*{}".format(self.H,self.W), tag="_cam_HW")
+                            dpg.add_text("Resolution(W*H): ")
+                            dpg.add_text(self._effective_resolution_display, tag="_cam_WH")
                         with dpg.group(horizontal=True):
                             dpg.add_text("Current training step: ")
                             dpg.add_text("no data", tag="_cur_train_step")
@@ -1142,11 +1164,6 @@ class NeRFGUI():
 
         dpg.setup_dearpygui()
         dpg.show_viewport()
-    def change_scale(self):
-        if dpg.get_value(self.scale_slider)!=self.scale:
-            self.scale=dpg.get_value(self.scale_slider)
-            self.train_thread.set_scale(self.scale)
-            self.train_thread.test()
     def update_frame(self):
         self.framebuff=self.train_thread.framebuff
         dpg.set_value("_texture", self.framebuff)
@@ -1164,7 +1181,7 @@ class NeRFGUI():
             dpg.configure_item("_conrol_panel",label="Control Panel", default_open=True)
             dpg.configure_item("_para_panel",label="Parameter Monitor", default_open=True)
             dpg.configure_item("_tip_panel",label="Tips", default_open=True)
-            dpg.set_value("_cam_HW","{}*{}".format(self.H,self.W))
+            dpg.set_value("_cam_WH", self._effective_resolution_display)
             if self.train_thread:
                 self.train_thread.test()
             #dpg.configure_item("_texture",width=self.W, height=self.H,default_value=self.framebuff, format=dpg.mvFormat_Float_rgb)
@@ -1288,8 +1305,8 @@ class NeRFGUI():
                         self.set_cam_centroid()
                         self.set_cam_near()
                     self.train_thread.setMode(self.mode)
+                    self.train_thread.set_scale(self.scale)
                     self.train_thread.change_WH(self.W,self.H)
-                    self.change_scale()
                     self.update_panel()
                     if self.need_test:
                         self.train_thread.needtesting=True
