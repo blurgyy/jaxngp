@@ -968,7 +968,7 @@ class NeRFGUI():
                 if self.train_thread.havestart:
                     self.train_thread.test()
         def callback_reset(sender, app_data):
-            self.need_train=True
+            self.need_train=False
             if self.train_thread:
                 self.train_thread.stop()
                 dpg.configure_item("_button_train", label="start")
