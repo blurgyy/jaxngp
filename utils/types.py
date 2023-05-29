@@ -21,7 +21,7 @@ from volrendjax import morton3d_invert, packbits
 from ._constants import tqdm_format
 
 
-PositionalEncodingType = Literal["identity", "frequency", "hashgrid"]
+PositionalEncodingType = Literal["identity", "frequency", "hashgrid", "tcnn-hashgrid"]
 DirectionalEncodingType = Literal["identity", "sh", "shcuda"]
 EncodingType = Literal[PositionalEncodingType, DirectionalEncodingType]
 ActivationType = Literal[
@@ -366,6 +366,27 @@ class TransformJsonFrame:
     def transform_matrix_jax_array(self) -> jax.Array:
         return jnp.asarray(self.transform_matrix)
 
+    def rotate_world_up(self, up: Tuple[float, float, float] | np.ndarray) -> "TransformJsonFrame":
+        def rotmat(a, b):
+            "copied from NVLabs/instant-ngp/scripts/colmap2nerf.py"
+            a, b = a / np.linalg.norm(a), b / np.linalg.norm(b)
+            v = np.cross(a, b)
+            c = np.dot(a, b)
+            # handle exception for the opposite direction input
+            if c < -1 + 1e-10:
+                return rotmat(a + np.random.uniform(-1e-2, 1e-2, 3), b)
+            s = np.linalg.norm(v)
+            kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+            return np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2 + 1e-10))
+        up = np.asarray(up)
+        R = rotmat(up, [0, 0, 1])
+        R = np.pad(R, [0, 1])
+        R[-1, -1] = 1
+        new_transform_matrix = R @ self.transform_matrix_numpy
+        return self.replace(
+            transform_matrix=new_transform_matrix.tolist(),
+        )
+
     def scale_camera_positions(self, scale: float) -> "TransformJsonFrame":
         new_transform_matrix = self.transform_matrix_numpy
         new_transform_matrix[:3, 3] *= scale * 2
@@ -395,6 +416,13 @@ class TransformJsonBase:
     scale: float=dataclasses.field(default_factory=lambda: 1/3, kw_only=True)
 
     bg: bool=dataclasses.field(default_factory=lambda: False, kw_only=True)
+
+    up: Tuple[float, float, float]=dataclasses.field(default_factory=lambda: (0, 0, 1), kw_only=True)
+
+    def rotate_world_up(self) -> "TransformJsonBase":
+        return self.replace(
+            frames=tuple(map(lambda f: f.rotate_world_up(self.up), self.frames)),
+        )
 
     def scale_camera_positions(self) -> "TransformJsonBase":
         return self.replace(
@@ -519,13 +547,13 @@ class ViewMetadata:
 @dataclass
 class OrbitTrajectoryOptions:
     # cameras' distance to the orbiting axis
-    radius: float=1
+    radius: float=1.8
 
     # lowest height of generated trajectory
     low: float=0.0
 
     # highest height of generated trajectory
-    high: float=0.8
+    high: float=1.3
 
     # how many frames should be rendered per orbit
     n_frames_per_orbit: int=144
@@ -533,7 +561,7 @@ class OrbitTrajectoryOptions:
     n_orbit: int=2
 
     # all orbiting cameras will look at this point
-    centroid: Tuple[float, float, float]=(0., 0., 0.1)
+    centroid: Tuple[float, float, float]=(0., 0., 0.2)
 
     @property
     def n_frames(self) -> int:
@@ -731,7 +759,7 @@ class NeRFState(TrainState):
                 {"params": self.locked_params["nerf"]},
                 coords_part,
                 None,
-            ).ravel(),
+            )[0].ravel(),
             jnp.array_split(jax.lax.stop_gradient(coordinates), max(1, n_grids // (max_inference))),
         )
         new_densities = jnp.concatenate(list(new_densities))

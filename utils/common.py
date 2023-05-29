@@ -63,6 +63,12 @@ def compose(*fns):
     return _inner
 
 
+def mkValueError(desc, value, type):
+    variants = get_args(type)
+    assert value not in variants
+    return ValueError("Unexpected {}: '{}', expected one of [{}]".format(desc, value, "|".join(variants)))
+
+
 # NOTE:
 #   Jitting a vmapped function seems to give the desired performance boost, while vmapping a jitted
 #   function might not work at all.  Except for the experiments I conducted myself, some related
@@ -78,20 +84,14 @@ def vmap_jaxfn_with(
         axis_size: int | None = None,
         spmd_axis_name: Hashable | None = None,
     ):
-    return lambda fn: jax.vmap(
-            fn,
-            in_axes=in_axes,
-            out_axes=out_axes,
-            axis_name=axis_name,
-            axis_size=axis_size,
-            spmd_axis_name=spmd_axis_name,
-        )
-
-
-def mkValueError(desc, value, type):
-    variants = get_args(type)
-    assert value not in variants
-    return ValueError("Unexpected {}: '{}', expected one of [{}]".format(desc, value, "|".join(variants)))
+    return functools.partial(
+        jax.vmap, 
+        in_axes=in_axes,
+        out_axes=out_axes,
+        axis_name=axis_name,
+        axis_size=axis_size,
+        spmd_axis_name=spmd_axis_name,
+    )
 
 
 def jit_jaxfn_with(
@@ -105,17 +105,17 @@ def jit_jaxfn_with(
         keep_unused: bool = False,
         abstracted_axes: Any | None = None,
     ):
-    return lambda fn: jax.jit(
-            fn,
-            static_argnums=static_argnums,
-            static_argnames=static_argnames,
-            device=device,
-            backend=backend,
-            donate_argnums=donate_argnums,
-            inline=inline,
-            keep_unused=keep_unused,
-            abstracted_axes=abstracted_axes,
-        )
+    return functools.partial(
+        jax.jit,
+        static_argnums=static_argnums,
+        static_argnames=static_argnames,
+        device=device,
+        backend=backend,
+        donate_argnums=donate_argnums,
+        inline=inline,
+        keep_unused=keep_unused,
+        abstracted_axes=abstracted_axes,
+    )
 
 
 def setup_logging(

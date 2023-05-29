@@ -12,6 +12,7 @@ from models.encoders import (
     HashGridEncoder,
     SphericalHarmonicsEncoder,
     SphericalHarmonicsEncoderCuda,
+    TCNNHashGridEncoder,
 )
 from utils.common import mkValueError
 from utils.types import (
@@ -36,31 +37,35 @@ class NeRF(nn.Module):
     rgb_activation: Callable
 
     @nn.compact
-    def __call__(self, xyz: jax.Array, dir: jax.Array | None) -> Tuple[jax.Array, jax.Array]:
+    def __call__(
+        self,
+        xyz: jax.Array,
+        dir: jax.Array | None,
+    ) -> jax.Array | Tuple[jax.Array, jax.Array]:
         """
         Inputs:
-            xyz [..., 3]: coordinates in $\R^3$.
-            dir [..., 3]: **unit** vectors, representing viewing directions.  If `None`, only
-                           return densities.
+            xyz `[..., 3]`: coordinates in $\R^3$.
+            dir `[..., 3]`: **unit** vectors, representing viewing directions.  If `None`, only
+                            return densities.
 
         Returns:
-            density [..., 1]: density (ray terminating probability) of each query points
-            rgb [..., 3]: predicted color for each query point
+            density `[..., 1]`: density (ray terminating probability) of each query points
+            rgb `[..., 3]`: predicted color for each query point
         """
         original_aux_shapes = xyz.shape[:-1]
         xyz = xyz.reshape(-1, 3)
         # scale and translate xyz coordinates into unit cube
         xyz = (xyz + self.bound) / (2 * self.bound)
 
-        # [..., D_pos]
-        pos_enc = self.position_encoder(xyz)
+        # [..., D_pos], `float32`
+        pos_enc, tv = self.position_encoder(xyz)
 
         x = self.density_mlp(pos_enc)
         # [..., 1], [..., density_MLP_out-1]
         density, _ = jnp.split(x, [1], axis=-1)
 
         if dir is None:
-            return density.reshape(*original_aux_shapes, 1)
+            return density.reshape(*original_aux_shapes, 1), tv
         dir = dir.reshape(-1, 3)
 
         # [..., D_dir]
@@ -70,7 +75,7 @@ class NeRF(nn.Module):
 
         density, rgb = self.density_activation(density), self.rgb_activation(rgb)
 
-        return jnp.concatenate([density, rgb], axis=-1).reshape(*original_aux_shapes, 4)
+        return jnp.concatenate([density, rgb], axis=-1).reshape(*original_aux_shapes, 4), tv
 
 
 class CoordinateBasedMLP(nn.Module):
@@ -257,6 +262,9 @@ def make_nerf(
     pos_enc: PositionalEncodingType,
     dir_enc: DirectionalEncodingType,
 
+    # total variation
+    tv_scale: float,
+
     # encoding levels
     pos_levels: int,
     dir_levels: int,
@@ -282,14 +290,16 @@ def make_nerf(
     elif pos_enc == "frequency":
         raise NotImplementedError("Frequency encoding for NeRF is not tuned")
         position_encoder = FrequencyEncoder(dim=3, L=10)
-    elif pos_enc == "hashgrid":
-        position_encoder = HashGridEncoder(
+    elif "hashgrid" in pos_enc:
+        HGEncoder = TCNNHashGridEncoder if "tcnn" in pos_enc else HashGridEncoder
+        position_encoder = HGEncoder(
             dim=3,
             L=pos_levels,
             T=2**19,
             F=2,
             N_min=2**4,
             N_max=int(2**11 * bound),
+            tv_scale=tv_scale,
             param_dtype=jnp.float32,
         )
     else:
@@ -381,12 +391,25 @@ def make_skysphere_background_model_ngp(bound: float) -> SkySphereBg:
     )
 
 
-def make_nerf_ngp(bound: float) -> NeRF:
+def make_nerf_ngp(
+    bound: float,
+    inference: bool,
+    tv_scale: float=0.,
+) -> NeRF:
     return make_nerf(
         bound=bound,
 
-        pos_enc="hashgrid",
+        pos_enc=(
+            # TCNN's hash grid encoding runs faster at inference-time, but during training the JAX
+            # implementation is slightly faster.  It's possible to use one at training-time and
+            # another at inference-time, because the two implementations optimizes in an identical
+            # way (up to numerical error).
+            "tcnn-hashgrid"
+            if inference
+            else "hashgrid"
+        ),
         dir_enc="sh",
+        tv_scale=tv_scale,
 
         pos_levels=16,
         dir_levels=4,

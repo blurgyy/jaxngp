@@ -43,16 +43,14 @@ def integrate_rays_lowering_rule(
 
         "helper.counter": (1,),
 
-        "out.final_rgbs": (n_rays, 3),
-        "out.depths": (n_rays,),
+        "out.final_rgbds": (n_rays, 4),
     }
 
     return custom_call(
         call_target_name="integrate_rays",
         out_types=[
             ir.RankedTensorType.get(shapes["helper.counter"], ir.IntegerType.get_unsigned(32)),
-            ir.RankedTensorType.get(shapes["out.final_rgbs"], ir.F32Type.get()),
-            ir.RankedTensorType.get(shapes["out.depths"], ir.F32Type.get()),
+            ir.RankedTensorType.get(shapes["out.final_rgbds"], ir.F32Type.get()),
         ],
         operands=[
             rays_sample_startidx,
@@ -73,8 +71,7 @@ def integrate_rays_lowering_rule(
         ),
         result_layouts=default_layouts(
             shapes["helper.counter"],
-            shapes["out.final_rgbs"],
-            shapes["out.depths"],
+            shapes["out.final_rgbds"],
         ),
     )
 
@@ -92,12 +89,10 @@ def integrate_rays_backward_lowring_rule(
     drgbs: ir.Value,
 
     # original outputs
-    final_rgbs: ir.Value,
-    depths: ir.Value,
+    final_rgbds: ir.Value,
 
     # gradient inputs
-    dL_dfinal_rgbs: ir.Value,
-    dL_ddepths: ir.Value,
+    dL_dfinal_rgbds: ir.Value,
 ):
     n_rays, = ir.RankedTensorType(rays_sample_startidx.type).shape
     total_samples, = ir.RankedTensorType(z_vals.type).shape
@@ -113,11 +108,9 @@ def integrate_rays_backward_lowring_rule(
         "in.z_vals": (total_samples,),
         "in.drgbs": (total_samples, 4),
 
-        "in.final_rgbs": (n_rays, 3),
-        "in.depths": (n_rays,),
+        "in.final_rgbds": (n_rays, 4),
 
-        "in.dL_dfinal_rgbs": (n_rays, 3),
-        "in.dL_ddepths": (n_rays,),
+        "in.dL_dfinal_rgbds": (n_rays, 4),
 
         "out.dL_dbgs": (n_rays, 3),
         "out.dL_dz_vals": (total_samples,),
@@ -140,11 +133,9 @@ def integrate_rays_backward_lowring_rule(
             z_vals,
             drgbs,
 
-            final_rgbs,
-            depths,
+            final_rgbds,
 
-            dL_dfinal_rgbs,
-            dL_ddepths
+            dL_dfinal_rgbds,
         ],
         backend_config=opaque,
         operand_layouts=default_layouts(
@@ -155,11 +146,9 @@ def integrate_rays_backward_lowring_rule(
             shapes["in.z_vals"],
             shapes["in.drgbs"],
 
-            shapes["in.final_rgbs"],
-            shapes["in.depths"],
+            shapes["in.final_rgbds"],
 
-            shapes["in.dL_dfinal_rgbs"],
-            shapes["in.dL_ddepths"],
+            shapes["in.dL_dfinal_rgbds"],
         ),
         result_layouts=default_layouts(
             shapes["out.dL_dbgs"],
@@ -173,9 +162,8 @@ def integrate_rays_inference_lowering_rule(
     ctx: mlir.LoweringRuleContext,
 
     rays_bg: ir.Value,
-    rays_rgb: ir.Value,
+    rays_rgbd: ir.Value,
     rays_T: ir.Value,
-    rays_depth: ir.Value,
 
     n_samples: ir.Value,
     indices: ir.Value,
@@ -183,16 +171,15 @@ def integrate_rays_inference_lowering_rule(
     z_vals: ir.Value,
     drgbs: ir.Value,
 ):
-    (n_total_rays, _) = ir.RankedTensorType(rays_rgb.type).shape
+    (n_total_rays, _) = ir.RankedTensorType(rays_rgbd.type).shape
     (n_rays, march_steps_cap) = ir.RankedTensorType(dss.type).shape
 
     opaque = volrendutils_cuda.make_integrating_inference_descriptor(n_total_rays, n_rays, march_steps_cap)
 
     shapes = {
         "in.rays_bg": (n_total_rays, 3),
-        "in.rays_rgb": (n_total_rays, 3),
+        "in.rays_rgbd": (n_total_rays, 4),
         "in.rays_T": (n_total_rays,),
-        "in.rays_depth": (n_total_rays,),
 
         "in.n_samples": (n_rays,),
         "in.indices": (n_rays,),
@@ -202,9 +189,8 @@ def integrate_rays_inference_lowering_rule(
 
         "out.terminate_cnt": (1,),
         "out.terminated": (n_rays,),
-        "out.rays_rgb": (n_rays, 3),
+        "out.rays_rgbd": (n_rays, 4),
         "out.rays_T": (n_rays,),
-        "out.rays_depth": (n_rays,),
     }
 
     return custom_call(
@@ -212,15 +198,13 @@ def integrate_rays_inference_lowering_rule(
         out_types=[
             ir.RankedTensorType.get(shapes["out.terminate_cnt"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.terminated"], ir.IntegerType.get_signless(1)),
-            ir.RankedTensorType.get(shapes["out.rays_rgb"], ir.F32Type.get()),
+            ir.RankedTensorType.get(shapes["out.rays_rgbd"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.rays_T"], ir.F32Type.get()),
-            ir.RankedTensorType.get(shapes["out.rays_depth"], ir.F32Type.get()),
         ],
         operands=[
             rays_bg,
-            rays_rgb,
+            rays_rgbd,
             rays_T,
-            rays_depth,
 
             n_samples,
             indices,
@@ -231,9 +215,8 @@ def integrate_rays_inference_lowering_rule(
         backend_config=opaque,
         operand_layouts=default_layouts(
             shapes["in.rays_bg"],
-            shapes["in.rays_rgb"],
+            shapes["in.rays_rgbd"],
             shapes["in.rays_T"],
-            shapes["in.rays_depth"],
 
             shapes["in.n_samples"],
             shapes["in.indices"],
@@ -244,8 +227,7 @@ def integrate_rays_inference_lowering_rule(
         result_layouts=default_layouts(
             shapes["out.terminate_cnt"],
             shapes["out.terminated"],
-            shapes["out.rays_rgb"],
+            shapes["out.rays_rgbd"],
             shapes["out.rays_T"],
-            shapes["out.rays_depth"],
         ),
     )

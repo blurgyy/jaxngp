@@ -109,13 +109,13 @@ def render_rays_train(
         occupancy_bitfield=state.ogrid.occupancy,
     )
 
-    drgbs = state.nerf_fn(
+    drgbs, tv = state.nerf_fn(
         {"params": state.params["nerf"]},
         ray_pts,
         ray_dirs,
     )
 
-    effective_samples, final_rgbs, depths = integrate_rays(
+    effective_samples, final_rgbds = integrate_rays(
         rays_sample_startidx=rays_sample_startidx,
         rays_n_samples=rays_n_samples,
         bgs=bg,
@@ -129,7 +129,7 @@ def render_rays_train(
         "measured_batch_size": jnp.where(effective_samples > 0, effective_samples, 0).sum(),
     }
 
-    return batch_metrics, final_rgbs, depths
+    return batch_metrics, final_rgbds, tv
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -158,9 +158,8 @@ def march_and_integrate_inference(
     indices: jax.Array,
 
     rays_bg: jax.Array,
-    rays_rgb: jax.Array,
+    rays_rgbd: jax.Array,
     rays_T: jax.Array,
-    rays_depth: jax.Array,
     rays_cost: jax.Array | None,
 ):
     counter, indices, n_samples, t_starts, xyzs, dss, z_vals = march_rays_inference(
@@ -183,17 +182,16 @@ def march_and_integrate_inference(
         rays_cost = rays_cost.at[indices].set(rays_cost[indices] + n_samples)
 
     xyzs = jax.lax.stop_gradient(xyzs)
-    drgbs = payload.nerf_fn(
+    drgbs, _ = payload.nerf_fn(
         {"params": locked_nerf_params},
         xyzs,
         jnp.broadcast_to(rays_d[indices, None, :], xyzs.shape),
     )
 
-    terminate_cnt, terminated, rays_rgb, rays_T, rays_depth = integrate_rays_inference(
+    terminate_cnt, terminated, rays_rgbd, rays_T = integrate_rays_inference(
         rays_bg=rays_bg,
-        rays_rgb=rays_rgb,
+        rays_rgbd=rays_rgbd,
         rays_T=rays_T,
-        rays_depth=rays_depth,
 
         n_samples=n_samples,
         indices=indices,
@@ -202,7 +200,7 @@ def march_and_integrate_inference(
         drgbs=drgbs,
     )
 
-    return terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth, rays_cost
+    return terminate_cnt, terminated, counter, indices, t_starts, rays_rgbd, rays_T, rays_cost
 
 
 def render_image_inference(
@@ -217,9 +215,8 @@ def render_image_inference(
 
     o_world, d_world = make_rays_worldspace(camera=state.scene_meta.camera, transform_cw=transform_cw)
     t_starts, t_ends = make_near_far_from_bound(state.scene_meta.bound, o_world, d_world)
-    rays_rgb = jnp.zeros((state.scene_meta.camera.n_pixels, 3), dtype=jnp.float32)
+    rays_rgbd = jnp.zeros((state.scene_meta.camera.n_pixels, 4), dtype=jnp.float32)
     rays_T = jnp.ones(state.scene_meta.camera.n_pixels, dtype=jnp.float32)
-    rays_depth = jnp.zeros(state.scene_meta.camera.n_pixels, dtype=jnp.float32)
     if render_cost:
         rays_cost = jnp.zeros(state.scene_meta.camera.n_pixels, dtype=jnp.uint32)
     else:
@@ -231,12 +228,11 @@ def render_image_inference(
         bg = jran.uniform(key, (3,), dtype=jnp.float32, minval=0, maxval=1)
     else:
         bg = state.render.bg
-    rays_bg = jnp.broadcast_to(jnp.asarray(bg), rays_rgb.shape)
+    rays_bg = jnp.broadcast_to(jnp.asarray(bg), (state.scene_meta.camera.n_pixels, 3))
 
-    o_world, d_world, t_starts, t_ends, rays_bg, rays_rgb, rays_T, rays_depth = map(
-        jax.lax.stop_gradient,
-        [o_world, d_world, t_starts, t_ends, rays_bg, rays_rgb, rays_T, rays_depth],
-    )
+    o_world, d_world, t_starts, t_ends, rays_bg, rays_rgbd, rays_T = jax.lax.stop_gradient((
+        o_world, d_world, t_starts, t_ends, rays_bg, rays_rgbd, rays_T
+    ))
 
     if state.batch_config.mean_effective_samples_per_ray > 7:
         march_steps_cap = max(4, min(state.batch_config.mean_effective_samples_per_ray // 2 + 1, 8))
@@ -255,7 +251,7 @@ def render_image_inference(
         iters = 2 ** int(math.log2(iters) + 1)
 
         for _ in range(iters):
-            terminate_cnt, terminated, counter, indices, t_starts, rays_rgb, rays_T, rays_depth, rays_cost = march_and_integrate_inference(
+            terminate_cnt, terminated, counter, indices, t_starts, rays_rgbd, rays_T, rays_cost = march_and_integrate_inference(
                 payload=MarchAndIntegrateInferencePayload(
                     march_steps_cap=march_steps_cap,
                     diagonal_n_steps=state.raymarch.diagonal_n_steps,
@@ -277,14 +273,14 @@ def render_image_inference(
                 indices=indices,
 
                 rays_bg=rays_bg,
-                rays_rgb=rays_rgb,
+                rays_rgbd=rays_rgbd,
                 rays_T=rays_T,
-                rays_depth=rays_depth,
                 rays_cost=rays_cost,
             )
             n_rendered_rays += terminate_cnt
 
     bg_array_f32 = rays_bg.reshape((state.scene_meta.camera.H, state.scene_meta.camera.W, 3))
+    rays_rgb, rays_depth = jnp.array_split(rays_rgbd, [3], axis=-1)
     image_array_u8 = f32_to_u8(rays_rgb).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W, 3))
     rays_depth_f32 = rays_depth / (state.scene_meta.bound * 2 + jnp.linalg.norm(transform_cw.translation))
     depth_array_u8 = f32_to_u8(rays_depth_f32).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W))

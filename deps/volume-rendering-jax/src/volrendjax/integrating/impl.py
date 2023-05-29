@@ -58,7 +58,7 @@ def __integrate_rays(
 ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     bgs = jax.numpy.broadcast_to(bgs, (rays_sample_startidx.shape[0], 3))
 
-    counter, final_rgbs, depths = integrate_rays_p.bind(
+    counter, final_rgbds = integrate_rays_p.bind(
         rays_sample_startidx,
         rays_n_samples,
         bgs,
@@ -67,7 +67,7 @@ def __integrate_rays(
         drgbs,
     )
 
-    return counter, final_rgbs, depths
+    return counter, final_rgbds
 
 def __fwd_integrate_rays(
     rays_sample_startidx: jax.Array,
@@ -87,7 +87,7 @@ def __fwd_integrate_rays(
         z_vals,
         drgbs,
     )
-    counter, final_rgbs, depths = primal_outputs
+    counter, final_rgbds = primal_outputs
     aux = {
         "in.rays_sample_startidx": rays_sample_startidx,
         "in.rays_n_samples": rays_n_samples,
@@ -97,13 +97,12 @@ def __fwd_integrate_rays(
         "in.drgbs": drgbs,
 
         "out.counter": counter,
-        "out.final_rgbs": final_rgbs,
-        "out.depths": depths,
+        "out.final_rgbds": final_rgbds,
     }
     return primal_outputs, aux
 
 def __bwd_integrate_rays(aux, grads):
-    _, dL_dfinal_rgbs, dL_ddepths = grads
+    _, dL_dfinal_rgbds = grads
     dL_dbgs, dL_dz_vals, dL_ddrgbs = integrate_rays_bwd_p.bind(
         aux["in.rays_sample_startidx"],
         aux["in.rays_n_samples"],
@@ -112,11 +111,9 @@ def __bwd_integrate_rays(aux, grads):
         aux["in.z_vals"],
         aux["in.drgbs"],
 
-        aux["out.final_rgbs"],
-        aux["out.depths"],
+        aux["out.final_rgbds"],
 
-        dL_dfinal_rgbs,
-        dL_ddepths,
+        dL_dfinal_rgbds,
     )
     return (
         # First 2 primal inputs are integer-valued arrays (`rays_sample_startidx`,

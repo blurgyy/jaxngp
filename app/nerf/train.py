@@ -5,6 +5,7 @@ import time
 from typing import Any, Dict, List, Tuple
 
 from flax.training import checkpoints
+import jax
 import jax.numpy as jnp
 import jax.random as jran
 import optax
@@ -37,7 +38,7 @@ def train_epoch(
     logger: common.Logger,
 ) -> Tuple[NeRFState, Dict[str, Any]]:
     n_processed_rays = 0
-    total_loss = 0
+    total_loss = None
     interrupted = False
 
     try:
@@ -52,12 +53,18 @@ def train_epoch(
                 perm=perm,
             )
             n_processed_rays += state.batch_config.n_rays
-            total_loss += metrics["loss"]
+            loss = metrics["loss"]
+            if total_loss is None:
+                total_loss = loss
+            else:
+                total_loss = jax.tree_util.tree_map(
+                    lambda total, new: total + new * state.batch_config.n_rays,
+                    total_loss,
+                    loss,
+                )
 
-            loss_log = metrics["loss"] / state.batch_config.n_rays
-            loss_db = data.linear_to_db(loss_log, maxval=1)
             pbar.set_description_str(
-                desc="Training epoch#{:03d}/{:d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss={:.3e}({:.2f}dB)".format(
+                desc="Training epoch#{:03d}/{:d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss:{{rgb={:.2e}({:.2f}dB),tv={:.2e}}}".format(
                     ep_log,
                     total_epochs,
                     metrics["measured_batch_size"],
@@ -65,8 +72,9 @@ def train_epoch(
                     state.batch_config.running_mean_effective_samples_per_ray,
                     state.batch_config.running_mean_samples_per_ray,
                     state.batch_config.n_rays,
-                    loss_log,
-                    loss_db,
+                    loss["rgb"],
+                    data.linear_to_db(loss["rgb"], maxval=1),
+                    loss["total_variation"],
                 )
             )
 
@@ -90,8 +98,9 @@ def train_epoch(
                 state = state.replace(batch_config=state.batch_config.commit(total_samples))
 
             if state.should_write_batch_metrics:
-                logger.write_scalar("batch/↓loss", loss_log, state.step)
-                logger.write_scalar("batch/↑loss (db)", loss_db, state.step)
+                logger.write_scalar("batch/↓loss (rgb)", loss["rgb"], state.step)
+                logger.write_scalar("batch/↑estimated PSNR (db)", data.linear_to_db(loss["rgb"], maxval=1), state.step)
+                logger.write_scalar("batch/↓loss (total variation)", loss["total_variation"], state.step)
                 logger.write_scalar("batch/effective batch size (not compacted)", metrics["measured_batch_size_before_compaction"], state.step)
                 logger.write_scalar("batch/↑effective batch size (compacted)", metrics["measured_batch_size"], state.step)
                 logger.write_scalar("rendering/↓effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
@@ -146,7 +155,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
 
     # model parameters
     nerf_model, init_input = (
-        make_nerf_ngp(bound=scene_meta.bound),
+        make_nerf_ngp(bound=scene_meta.bound, inference=False, tv_scale=args.train.tv_scale),
         (jnp.zeros((1, 3), dtype=jnp.float32), jnp.zeros((1, 3), dtype=jnp.float32))
     )
     KEY, key = jran.split(KEY, 2)
@@ -252,11 +261,19 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             logger.info("exiting cleanly ...")
             exit()
 
-        loss_log = metrics["total_loss"] / metrics["n_processed_rays"]
-        loss_db = data.linear_to_db(loss_log, maxval=1)
-        logger.info("epoch#{:03d}: loss={:.2e}({:.2f}dB)".format(ep_log, loss_log, loss_db))
-        logger.write_scalar("epoch/↓loss", loss_log, step=ep_log)
-        logger.write_scalar("epoch/↑loss (db)", loss_db, step=ep_log)
+        mean_loss = jax.tree_util.tree_map(
+            lambda val: val / metrics["n_processed_rays"],
+            metrics["total_loss"],
+        )
+        logger.info("epoch#{:03d}: loss:{{rgb={:.3e}({:.2f}dB),tv={:.3e}}}".format(
+            ep_log,
+            mean_loss["rgb"],
+            data.linear_to_db(mean_loss["rgb"], maxval=1,),
+            mean_loss["total_variation"],
+        ))
+        logger.write_scalar("epoch/↓loss (rgb)", mean_loss["rgb"], step=ep_log)
+        logger.write_scalar("epoch/↑estimated PSNR (db)", data.linear_to_db(mean_loss["rgb"], maxval=1), step=ep_log)
+        logger.write_scalar("batch/↓loss (total variation)", mean_loss["total_variation"], state.step)
 
         logger.info("saving training state ... ")
         ckpt_name = checkpoints.save_checkpoint(
