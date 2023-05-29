@@ -89,7 +89,7 @@ class CameraPose():
         self.phi=mod(self.phi)
         c2w = self.pose_spherical(self.theta,self.phi,self.radius)
         #translate
-        self.centroid = np.asarray(self.centroid) + .5 * self.tx * c2w[:3, 0] + .5 * self.ty * c2w[:3, 1]
+        self.centroid = np.asarray(self.centroid) + self.tx * c2w[:3, 0] + self.ty * c2w[:3, 1]
         self.tx, self.ty = 0, 0
         trans_centroid=np.array([
         [1,0,0,self.centroid[0]],
@@ -100,13 +100,11 @@ class CameraPose():
         c2w =np.matmul(np.array([[-1,0,0,0],[0,0,1,0],[0,1,0,0],[0,0,0,1]]) , c2w)
         return jnp.asarray(c2w)
     def move(self,dx,dy):
-        velocity=0.12
-        self.theta+=velocity*dx
-        self.phi-=velocity*dy
+        self.theta+=.3*dx
+        self.phi-=.2*dy
         return self.pose
     def trans(self,dx,dy):
-
-        velocity=0.003
+        velocity=8e-4
         self.tx-=dx*velocity*self.radius
         self.ty+=dy*velocity*self.radius
         return self.pose
