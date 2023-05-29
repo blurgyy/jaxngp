@@ -70,7 +70,7 @@ def train_step(
         else:
             bg = jnp.asarray(state.render.bg)
         KEY, key = jran.split(KEY, 2)
-        batch_metrics, pred_rgbds = render_rays_train(
+        batch_metrics, pred_rgbds, tv = render_rays_train(
             KEY=key,
             o_world=o_world,
             d_world=d_world,
@@ -80,29 +80,22 @@ def train_step(
         )
         pred_rgbs, pred_depths = jnp.array_split(pred_rgbds, [3], axis=-1)
         gt_rgbs = data.blend_rgba_image_array(imgarr=gt_rgba_f32, bg=bg)
-        # from NVLabs/instant-ngp/commit/d6c7241de9be5be1b6d85fe43e446d2eb042511b:
-        #   Note: we divide the huber loss by a factor of 5 such that its L2 region near zero
-        #   matches with the L2 loss and error numbers become more comparable. This allows reading
-        #   off dB numbers of ~converged models and treating them as approximate PSNR to compare
-        #   with other NeRF methods. Self-normalizing optimizers such as Adam are agnostic to such
-        #   constant factors; optimization is therefore unaffected.
-        # Multiplying by 2 here to match the loss scale of ~converged model as in
-        # NVLabs/instant-ngp.
-        loss = optax.huber_loss(pred_rgbs, gt_rgbs, delta=0.1).mean() * 2
+        batch_metrics["loss"] = {
+            # Scale huber loss by 2 here to match the loss scale of ~converged model so that the dB
+            # number approximates PSNR.
+            "rgb": optax.huber_loss(pred_rgbs, gt_rgbs, delta=0.1).mean() * 2,
+            "total_variation": tv,
+        }
+        loss = jax.tree_util.tree_reduce(lambda x, y: x + y, batch_metrics["loss"])
         return loss, batch_metrics
 
     loss_grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
 
     KEY, key = jran.split(KEY, 2)
-    (loss, batch_metrics), grads = loss_grad_fn(
+    (_, batch_metrics), grads = loss_grad_fn(
         state.params,
         scene.all_rgbas_u8[perm].astype(jnp.float32) / 255,
         key,
     )
     state = state.apply_gradients(grads=grads)
-    metrics = {
-        "loss": loss * perm.shape[0],
-        **batch_metrics,
-    }
-    return state, metrics
-
+    return state, batch_metrics

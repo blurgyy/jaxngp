@@ -759,7 +759,7 @@ class NeRFState(TrainState):
                 {"params": self.locked_params["nerf"]},
                 coords_part,
                 None,
-            ).ravel(),
+            )[0].ravel(),
             jnp.array_split(jax.lax.stop_gradient(coordinates), max(1, n_grids // (max_inference))),
         )
         new_densities = jnp.concatenate(list(new_densities))

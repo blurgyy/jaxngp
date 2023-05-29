@@ -32,7 +32,9 @@ class TrainingArgs:
     # learning rate
     lr: float
 
-    momentum: float | None
+    # scalar multipled to total variation loss, set this to a positive value to enable calculation
+    # of TV loss
+    tv_scale: float
 
     # batch size
     bs: int
@@ -74,7 +76,7 @@ class ImageFitArgs:
         #
         # We use a smaller learning rate since our batch size is much smaller the paper (see below).
         lr=1e-3,
-        momentum=None,  # using adam so momentum doesn't matter
+        tv_scale=0.,
         # paper:
         #   ...as well a a batch size of 2^{14} for neural radiance caching and 2^{18} otherwise.
         #
@@ -120,7 +122,7 @@ class NeRFTrainingArgs(NeRFArgsBase):
         # `threasholded_exponential` as density activation, and random color as supervision for
         # transparent pixels.
         lr=1e-2,
-        momentum=None,
+        tv_scale=0.,
         bs=1024 * (1<<10),
         n_epochs=50,
         n_batches=2**10,

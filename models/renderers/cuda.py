@@ -109,7 +109,7 @@ def render_rays_train(
         occupancy_bitfield=state.ogrid.occupancy,
     )
 
-    drgbs = state.nerf_fn(
+    drgbs, tv = state.nerf_fn(
         {"params": state.params["nerf"]},
         ray_pts,
         ray_dirs,
@@ -129,7 +129,7 @@ def render_rays_train(
         "measured_batch_size": jnp.where(effective_samples > 0, effective_samples, 0).sum(),
     }
 
-    return batch_metrics, final_rgbds
+    return batch_metrics, final_rgbds, tv
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -182,7 +182,7 @@ def march_and_integrate_inference(
         rays_cost = rays_cost.at[indices].set(rays_cost[indices] + n_samples)
 
     xyzs = jax.lax.stop_gradient(xyzs)
-    drgbs = payload.nerf_fn(
+    drgbs, _ = payload.nerf_fn(
         {"params": locked_nerf_params},
         xyzs,
         jnp.broadcast_to(rays_d[indices, None, :], xyzs.shape),

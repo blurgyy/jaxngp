@@ -57,15 +57,15 @@ class NeRF(nn.Module):
         # scale and translate xyz coordinates into unit cube
         xyz = (xyz + self.bound) / (2 * self.bound)
 
-        # [..., D_pos]
-        pos_enc = self.position_encoder(xyz)
+        # [..., D_pos], `float32`
+        pos_enc, tv = self.position_encoder(xyz)
 
         x = self.density_mlp(pos_enc)
         # [..., 1], [..., density_MLP_out-1]
         density, _ = jnp.split(x, [1], axis=-1)
 
         if dir is None:
-            return density.reshape(*original_aux_shapes, 1)
+            return density.reshape(*original_aux_shapes, 1), tv
         dir = dir.reshape(-1, 3)
 
         # [..., D_dir]
@@ -75,7 +75,7 @@ class NeRF(nn.Module):
 
         density, rgb = self.density_activation(density), self.rgb_activation(rgb)
 
-        return jnp.concatenate([density, rgb], axis=-1).reshape(*original_aux_shapes, 4)
+        return jnp.concatenate([density, rgb], axis=-1).reshape(*original_aux_shapes, 4), tv
 
 
 class CoordinateBasedMLP(nn.Module):
@@ -262,6 +262,9 @@ def make_nerf(
     pos_enc: PositionalEncodingType,
     dir_enc: DirectionalEncodingType,
 
+    # total variation
+    tv_scale: float,
+
     # encoding levels
     pos_levels: int,
     dir_levels: int,
@@ -296,6 +299,7 @@ def make_nerf(
             F=2,
             N_min=2**4,
             N_max=int(2**11 * bound),
+            tv_scale=tv_scale,
             param_dtype=jnp.float32,
         )
     else:
@@ -387,7 +391,11 @@ def make_skysphere_background_model_ngp(bound: float) -> SkySphereBg:
     )
 
 
-def make_nerf_ngp(bound: float, inference: bool) -> NeRF:
+def make_nerf_ngp(
+    bound: float,
+    inference: bool,
+    tv_scale: float=0.,
+) -> NeRF:
     return make_nerf(
         bound=bound,
 
@@ -401,6 +409,7 @@ def make_nerf_ngp(bound: float, inference: bool) -> NeRF:
             else "hashgrid"
         ),
         dir_enc="sh",
+        tv_scale=tv_scale,
 
         pos_levels=16,
         dir_levels=4,

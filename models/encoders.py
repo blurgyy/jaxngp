@@ -32,6 +32,23 @@ cell_vert_offsets = {
     ]),
 }
 
+adjacent_offsets = {
+    2: jnp.asarray([
+        [0., 1.],
+        [1., 0.],
+        [0., -1.],
+        [-1., 0.],
+    ]),
+    3: jnp.asarray([
+        [0., 0., 1.],
+        [0., 1., 0.],
+        [1., 0., 0.],
+        [0., 0., -1.],
+        [0., -1., 0.],
+        [-1., 0., 0.],
+    ]),
+}
+
 
 class Encoder(nn.Module): ...
 
@@ -52,6 +69,8 @@ class HashGridEncoder(Encoder):
     N_min: int
     # Finest resolution (512 to 524288).
     N_max: int
+
+    tv_scale: float
 
     param_dtype: Dtype = jnp.float32
 
@@ -96,22 +115,31 @@ class HashGridEncoder(Encoder):
         @jax.vmap
         def make_vert_pos(pos_scaled: jax.Array):
             # [dim]
-            pos_floored = jnp.floor(pos_scaled).astype(jnp.uint32)
+            pos_floored = jnp.floor(pos_scaled)
             # [2**dim, dim]
             vert_pos = pos_floored[None, :] + cell_vert_offsets[self.dim]
             return vert_pos.astype(jnp.uint32)
 
-        @vmap_jaxfn_with(in_axes=[0, 0])
-        @vmap_jaxfn_with(in_axes=[None, 0])
+        @jax.vmap
+        @jax.vmap
+        def make_adjacent_pos(pos_scaled: jax.Array):
+            # [dim]
+            pos_floored = jnp.floor(pos_scaled)
+            # [dim * 2, dim]
+            adjacent_pos = pos_floored[None, :] + adjacent_offsets[self.dim]
+            return adjacent_pos.astype(jnp.uint32)
+
+        @vmap_jaxfn_with(in_axes=(0, 0))
+        @vmap_jaxfn_with(in_axes=(None, 0))
         def make_tiled_indices(res, vert_pos):
             """(first 2 axes `[L, n_points]` are vmapped away)
             Inputs:
                 res `uint32` `[L]`: each hierarchy's resolution
-                vert_pos `uint32` `[L, n_points, 2**dim, dim]`: integer positions of grid cell's
-                                                                vertices, of each level
+                vert_pos `uint32` `[L, n_points, B, dim]`: integer positions of grid cell's
+                                                           vertices, of each level
 
             Returns:
-                indices `uint32` `[L, n_points, 2**dim]`: grid cell indices of the vertices
+                indices `uint32` `[L, n_points, B]`: grid cell indices of the vertices
             """
             # [dim]
             if self.dim == 2:
@@ -129,11 +157,11 @@ class HashGridEncoder(Encoder):
         def make_hash_indices(vert_pos):
             """(first 2 axes `[L, n_points]` are vmapped away)
             Inputs:
-                vert_pos `uint32` `[L, n_points, 2**dim, dim]`: integer positions of grid cell's
-                                                                vertices, of each level
+                vert_pos `uint32` `[L, n_points, B, dim]`: integer positions of grid cell's
+                                                           vertices, of each level
 
             Returns:
-                indices `uint32` `[L, n_points, 2**dim]`: grid cell indices of the vertices
+                indices `uint32` `[L, n_points, B]`: grid cell indices of the vertices
             """
             # use primes as reported in the paper
             primes = jnp.asarray([1, 2_654_435_761, 805_459_861], dtype=jnp.uint32)
@@ -144,6 +172,18 @@ class HashGridEncoder(Encoder):
                 indices = vert_pos[:, 0] ^ (vert_pos[:, 1] * primes[1]) ^ (vert_pos[:, 2] * primes[2])
             else:
                 raise NotImplementedError("{} is only implemented for 2D and 3D data".format(__class__.__name__))
+            return indices
+
+        def make_indices(vert_pos, resolutions, first_hash_level):
+            if first_hash_level > 0:
+                resolutions = jnp.asarray(resolutions, dtype=jnp.uint32)
+                indices = make_tiled_indices(resolutions[:first_hash_level], vert_pos[:first_hash_level, ...])
+            else:
+                indices = jnp.empty(0, dtype=jnp.uint32)
+            if first_hash_level < self.L:
+                indices = jnp.concatenate([indices, make_hash_indices(vert_pos[first_hash_level:, ...])], axis=0)
+            indices = jnp.mod(indices, self.T)
+            indices += jnp.asarray(offsets[:-1], dtype=jnp.uint32)[:, None, None]
             return indices
 
         @jax.vmap
@@ -176,28 +216,37 @@ class HashGridEncoder(Encoder):
         pos_scaled = pos[None, :, :] * scales[:, None, None] + 0.5
         # [L, n_points, 2**dim, dim]
         vert_pos = make_vert_pos(pos_scaled)
-        if first_hash_level > 0:
-            resolutions = jnp.asarray(resolutions, dtype=jnp.uint32)
-            indices = make_tiled_indices(resolutions[:first_hash_level], vert_pos[:first_hash_level, ...])
-        else:
-            indices = jnp.empty(0, dtype=jnp.uint32)
-        if first_hash_level < self.L:
-            indices = jnp.concatenate([indices, make_hash_indices(vert_pos[first_hash_level:, ...])], axis=0)
 
         # [L, n_points, 2**dim]
-        indices = jnp.mod(indices, self.T)
-        indices += jnp.asarray(offsets[:-1], dtype=jnp.uint32)[:, None, None]
+        indices = make_indices(vert_pos, resolutions, first_hash_level)
 
         # [L, n_points, 2**dim, F]
         vert_latents = latents[indices]
         # [L, n_points, 2**dim]
         vert_weights = lerp_weights(pos_scaled)
 
-        # [L, pos.shape[0], F]
+        # [L, n_points, F]
         encodings = (vert_latents * vert_weights[..., None]).sum(axis=-2)
-        # [pos.shape[0], L*F]
+        # [n_points, L*F]
         encodings = encodings.transpose(1, 0, 2).reshape(-1, self.L * self.F)
-        return encodings
+
+        ## Total variation
+        if self.tv_scale > 0:
+            # [L, n_points, dim * 2, dim]
+            adjacent_pos = make_adjacent_pos(pos_scaled)
+
+            # [L, n_points, dim * 2]
+            adjacent_indices = make_indices(adjacent_pos, resolutions, first_hash_level)
+
+            # [L, n_points, dim * 2, F]
+            adjacent_latents = latents[adjacent_indices]
+
+            # [L, n_points, dim * 2, F]
+            tv = self.tv_scale * jnp.square(adjacent_latents - vert_latents[:, :, :1, :]).mean()
+        else:
+            tv = 0
+
+        return encodings, tv
 
 
 @empty_impl
@@ -243,7 +292,7 @@ class TCNNHashGridEncoder(HashGridEncoder):
             offset_table_data=jnp.asarray(offsets, dtype=jnp.uint32),
             coords_rm=pos.T,
             params=latents,
-        ).T
+        ).T, 0
 
 
 @empty_impl
