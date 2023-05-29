@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import dataclasses
 from pathlib import Path
 from typing import Tuple
 
@@ -197,40 +198,30 @@ class NeRFTestingArgs(NeRFArgsBase):
         resolution_scale=1.0,
     )
 
-@dataclass
-class GuiWindowArgs():
-    # directories or transform.json files containing data for training
-    frames_train: tyro.conf.Positional[Tuple[Path, ...]]
-    exp_dir: Path
 
-    W:int=1024
-    H:int=768
-    resolution_scale=0.3
-    common: CommonArgs=CommonArgs()
-    scene: SceneOptions=SceneOptions(
-        sharpness_threshold=-1.,
-        world_scale=1.0,
-        resolution_scale=1.0,
+@dataclass(frozen=True, kw_only=True)
+class NeRFGUIArgs(NeRFTrainingArgs):
+
+    @dataclass(frozen=True, kw_only=True)
+    class ViewportOptions:
+        W: int=1024
+        H: int=768
+
+        resolution_scale=0.3
+
+        control_window_width: int=300
+
+        #max number of loss steps shown on gui
+        max_show_loss_step: int=200
+
+    viewport: ViewportOptions=ViewportOptions()
+
+    train: TrainingArgs=TrainingArgs(
+        lr=1e-2,
+        tv_scale=0.,
+        bs=1<<18,
+        n_batches=5,  # render a frame every 5 steps
+        n_epochs=50,  # ignored
+        data_loop=1,  # ignored
+        validate_every=10,  # ignored
     )
-    bound:float=2.0*scene.world_scale
-
-    raymarch: RayMarchingOptions=RayMarchingOptions(
-        diagonal_n_steps=1<<10,
-        perturb=False,
-        density_grid_res=128,
-    )
-    render: RenderingOptions=RenderingOptions(
-        bg=(0.0, 0.0, 0.0),  # black
-        random_bg=False,
-    )
-    max_step:int=100_000_000
-
-    train_steps:int=5 #training steps before every rendering
-
-    control_window_width:int=300
-    # batch size
-    bs: int=25_0000
-    # number of latest checkpoints to keep
-    keep: int=1
-    #max number of loss steps shown on gui
-    max_show_loss_step:int=200

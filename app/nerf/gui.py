@@ -13,7 +13,7 @@ from tqdm import tqdm
 import threading
 import dearpygui.dearpygui as dpg
 import ctypes
-from utils.args import GuiWindowArgs, NeRFTrainingArgs,GuiWindowArgs
+from utils.args import NeRFGUIArgs
 from .train import *
 from utils.data import load_transform_json_recursive,merge_transforms,mono_to_rgb
 from utils.types import (
@@ -115,14 +115,12 @@ class CameraPose():
 @dataclass
 class Gui_trainer():
     KEY: jran.KeyArray
-    args: NeRFTrainingArgs
+    args: NeRFGUIArgs
     logger: common.Logger
     camera_pose:jnp.array
-    gui_args:GuiWindowArgs
 
     scene_train:SceneData=field(init=False)
     scene_meta:SceneMeta=field(init=False)
-    val_views:ViewMetadata=field(init=False)
 
     nerf_model_train:NeRF=field(init=False)
     nerf_model_inference:NeRF=field(init=False)
@@ -177,10 +175,17 @@ class Gui_trainer():
             scene_options=self.args.scene,
         )
         self.scene_meta=self.scene_train.meta
+        radius_init = self.scene_meta.bound * 2**.5 * 1.5
+        self.cameraPose,self.cameraPosePrev,self.cameraPoseNext=(
+            CameraPose(radius=radius_init),
+            CameraPose(radius=radius_init),
+            CameraPose(radius=radius_init),
+        )
+        dpg.set_value("_radius", radius_init)
 
         # model parameters
         self.nerf_model_train, self.nerf_model_inference, self.init_input = (
-            make_nerf_ngp(bound=self.scene_meta.bound, inference=False),  # TODO: add `tv_scale`
+            make_nerf_ngp(bound=self.scene_meta.bound, inference=False, tv_scale=self.args.train.tv_scale),
             make_nerf_ngp(bound=self.scene_meta.bound, inference=True),
             (jnp.zeros((1, 3), dtype=jnp.float32), jnp.zeros((1, 3), dtype=jnp.float32))
         )
@@ -262,12 +267,12 @@ class Gui_trainer():
             )
             self.state=self.state.mark_untrained_density_grid()
         self.camera=PinholeCamera(
-            W=self.gui_args.W,
-            H=self.gui_args.H,
+            W=self.args.viewport.W,
+            H=self.args.viewport.H,
             fx=self.scene_meta.camera.fx,
             fy=self.scene_meta.camera.fy,
-            cx=self.gui_args.W/ 2,
-            cy=self.gui_args.H / 2,
+            cx=self.args.viewport.W/ 2,
+            cy=self.args.viewport.H / 2,
             near=self.camera_near,
         )
         #  # training state
@@ -345,10 +350,10 @@ class Gui_trainer():
         )
 
         # self.logger.info("cost shape:{},cost dtype:{}".format(cost.shape,cost.dtype))
-        bg=self.get_npf32_image(bg,W=self.gui_args.W,H=self.gui_args.H)
-        rgb=self.get_npf32_image(rgb,W=self.gui_args.W,H=self.gui_args.H)
-        depth=self.color_depth(depth,W=self.gui_args.W,H=self.gui_args.H)
-        cost=self.get_cost_image(cost,W=self.gui_args.W,H=self.gui_args.H)
+        bg=self.get_npf32_image(bg,W=self.args.viewport.W,H=self.args.viewport.H)
+        rgb=self.get_npf32_image(rgb,W=self.args.viewport.W,H=self.args.viewport.H)
+        depth=self.color_depth(depth,W=self.args.viewport.W,H=self.args.viewport.H)
+        cost=self.get_cost_image(cost,W=self.args.viewport.W,H=self.args.viewport.H)
         return (bg, rgb, depth,cost)
     def get_cost_image(self,cost,W,H):
         # cost=self.get_npf32_image(cost,W=W,H=H)
@@ -469,14 +474,14 @@ class Gui_trainer():
             return
         gc.collect()
         try:
-            if self.cur_step<self.gui_args.max_step and self.istraining:
+            if self.istraining:
                 self.KEY, key = jran.split(self.KEY, 2)
                 self.state = self.gui_train_epoch(
                     KEY=key,
                     state=self.state,
                     scene=self.scene_train,
                     n_batches=steps,
-                    total_samples=self.gui_args.bs,
+                    total_samples=self.args.train.bs,
                     #total_samples=self.args.train.bs,
                     cur_steps=self.cur_step,
                     logger=self.logger,
@@ -596,7 +601,7 @@ class Gui_trainer():
         return self.cur_step
     def get_logStep(self):
         return self.log_step
-    def get_state(self):
+    def get_state(self) -> NeRFState:
         return self.state
     def get_plotData(self):
         return(self.data_step,self.data_pixel_quality)
@@ -612,24 +617,22 @@ class Gui_trainer():
     def get_raysNum(self):
         return self.rays_num
 class TrainThread(threading.Thread):
-    def __init__(self,KEY,args,gui_args,logger,camera_pose,step,back_color,ckpt):
+    def __init__(self,KEY,args: NeRFGUIArgs,logger,camera_pose,step,back_color,ckpt):
         super(TrainThread,self).__init__()
 
         self.KEY=KEY
         self.args=args
-        self.gui_args=gui_args
         self.logger=logger
         self.camera_pose=camera_pose
-        self.scale=gui_args.resolution_scale
 
         self.istraining=True
         self.needUpdate=True
         self.istesting=False
         self.needtesting=False
         self.step=step
-        self.scale=gui_args.resolution_scale
+        self.scale=self.args.viewport.resolution_scale
 
-        self.H,self.W=self.gui_args.H,self.gui_args.W
+        self.H,self.W=self.args.viewport.H,self.args.viewport.W
         self.back_color=back_color
         self.framebuff=None
         self.rgb=None
@@ -664,13 +667,13 @@ class TrainThread(threading.Thread):
             self.trainer.setBackColor(self.back_color)
     def run(self):
         try:
-            self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,gui_args=self.gui_args,back_color=self.back_color,ckpt=self.ckpt)
+            self.trainer=Gui_trainer(KEY=self.KEY,args=self.args,logger=self.logger,camera_pose=self.camera_pose,back_color=self.back_color,ckpt=self.ckpt)
         except Exception as e:
             self.logger.exception(e)
             self.needUpdate=False
         while self.needUpdate:
             try:
-                if self.istraining and self.trainer and self.trainer.cur_step<self.gui_args.max_step:
+                if self.istraining and self.trainer:
                     start_time=time.time()
                     self.trainer.train_steps(self.step)
                     end_time=time.time()
@@ -761,7 +764,7 @@ class TrainThread(threading.Thread):
         for id, thread in threading._active.items():
             if thread is self:
                 return id
-    def get_state(self):
+    def get_state(self) -> NeRFState:
         return self.trainer.get_state()
     def set_camera_pose(self,camera_pose):
         if self.trainer:
@@ -814,7 +817,6 @@ class Mode(Enum):
 
 @dataclass
 class NeRFGUI():
-
     framebuff:Any= field(init=False)
     H:int= field(init=False)
     W:int= field(init=False)
@@ -823,14 +825,13 @@ class NeRFGUI():
     istesting:bool=False
     train_thread:TrainThread= field(init=False)
 
-    train_args: NeRFTrainingArgs= field(init=False)
-    gui_args:GuiWindowArgs=None
+    args:NeRFGUIArgs=None
 
     KEY: jran.KeyArray=None
     logger: logging.Logger=None
-    cameraPose:CameraPose=field(init=False)
-    cameraPosePrev:CameraPose=field(init=False)
-    cameraPoseNext:CameraPose=field(init=False)
+    cameraPose:CameraPose=CameraPose()
+    cameraPosePrev:CameraPose=CameraPose()
+    cameraPoseNext:CameraPose=CameraPose()
     scale_slider:Union[int,str]=field(init=False)
     back_color:Tuple[float,float,float]=(1.0,1.0,1.0)
     scale:float=1.0
@@ -851,16 +852,11 @@ class NeRFGUI():
     #ckpt
     ckpt:CKPT=CKPT()
     def __post_init__(self):
-        self.train_args=NeRFTrainingArgs(frames_train=self.gui_args.frames_train,exp_dir=self.gui_args.exp_dir)
-
-        self.H,self.W=self.gui_args.H,self.gui_args.W
+        self.H,self.W=self.args.viewport.H,self.args.viewport.W
         self.texture_H,self.texture_W=self.H,self.W
         self.framebuff=np.ones(shape=(self.H,self.W,3),dtype=np.float32)#default background is white
         dpg.create_context()
         self.train_thread=None
-        self.cameraPose,self.cameraPosePrev,self.cameraPoseNext=CameraPose(radius=self.gui_args.bound*1.5),\
-                                                                CameraPose(radius=self.gui_args.bound*1.5),\
-                                                                CameraPose(radius=self.gui_args.bound*1.5)
         self.ItemsLayout()
     def ItemsLayout(self):
         def callback_backgroundColor(sender,app_data):
@@ -910,7 +906,7 @@ class NeRFGUI():
             self.mouse_pressed=False
             self.cameraPose = self.cameraPoseNext
             if self.train_thread:
-                self.train_thread.setStep(self.gui_args.train_steps)
+                self.train_thread.setStep(self.args.train.n_batches)
         def callback_mouseWheel(sender,app_data):
             if not dpg.is_item_hovered("_primary_window"):
                 return
@@ -938,8 +934,8 @@ class NeRFGUI():
                 if self.train_thread:
                     self.train_thread.istraining=True
                 else:
-                    self.train_thread=TrainThread(KEY=self.KEY,args=self.train_args,gui_args=self.gui_args,logger=self.logger,
-                                                    camera_pose=self.cameraPose.pose,step=self.gui_args.train_steps,back_color=self.back_color,ckpt=self.ckpt)
+                    self.train_thread=TrainThread(KEY=self.KEY,args=self.args,logger=self.logger,
+                                                    camera_pose=self.cameraPose.pose,step=self.args.train.n_batches,back_color=self.back_color,ckpt=self.ckpt)
                     self.train_thread.setDaemon(True)
                     self.train_thread.start()
         def callback_checkpoint(sender, app_data):
@@ -947,11 +943,11 @@ class NeRFGUI():
                 if self.train_thread and self.train_thread.trainer:
                     self.logger.info("saving training state ... ")
                     ckpt_name = checkpoints.save_checkpoint(
-                        self.gui_args.exp_dir,
+                        self.args.exp_dir,
                         self.train_thread.get_state(),
                         step=self.train_thread.get_currentStep(),
                         overwrite=True,
-                        keep=self.gui_args.keep,
+                        keep=self.args.train.keep,
                     )
                     dpg.set_value("_log_ckpt", "Checkpoint saved path: {}".format(ckpt_name))
                     self.logger.info("training state of step {} saved to: {}".format(self.train_thread.get_logStep(), ckpt_name))
@@ -987,9 +983,9 @@ class NeRFGUI():
             file_path_name=app_data['file_path_name'][:-2]
             dpg.set_value('_log_ckpt',self.ckpt.parse_ckpt(file_name,file_path_name))
 
-        self.View_W,self.View_H=self.W+self.gui_args.control_window_width,self.H
+        self.View_W,self.View_H=self.W+self.args.viewport.control_window_width,self.H
         dpg.create_viewport(title='NeRF', width=self.View_W, height=self.View_H,
-                            min_width=250+self.gui_args.control_window_width,min_height=250,x_pos=0, y_pos=0)
+                            min_width=250+self.args.viewport.control_window_width,min_height=250,x_pos=0, y_pos=0)
         def cancel_callback(sender, app_data):
             pass
             # dpg.disable_item('checkpoint_file_dialog')
@@ -1034,14 +1030,14 @@ class NeRFGUI():
                             dpg.add_text("Checkpoint: ")
                             dpg.add_button(label="save", tag="_button_check_save", callback=callback_checkpoint)
                             dpg.add_button(label="load", tag="_button_check_load", callback=lambda:dpg.show_item('checkpoint_file_dialog'))
-                        dpg.add_text("", tag="_log_ckpt",wrap=self.gui_args.control_window_width-40)
+                        dpg.add_text("", tag="_log_ckpt",wrap=self.args.viewport.control_window_width-40)
                         #resolution
                         dpg.add_text("resolution scale:")
-                        self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,
-                                                            clamped=True,min_value=0.1,max_value=1.0,width=self.gui_args.control_window_width-40,format="%.1f")
+                        self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.args.viewport.resolution_scale,
+                                                            clamped=True,min_value=0.1,max_value=1.0,width=self.args.viewport.control_window_width-40,format="%.1f")
                         dpg.add_text("Background color: ")
                         dpg.add_color_edit(tag="_BackColor", default_value=[255, 255, 255], no_alpha=True,
-                                                         width=self.gui_args.control_window_width-40, callback=callback_backgroundColor)
+                                                         width=self.args.viewport.control_window_width-40, callback=callback_backgroundColor)
                         with dpg.value_registry():
                             dpg.add_float_value(default_value=0.0, tag="float_value")
                         #camera
@@ -1099,7 +1095,7 @@ class NeRFGUI():
                             dpg.add_text("Number of rays: ")
                             dpg.add_text("no data", tag="_rays_num")
                         # create plot
-                        with dpg.plot(label="pixel quality", height=self.gui_args.control_window_width-40, width=self.gui_args.control_window_width-40):
+                        with dpg.plot(label="pixel quality", height=self.args.viewport.control_window_width-40, width=self.args.viewport.control_window_width-40):
                             # optionally create legend
                             dpg.add_plot_legend()
 
@@ -1114,10 +1110,10 @@ class NeRFGUI():
                         tip2="* The mouse wheel zooms the distance between the camera and the object\n"
                         tip3="* Drag the window to resize\n"
                         tip4="* Drag the middle mouse button to translate the camera\n"
-                        dpg.add_text(tip1,wrap=self.gui_args.control_window_width-40)
-                        dpg.add_text(tip2,wrap=self.gui_args.control_window_width-40)
-                        dpg.add_text(tip3,wrap=self.gui_args.control_window_width-40)
-                        dpg.add_text(tip4,wrap=self.gui_args.control_window_width-40)
+                        dpg.add_text(tip1,wrap=self.args.viewport.control_window_width-40)
+                        dpg.add_text(tip2,wrap=self.args.viewport.control_window_width-40)
+                        dpg.add_text(tip3,wrap=self.args.viewport.control_window_width-40)
+                        dpg.add_text(tip4,wrap=self.args.viewport.control_window_width-40)
         def callback_key(sender,appdata):
             if appdata==dpg.mvKey_Q:
                 self.logger.warn("press exit key:Q ")
@@ -1155,7 +1151,7 @@ class NeRFGUI():
         if self.View_H!=dpg.get_viewport_height() or self.View_W!=dpg.get_viewport_width():
             self.View_H=dpg.get_viewport_height()
             self.View_W=dpg.get_viewport_width()
-            self.H,self.W=self.View_H,self.View_W-self.gui_args.control_window_width
+            self.H,self.W=self.View_H,self.View_W-self.args.viewport.control_window_width
             # dpg.set_item_width("_main_window",self.View_W)
             # dpg.set_item_height("_main_window",self.View_H)
             dpg.set_item_width("_primary_window",self.W)
@@ -1182,9 +1178,9 @@ class NeRFGUI():
         self.data_pixel_quality.clear()
         self.update_plot()
     def update_plot(self):
-        if len(self.data_pixel_quality)>self.gui_args.max_show_loss_step:
-            self.data_pixel_quality=self.data_pixel_quality[-self.gui_args.max_show_loss_step-1:]
-            self.data_step=self.data_step[-self.gui_args.max_show_loss_step-1:]
+        if len(self.data_pixel_quality)>self.args.viewport.max_show_loss_step:
+            self.data_pixel_quality=self.data_pixel_quality[-self.args.viewport.max_show_loss_step-1:]
+            self.data_step=self.data_step[-self.args.viewport.max_show_loss_step-1:]
         dpg.set_value('_plot', [self.data_step,self.data_pixel_quality])
         dpg.fit_axis_data("y_axis")
         dpg.fit_axis_data("x_axis")
@@ -1322,7 +1318,7 @@ def gui_exit():
     import sys
     sys.exit()
 
-def GuiWindow(KEY: jran.KeyArray, args: GuiWindowArgs, logger: logging.Logger):
-    nerfGui=NeRFGUI(gui_args=args,KEY=KEY,logger=logger)
+def GuiWindow(KEY: jran.KeyArray, args: NeRFGUIArgs, logger: logging.Logger):
+    nerfGui=NeRFGUI(args=args,KEY=KEY,logger=logger)
     nerfGui.render()
 
