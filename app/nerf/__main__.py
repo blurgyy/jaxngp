@@ -36,7 +36,7 @@ CmdGui = Annotated[
 MainArgsType = CmdTrain | CmdTest | CmdGui
 
 
-def main(args: MainArgsType):    
+def main(args: MainArgsType):
     logger = common.setup_logging("nerf")
     KEY = common.set_deterministic(args.common.seed)
 
@@ -46,7 +46,7 @@ def main(args: MainArgsType):
     elif isinstance(args, NeRFTestingArgs):
         from app.nerf.test import test
         test(KEY, args, logger)
-    elif isinstance(args,GuiWindowArgs):        
+    elif isinstance(args,GuiWindowArgs):
         from app.nerf.gui import GuiWindow
         GuiWindow(KEY, args, logger)
     else:

@@ -110,7 +110,7 @@ def rotmat(a, b):
     s = np.linalg.norm(v)
     kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
     return np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2 + 1e-10))
-def closest_point_2_lines(oa, da, ob, db): 
+def closest_point_2_lines(oa, da, ob, db):
     """
     (copied from NVLabs/instant-ngp/scripts/colmap2nerf.py)
     returns point closest to both rays of form o+t*d, and a weight factor that goes to 0 if the lines are parallel

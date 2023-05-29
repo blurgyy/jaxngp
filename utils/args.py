@@ -196,14 +196,14 @@ class NeRFTestingArgs(NeRFArgsBase):
         world_scale=1.0,
         resolution_scale=1.0,
     )
-    
+
 @dataclass
 class GuiWindowArgs():
     # directories or transform.json files containing data for training
     frames_train: tyro.conf.Positional[Tuple[Path, ...]]
     exp_dir: Path
-    
-    W:int=1024 
+
+    W:int=1024
     H:int=768
     resolution_scale=0.3
     common: CommonArgs=CommonArgs()
@@ -213,7 +213,7 @@ class GuiWindowArgs():
         resolution_scale=1.0,
     )
     bound:float=2.0*scene.world_scale
-    
+
     raymarch: RayMarchingOptions=RayMarchingOptions(
         diagonal_n_steps=1<<10,
         perturb=False,
@@ -224,10 +224,10 @@ class GuiWindowArgs():
         random_bg=False,
     )
     max_step:int=100_000_000
-    
+
     train_steps:int=5 #training steps before every rendering
-    
-    control_window_width:int=300 
+
+    control_window_width:int=300
     # batch size
     bs: int=25_0000
     # number of latest checkpoints to keep

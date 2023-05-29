@@ -33,7 +33,7 @@ class CKPT():
     need_load_ckpt=False
     ckpt_file_path:Path=Path("")
     step:int=0
-    
+
     def parse_ckpt(self,ckpt_name:str,ckpt_path:str)->str:
         sucess=False
         s=ckpt_name.split("_")
@@ -45,7 +45,7 @@ class CKPT():
                 sucess=True
             except TypeError or ValueError as e:
                 self.logger.error(e)
-            finally: 
+            finally:
                 if sucess:
                     return "checkpoint loaded from '{}'".format(self.ckpt_file_path)
                 return "Fail to load checkpoint, causing the file is not a checkpoint"
@@ -58,7 +58,7 @@ class CameraPose():
     tx:float=0.0
     ty:float=0.0
     centroid:np.ndarray=np.asarray([0.,0.,0.])
-    
+
     def pose_spherical(self,theta, phi, radius):
         trans_t=lambda t: np.array([
         [1,0,0,0],
@@ -68,7 +68,7 @@ class CameraPose():
         rot_phi=lambda phi:np.array([
             [1,0,0,0],
             [0,np.cos(phi),-np.sin(phi),0],
-            [0,np.sin(phi),np.cos(phi),0], 
+            [0,np.sin(phi),np.cos(phi),0],
             [0,0,0,1]],np.float32)
         rot_theta= lambda theta:np.array([
             [np.cos(theta),0,-np.sin(theta),0],
@@ -79,7 +79,7 @@ class CameraPose():
         #rotate
         c2w=np.matmul(rot_phi(phi/180.*np.pi),c2w)
         c2w=np.matmul(rot_theta(theta/180.*np.pi),c2w)
-         
+
         return c2w
     @property
     def pose(self):
@@ -97,14 +97,14 @@ class CameraPose():
         [0,0,0,1]],np.float32)
         c2w = np.matmul(trans_centroid, c2w)
         c2w =np.matmul(np.array([[-1,0,0,0],[0,0,1,0],[0,1,0,0],[0,0,0,1]]) , c2w)
-        return jnp.asarray(c2w) 
+        return jnp.asarray(c2w)
     def move(self,dx,dy):
         velocity=0.12
         self.theta+=velocity*dx
         self.phi-=velocity*dy
         return self.pose
     def trans(self,dx,dy):
-        
+
         velocity=0.003
         self.tx-=dx*velocity*self.radius
         self.ty+=dy*velocity*self.radius
@@ -123,7 +123,7 @@ class Gui_trainer():
     scene_train:SceneData=field(init=False)
     scene_meta:SceneMeta=field(init=False)
     val_views:ViewMetadata=field(init=False)
-    
+
     nerf_model_train:NeRF=field(init=False)
     nerf_model_inference:NeRF=field(init=False)
     init_input: tuple=field(init=False)
@@ -131,32 +131,32 @@ class Gui_trainer():
     bg_model: SkySphereBg=field(init=False)
     bg_variables: Any=field(init=False)
     optimizer: Any=field(init=False)
-    
+
     state:NeRFState=field(init=False)
     cur_step:int=0
     log_step:int=0
     loss_log:str="--"
-    
+
     istraining:bool=field(init=False)
     back_color:Tuple[float,float,float]=(1.0,1.0,1.0)
-    
+
     data_step:List[int]=field(default_factory=list,init=False)
     data_pixel_quality:List[float]=field(default_factory=list,init=False)
-    
+
     compacted_batch:int=-1
     not_compacted_batch:int=-1
     rays_num:int=-1
     camera_near:float=1.0
     camera:PinholeCamera=field(init=False)
     need_exit:bool=False
-    
+
     loading_ckpt:bool=False
     ckpt:CKPT=CKPT()
     def __post_init__(self):
         self.data_step=[]
         self.data_pixel_quality=[]
         self.cur_step=0
-        
+
         self.istraining=True
         logs_dir = self.args.exp_dir.joinpath("logs")
         logs_dir.mkdir(parents=True, exist_ok=True)
@@ -188,7 +188,7 @@ class Gui_trainer():
         self.nerf_variables =self.nerf_model_train.init(key, *self.init_input)
         if self.args.common.summary:
             print(self.nerf_model_train.tabulate(key, *self.init_input))
-        
+
         if self.scene_meta.bg:
             self.bg_model, self.init_input = (
                 make_skysphere_background_model_ngp(bound=self.scene_meta.bound),
@@ -196,7 +196,7 @@ class Gui_trainer():
             )
             self.KEY, key = jran.split(self.KEY, 2)
             self.bg_variables = self.bg_model.init(key, *self.init_input)
-            
+
         lr_sch = optax.exponential_decay(
         init_value=self.args.train.lr,
         transition_steps=10_000,
@@ -321,7 +321,7 @@ class Gui_trainer():
             near=self.camera_near,
         )
         self.camera=self.camera.scale_resolution(_scale)
-        
+
     def render_frame(self,_scale:float,_H:int,_W:int):
         self.logger.info("update frame which resolution scale is {},resolution is H:{},W:{}".format(_scale,_H,_W))
         self.set_render_camera(_scale,_H,_W)
@@ -343,7 +343,7 @@ class Gui_trainer():
             camera_override=self.camera,
             render_cost=True
         )
-        
+
         # self.logger.info("cost shape:{},cost dtype:{}".format(cost.shape,cost.dtype))
         bg=self.get_npf32_image(bg,W=self.gui_args.W,H=self.gui_args.H)
         rgb=self.get_npf32_image(rgb,W=self.gui_args.W,H=self.gui_args.H)
@@ -354,12 +354,12 @@ class Gui_trainer():
         # cost=self.get_npf32_image(cost,W=W,H=H)
         # cost=cost[:,:,np.newaxis]
         # cost=np.tile(cost,(1,1,3))
-        
+
         img=Image.fromarray(np.array(cost,dtype=np.uint8))
         img=img.convert('RGB')
         img=img.resize(size=(W,H), resample=Image.NEAREST)
         cost=np.array(img,dtype=np.float32)/255.
-        return cost   
+        return cost
     def color_depth(self,depth,W,H):
         depth=np.array(mono_to_rgb(depth)*255,dtype=np.uint8)
         img=Image.fromarray(depth,mode='RGBA')
@@ -383,7 +383,7 @@ class Gui_trainer():
         # # REF: <https://github.com/google/flax/discussions/1199#discussioncomment-635132>
         # self.state = jax.device_put(state)
         # self.logger.info("checkpoint loaded from '{}'".format(path))
-        # self.cur_step=step 
+        # self.cur_step=step
         # #self.state=self.state.mark_untrained_density_grid()
         # self.state = NeRFState.create(
         #     ogrid=OccupancyDensityGrid.create(
@@ -468,7 +468,7 @@ class Gui_trainer():
         if self.loading_ckpt:
             return
         gc.collect()
-        try:       
+        try:
             if self.cur_step<self.gui_args.max_step and self.istraining:
                 self.KEY, key = jran.split(self.KEY, 2)
                 self.state = self.gui_train_epoch(
@@ -488,8 +488,8 @@ class Gui_trainer():
         img=Image.fromarray(np.array(img,dtype=np.uint8))
         img=img.resize(size=(W,H), resample=Image.NEAREST)
         img=np.array(img,dtype=np.float32)/255.
-        return img    
-        
+        return img
+
     def gui_train_epoch(
         self,
         KEY: jran.KeyArray,
@@ -554,7 +554,7 @@ class Gui_trainer():
                     loss["total_variation"],
                 )
             )
-    
+
             if state.should_call_update_ogrid:
                 # update occupancy grid
                 for cas in range(state.scene_meta.cascades):
@@ -585,8 +585,8 @@ class Gui_trainer():
                 logger.write_scalar("rendering/↓effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
                 logger.write_scalar("rendering/↓marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
                 logger.write_scalar("rendering/↑number of rays", state.batch_config.n_rays, state.step)
-    
-            
+
+
         return state
     def stop_trainer(self):
         self.istraining=False
@@ -604,7 +604,7 @@ class Gui_trainer():
         return self.get_state().batch_config.running_mean_effective_samples_per_ray
     def get_samples_nums(self):
         return self.get_state().batch_config.running_mean_samples_per_ray
-    
+
     def get_compactedBatch(self):
         return self.compacted_batch
     def get_notCompactedBatch(self):
@@ -613,22 +613,22 @@ class Gui_trainer():
         return self.rays_num
 class TrainThread(threading.Thread):
     def __init__(self,KEY,args,gui_args,logger,camera_pose,step,back_color,ckpt):
-        super(TrainThread,self).__init__()   
-        
+        super(TrainThread,self).__init__()
+
         self.KEY=KEY
         self.args=args
         self.gui_args=gui_args
         self.logger=logger
         self.camera_pose=camera_pose
         self.scale=gui_args.resolution_scale
-        
+
         self.istraining=True
         self.needUpdate=True
         self.istesting=False
         self.needtesting=False
         self.step=step
         self.scale=gui_args.resolution_scale
-        
+
         self.H,self.W=self.gui_args.H,self.gui_args.W
         self.back_color=back_color
         self.framebuff=None
@@ -640,11 +640,11 @@ class TrainThread(threading.Thread):
         self.render_infer_time=-1
         self.data_step=[]
         self.data_pixel_quality=[]
-        
+
         self.compacted_batch=-1
         self.not_compacted_batch=-1
         self.rays_num=-1
-        
+
         self.frame_updated=False
         self.mode=Mode.Render
         self.havestart=False
@@ -678,7 +678,7 @@ class TrainThread(threading.Thread):
                     self.test()
                 if self.istesting and self.needtesting:
                     self.havestart=True
-                    start_time=time.time()    
+                    start_time=time.time()
                     _,self.rgb,self.depth,self.cost=self.trainer.render_frame(self.scale,self.H,self.W)
                     if self.mode==Mode.Render:
                         self.framebuff=self.rgb
@@ -741,25 +741,25 @@ class TrainThread(threading.Thread):
         self.istraining=False
         self.needUpdate=False
         if self.trainer:
-            
+
             self.trainer.stop_trainer()
-        thread_id = self.get_id() 
+        thread_id = self.get_id()
         self.logger.warning("Throw training thread exit Exception")
-        res = ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, 
-            ctypes.py_object(SystemExit)) 
-        if res > 1: 
-            ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, 0) 
+        res = ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id,
+            ctypes.py_object(SystemExit))
+        if res > 1:
+            ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, 0)
             self.logger.warn("Exception raise failure", category=None, stacklevel=1)
     def set_scale(self,_scale):
         self.scale=_scale
     def get_scale(self):
         return self.scale
-    def get_id(self): 
-    # returns id of the respective thread 
-        if hasattr(self, '_thread_id'): 
-            return self._thread_id 
-        for id, thread in threading._active.items(): 
-            if thread is self: 
+    def get_id(self):
+    # returns id of the respective thread
+        if hasattr(self, '_thread_id'):
+            return self._thread_id
+        for id, thread in threading._active.items():
+            if thread is self:
                 return id
     def get_state(self):
         return self.trainer.get_state()
@@ -810,11 +810,11 @@ class Mode(Enum):
     Render = 1
     Depth = 2
     Cost=3
-           
-    
+
+
 @dataclass
 class NeRFGUI():
-    
+
     framebuff:Any= field(init=False)
     H:int= field(init=False)
     W:int= field(init=False)
@@ -822,10 +822,10 @@ class NeRFGUI():
     need_train:bool=False
     istesting:bool=False
     train_thread:TrainThread= field(init=False)
-    
+
     train_args: NeRFTrainingArgs= field(init=False)
     gui_args:GuiWindowArgs=None
-    
+
     KEY: jran.KeyArray=None
     logger: logging.Logger=None
     cameraPose:CameraPose=field(init=False)
@@ -836,7 +836,7 @@ class NeRFGUI():
     scale:float=1.0
     data_step:List[int]=field(default_factory=list,init=False)
     data_pixel_quality:List[float]=field(default_factory=list,init=False)
-    
+
     texture_H:int= field(init=False)
     texture_W:int= field(init=False)
     View_H:int= field(init=False)
@@ -844,10 +844,10 @@ class NeRFGUI():
 
     exit_flag:bool=False
     mode:Mode=Mode.Render
-    
+
     mouse_pressed:bool=False
     need_test:bool=True
-    
+
     #ckpt
     ckpt:CKPT=CKPT()
     def __post_init__(self):
@@ -868,7 +868,7 @@ class NeRFGUI():
             self.setFrameColor()
         def callback_mouseDrag(sender,app_data):
             if not dpg.is_item_focused("_primary_window"):
-                return 
+                return
             if not self.need_test:
                 return
             dx=app_data[1]
@@ -881,20 +881,20 @@ class NeRFGUI():
                 self.show_cam_angle(self.cameraPoseNext.theta,self.cameraPoseNext.phi)
         def callback_midmouseDrag(sender,app_data):
             # if not dpg.is_item_hovered("_primary_window"):
-            #     return 
+            #     return
             if not self.need_test:
                 return
             dx=app_data[1]
             dy=app_data[2]
             self.cameraPoseNext = deepcopy(self.cameraPosePrev)
-            self.cameraPoseNext.trans(dx,dy)      
+            self.cameraPoseNext.trans(dx,dy)
             if self.train_thread:
                 self.train_thread.set_camera_pose(self.cameraPoseNext.pose)
                 self.train_thread.test()
                 self.show_cam_centroid(self.cameraPoseNext.centroid[0],self.cameraPoseNext.centroid[1],self.cameraPoseNext.centroid[2])
         def callback_mouseDown(sender,app_data):
             if not dpg.is_item_hovered("_primary_window"):
-                return 
+                return
             if not self.need_test:
                 return
             self.mouse_pressed=True
@@ -904,7 +904,7 @@ class NeRFGUI():
                 self.train_thread.setStep(1)
         def callback_mouseRelease(sender,app_data):
             if not dpg.is_item_hovered("_primary_window"):
-                return 
+                return
             if not self.need_test:
                 return
             self.mouse_pressed=False
@@ -913,7 +913,7 @@ class NeRFGUI():
                 self.train_thread.setStep(self.gui_args.train_steps)
         def callback_mouseWheel(sender,app_data):
             if not dpg.is_item_hovered("_primary_window"):
-                return 
+                return
             if not self.need_test:
                 return
             if self.train_thread:
@@ -922,7 +922,7 @@ class NeRFGUI():
                 self.train_thread.set_camera_pose(self.cameraPose.pose)
                 self.train_thread.test()
                 self.show_cam_radius(self.cameraPose.radius)
-                
+
         def callback_train(sender, app_data):
             if self.need_train:
                 self.need_train = False
@@ -973,12 +973,12 @@ class NeRFGUI():
                 dpg.configure_item("_button_Render", label="continue rendering")
             else:
                 dpg.configure_item("_button_Render", label="pause rendering")
-            self.need_test=not self.need_test            
+            self.need_test=not self.need_test
         def callback_mode(sender, app_data):
             #self.logger.info("sender:{},app_data:{}".format(sender,app_data))
             if app_data=="render":
                 self.mode=Mode.Render
-            elif app_data=="depth":    
+            elif app_data=="depth":
                 self.mode=Mode.Depth
             else:
                 self.mode=Mode.Cost
@@ -995,11 +995,11 @@ class NeRFGUI():
             # dpg.disable_item('checkpoint_file_dialog')
         with dpg.window(tag="_main_window",no_scrollbar=True) as main_window:
             dpg.set_primary_window("_main_window", True)
-            
+
             with dpg.file_dialog(directory_selector=False, show=False, callback=callback_loadCheckpoint, cancel_callback=cancel_callback,tag="checkpoint_file_dialog", width=700 ,height=400):
                 dpg.add_file_extension(".*")
                 dpg.add_file_extension("", color=(150, 255, 150, 255),custom_text="[Checkpoint]")
-                
+
             with dpg.group(horizontal=True):
                 #texture
                 with dpg.group(tag="_render_texture"):
@@ -1034,7 +1034,7 @@ class NeRFGUI():
                             dpg.add_text("Checkpoint: ")
                             dpg.add_button(label="save", tag="_button_check_save", callback=callback_checkpoint)
                             dpg.add_button(label="load", tag="_button_check_load", callback=lambda:dpg.show_item('checkpoint_file_dialog'))
-                        dpg.add_text("", tag="_log_ckpt",wrap=self.gui_args.control_window_width-40)    
+                        dpg.add_text("", tag="_log_ckpt",wrap=self.gui_args.control_window_width-40)
                         #resolution
                         dpg.add_text("resolution scale:")
                         self.scale_slider=dpg.add_slider_float(tag="_resolutionScale",label="",default_value=self.gui_args.resolution_scale,
@@ -1088,7 +1088,7 @@ class NeRFGUI():
                         with dpg.group(horizontal=True):
                             dpg.add_text("Mean effective samples/ray: ")
                             dpg.add_text("no data", tag="_effective_samples")
-                        
+
                         with dpg.group(horizontal=True):
                             dpg.add_text("Batch size: ")
                             dpg.add_text("no data", tag="_not_compacted_batch_size")
@@ -1126,8 +1126,8 @@ class NeRFGUI():
                 self.logger.warn("exiting cleanly ...")
                 self.exit_flag=True
 
-                
-        #IO      
+
+        #IO
         with dpg.handler_registry():
             dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseDrag)
             dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Left,callback=callback_mouseRelease)
@@ -1137,13 +1137,13 @@ class NeRFGUI():
             dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Middle,callback=callback_midmouseDrag)
             dpg.add_mouse_down_handler(button=dpg.mvMouseButton_Middle,callback=callback_mouseDown)
             dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Middle,callback=callback_mouseRelease)
-            
-            dpg.add_key_release_handler(callback=callback_key)  
-        
-        
+
+            dpg.add_key_release_handler(callback=callback_key)
+
+
         dpg.setup_dearpygui()
         dpg.show_viewport()
-    def change_scale(self):    
+    def change_scale(self):
         if dpg.get_value(self.scale_slider)!=self.scale:
             self.scale=dpg.get_value(self.scale_slider)
             self.train_thread.set_scale(self.scale)
@@ -1159,7 +1159,7 @@ class NeRFGUI():
             # dpg.set_item_width("_main_window",self.View_W)
             # dpg.set_item_height("_main_window",self.View_H)
             dpg.set_item_width("_primary_window",self.W)
-            #dpg.set_item_height("_primary_window",self.H) 
+            #dpg.set_item_height("_primary_window",self.H)
             dpg.delete_item("_img")
             dpg.add_image("_texture",tag="_img",parent="_primary_window",width=self.W-15, height=self.H-32)
             dpg.configure_item("_conrol_panel",label="Control Panel", default_open=True)
@@ -1174,12 +1174,12 @@ class NeRFGUI():
             self.train_thread.setBackColor(self.back_color)
         if self.train_thread and self.train_thread.havestart:
             self.train_thread.test()
-        else:              
+        else:
             self.framebuff=np.tile(np.asarray(self.back_color, dtype=np.float32), (self.texture_H, self.texture_W, 1))
         dpg.set_value("_texture", self.framebuff)
     def clear_plot(self):
         self.data_step.clear()
-        self.data_pixel_quality.clear() 
+        self.data_pixel_quality.clear()
         self.update_plot()
     def update_plot(self):
         if len(self.data_pixel_quality)>self.gui_args.max_show_loss_step:
@@ -1187,7 +1187,7 @@ class NeRFGUI():
             self.data_step=self.data_step[-self.gui_args.max_show_loss_step-1:]
         dpg.set_value('_plot', [self.data_step,self.data_pixel_quality])
         dpg.fit_axis_data("y_axis")
-        dpg.fit_axis_data("x_axis") 
+        dpg.fit_axis_data("x_axis")
     def set_cam_angle(self):
         try:
             theta=float(dpg.get_value("_theta"))
@@ -1196,8 +1196,8 @@ class NeRFGUI():
             #self.logger.info("theta:{},phi:{}".format(theta,phi))
             if theta!=self.cameraPose.theta or phi!=self.cameraPose.phi or radius!=self.cameraPose.radius:
                 self.cameraPose.theta=theta
-                self.cameraPose.phi=phi      
-                self.cameraPose.radius=radius   
+                self.cameraPose.phi=phi
+                self.cameraPose.radius=radius
                 self.train_thread.set_camera_pose(self.cameraPose.pose)
                 self.train_thread.test()
         except BaseException as e:
@@ -1218,9 +1218,9 @@ class NeRFGUI():
         try:
             radius=float(dpg.get_value("_radius"))
             if radius!=_radius:
-                dpg.set_value("_radius",_radius) 
+                dpg.set_value("_radius",_radius)
         except BaseException as e:
-            self.logger.error(e)    
+            self.logger.error(e)
     def set_cam_centroid(self):
         try:
             x=float(dpg.get_value("_centroid_x"))
@@ -1266,7 +1266,7 @@ class NeRFGUI():
         dpg.set_value("_fps","{}".format(self.train_thread.get_Fps()))
         dpg.set_value("_samples","{}".format(self.train_thread.get_samples_nums()))
         dpg.set_value("_effective_samples","{}".format(self.train_thread.get_effective_samples_nums()))
-        
+
         dpg.set_value("_compacted_batch_size","{}".format(self.train_thread.get_compactedBatch()))
         dpg.set_value("_not_compacted_batch_size","{}".format(self.train_thread.get_notCompactedBatch()))
         dpg.set_value("_rays_num","{}".format(self.train_thread.get_raysNum()))
@@ -1277,7 +1277,7 @@ class NeRFGUI():
             self.train_thread.trainer.load_checkpoint(self.ckpt.ckpt_file_path,self.ckpt.step)
             self.clear_plot()
             self.ckpt.need_load_ckpt=False
-    def render(self):            
+    def render(self):
         while dpg.is_dearpygui_running():
             try:
                 self.adapt_size()
@@ -1313,16 +1313,16 @@ class NeRFGUI():
                     pass
                 self.logger.warn("thread killed successfully")
                 self.logger.warn("exiting cleanly ...")
-                break 
+                break
         dpg.destroy_context()
-        
 
 
-def gui_exit(): 
+
+def gui_exit():
     import sys
     sys.exit()
 
 def GuiWindow(KEY: jran.KeyArray, args: GuiWindowArgs, logger: logging.Logger):
     nerfGui=NeRFGUI(gui_args=args,KEY=KEY,logger=logger)
     nerfGui.render()
-    
+
