@@ -4,8 +4,8 @@ from typing_extensions import assert_never
 from PIL import Image
 from flax.training import checkpoints
 import jax
-import jax.random as jran
 import jax.numpy as jnp
+import jax.random as jran
 import numpy as np
 
 from models.nerfs import make_nerf_ngp, make_skysphere_background_model_ngp

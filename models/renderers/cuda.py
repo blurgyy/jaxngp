@@ -15,11 +15,7 @@ from volrendjax import (
 
 from utils.common import jit_jaxfn_with
 from utils.data import f32_to_u8
-from utils.types import (
-    NeRFState,
-    PinholeCamera,
-    RigidTransformation,
-)
+from utils.types import NeRFState, PinholeCamera, RigidTransformation
 
 from ._utils import make_rays_worldspace
 

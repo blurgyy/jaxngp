@@ -6,7 +6,7 @@ from flax.linen.dtypes import Dtype
 import jax
 import jax.numpy as jnp
 import jax.random as jran
-from jaxtcnn import hashgrid_encode, HashGridMetadata
+from jaxtcnn import HashGridMetadata, hashgrid_encode
 import shjax
 
 from utils.common import jit_jaxfn_with, vmap_jaxfn_with

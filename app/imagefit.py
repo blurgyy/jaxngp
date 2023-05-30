@@ -14,7 +14,7 @@ from tqdm import tqdm
 import tyro
 
 from models.imagefit import ImageFitter
-from utils import data, common
+from utils import common, data
 from utils.args import ImageFitArgs
 
 
