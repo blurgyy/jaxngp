@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 from dataclasses import dataclass
-import dataclasses
 from functools import partial, reduce
 import os
 from pathlib import Path
@@ -16,8 +15,8 @@ from utils.common import setup_logging
 from utils.data import (
     add_border,
     blend_rgba_image_array,
-    create_dataset_from_single_camera_image_collection,
-    create_dataset_from_video,
+    create_scene_from_single_camera_image_collection,
+    create_scene_from_video,
     psnr,
     side_by_side,
 )
@@ -47,7 +46,7 @@ class Metrics:
 
 
 @dataclass(frozen=True, kw_only=True)
-class CreateDataset:
+class CreateScene:
     # video or directory of image collection
     src: tyro.conf.Positional[Path]
 
@@ -90,17 +89,17 @@ CmdMetrics = Annotated[
         description="compute metrics between images",
     ),
 ]
-CmdCreateDataseet = Annotated[
-    CreateDataset,
+CmdCreateScene = Annotated[
+    CreateScene,
     tyro.conf.subcommand(
-        name="create-dataset",
+        name="create-scene",
         prefix_name=False,
-        description="create a instant-ngp format dataset from a video or a directory of images",
+        description="create a instant-ngp-compatible scene from a video or a directory of images",
     ),
 ]
 
 
-Args = CmdCat | CmdCreateDataseet | CmdMetrics
+Args = CmdCat | CmdCreateScene | CmdMetrics
 
 
 def main(args: Args):
@@ -149,11 +148,11 @@ def main(args: Args):
             if args.psnr:
                 logger.info("psnr={} ({})".format(psnr(gt_image, img), impath))
 
-    elif isinstance(args, CreateDataset):
+    elif isinstance(args, CreateScene):
         if args.src.is_dir():
-            create_dataset_from_single_camera_image_collection(
+            create_scene_from_single_camera_image_collection(
                 raw_images_dir=args.src,
-                dataset_root_dir=args.root_dir,
+                scene_root_dir=args.root_dir,
                 matcher=args.matcher,
                 bound=args.bound,
                 camera_scale=args.camera_scale,
@@ -161,9 +160,9 @@ def main(args: Args):
             )
         else:
             assert args.fps is not None, "must specify extracted frames per second via --fps for video source"
-            create_dataset_from_video(
+            create_scene_from_video(
                 video_path=args.src,
-                dataset_root_dir=args.root_dir,
+                scene_root_dir=args.root_dir,
                 bound=args.bound,
                 camera_scale=args.camera_scale,
                 bg=args.bg,

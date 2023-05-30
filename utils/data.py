@@ -142,7 +142,7 @@ def write_sharpness_json(raw_images_dir: str | Path):
 
 
 def write_transforms_json(
-    dataset_root_dir: Path,
+    scene_root_dir: Path,
     images_dir: Path,
     text_model_dir: Path,
     # given that the cameras' average distance to the origin is (4.0 * `camera_scale`), what would
@@ -152,12 +152,12 @@ def write_transforms_json(
     bg: bool,
 ):
     "adapted from NVLabs/instant-ngp/scripts/colmap2nerf.py"
-    dataset_root_dir, images_dir, text_model_dir = (
-        Path(dataset_root_dir),
+    scene_root_dir, images_dir, text_model_dir = (
+        Path(scene_root_dir),
         Path(images_dir),
         Path(text_model_dir),
     )
-    rel_prefix = images_dir.relative_to(dataset_root_dir)
+    rel_prefix = images_dir.relative_to(scene_root_dir)
 
     camera = PinholeCamera.from_colmap_txt(text_model_dir.joinpath("cameras.txt"))
 
@@ -187,7 +187,7 @@ def write_transforms_json(
         ))
 
     # estimate sharpness
-    sharpnesses = ThreadPoolExecutor().map(lambda f: sharpness_of(dataset_root_dir.joinpath(f.file_path)), frames)
+    sharpnesses = ThreadPoolExecutor().map(lambda f: sharpness_of(scene_root_dir.joinpath(f.file_path)), frames)
     for i, sharpness in enumerate(tqdm(sharpnesses, total=len(frames), desc="estimating sharpness of image collection")):
         frames[i] = frames[i].replace(sharpness=sharpness)
 
@@ -251,28 +251,28 @@ def write_transforms_json(
     train_tj = all_transform_json.replace(frames=frames[:len(frames) // 2])
     val_tj = all_transform_json.replace(frames=frames[len(frames) // 2:len(frames) // 2 + len(frames) // 4])
     test_tj = all_transform_json.replace(frames=frames[len(frames) // 2 + len(frames) // 4:])
-    train_tj.save(dataset_root_dir.joinpath("transforms_train.json"))
-    val_tj.save(dataset_root_dir.joinpath("transforms_val.json"))
-    test_tj.save(dataset_root_dir.joinpath("transforms_test.json"))
+    train_tj.save(scene_root_dir.joinpath("transforms_train.json"))
+    val_tj.save(scene_root_dir.joinpath("transforms_val.json"))
+    test_tj.save(scene_root_dir.joinpath("transforms_test.json"))
     return all_transform_json
 
 
-def create_dataset_from_single_camera_image_collection(
+def create_scene_from_single_camera_image_collection(
     raw_images_dir: Path,
-    dataset_root_dir: Path,
+    scene_root_dir: Path,
     matcher: ColmapMatcherType,
     bound: float,
     camera_scale: float,
     bg: bool,
 ):
-    raw_images_dir, dataset_root_dir = Path(raw_images_dir), Path(dataset_root_dir)
-    dataset_root_dir.mkdir(parents=True, exist_ok=True)
+    raw_images_dir, scene_root_dir = Path(raw_images_dir), Path(scene_root_dir)
+    scene_root_dir.mkdir(parents=True, exist_ok=True)
 
-    artifacts_dir = dataset_root_dir.joinpath("artifacts")
+    artifacts_dir = scene_root_dir.joinpath("artifacts")
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     db_path = artifacts_dir.joinpath("colmap.db")
     sparse_reconstruction_dir = artifacts_dir.joinpath("sparse")
-    undistorted_images_dir = dataset_root_dir.joinpath("images-undistorted")
+    undistorted_images_dir = scene_root_dir.joinpath("images-undistorted")
     text_model_dir = artifacts_dir.joinpath("text")
 
     sfm.extract_features(images_dir=raw_images_dir, db_path=db_path)
@@ -302,7 +302,7 @@ def create_dataset_from_single_camera_image_collection(
     )
 
     write_transforms_json(
-        dataset_root_dir=dataset_root_dir,
+        scene_root_dir=scene_root_dir,
         images_dir=undistorted_images_dir.joinpath("images"),
         text_model_dir=text_model_dir,
         bound=bound,
@@ -311,24 +311,24 @@ def create_dataset_from_single_camera_image_collection(
     )
 
 
-def create_dataset_from_video(
+def create_scene_from_video(
     video_path: Path,
-    dataset_root_dir: Path,
+    scene_root_dir: Path,
     bound: float,
     camera_scale: float,
     bg: bool,
     fps: int,
 ):
-    video_path, dataset_root_dir = Path(video_path), Path(dataset_root_dir)
-    raw_images_dir = dataset_root_dir.joinpath("images-raw")
+    video_path, scene_root_dir = Path(video_path), Path(scene_root_dir)
+    raw_images_dir = scene_root_dir.joinpath("images-raw")
     video_to_images(
         video_in=video_path,
         images_dir=raw_images_dir,
         fps=fps,
     )
-    create_dataset_from_single_camera_image_collection(
+    create_scene_from_single_camera_image_collection(
         raw_images_dir=raw_images_dir,
-        dataset_root_dir=dataset_root_dir,
+        scene_root_dir=scene_root_dir,
         matcher="Sequential",
         bound=bound,
         camera_scale=camera_scale,
