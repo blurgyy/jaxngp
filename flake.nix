@@ -99,10 +99,7 @@
       };
       mkPythonDeps = { pp, extraPackages }: with pp; [
           ipython
-          tensorflow
-          keras
           tqdm
-          
 
           icecream
           pillow
@@ -117,14 +114,22 @@
           pkgs.pycolmap
           pkgs.tyro
 
+          tensorflow
+          keras
           jaxlib-bin
           jax
           optax
           flax
-          
+
           pillow
           matplotlib
         ] ++ extraPackages;
+      commonShellHook = ''
+        export PYTHONBREAKPOINT=ipdb.set_trace
+        export PYTHONDONTWRITEBYTECODE=1
+        export PYTHONUNBUFFERED=1
+        [[ "$-" == *i* ]] && exec "$SHELL"
+      '';
     in rec {
       default = cudaDevShell;
       cudaDevShell = cudaPkgs.mkShell {  # impure
@@ -153,8 +158,7 @@
         shellHook = ''
           source <(sed -Ee '/\$@/d' ${lib.getExe cudaPkgs.nixgl.nixGLIntel})
           source <(sed -Ee '/\$@/d' ${lib.getExe cudaPkgs.nixgl.auto.nixGLNvidia}*)
-          [[ "$-" == *i* ]] && exec "$SHELL"
-        '';
+        '' + commonShellHook;
       };
 
       cpuDevShell = cpuPkgs.mkShell {
@@ -168,8 +172,7 @@
             }))
         ];
         shellHook = ''
-          [[ "$-" == *i* ]] && exec "$SHELL"
-        '';
+        '' + commonShellHook;
       };
     };
     packages = deps.packages basePkgs;
