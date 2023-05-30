@@ -57,7 +57,7 @@ class TrainingArgs:
 
     # how many epochs should a new checkpoint to be kept (in addition to keeping the last `keep`
     # checkpoints)
-    keep_every: int | None=None
+    keep_every: int | None=8
 
     @property
     def keep_every_n_steps(self) -> int | None:
