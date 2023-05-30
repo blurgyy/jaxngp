@@ -795,8 +795,6 @@ class NeRFGUI():
             if self.train_thread:
                 self.train_thread.setStep(1)
         def callback_mouseRelease():
-            if not dpg.is_item_hovered("_primary_window"):
-                return
             if not self.need_test:
                 return
             self.mouse_pressed=False
