@@ -60,7 +60,7 @@ class CreateDataset:
     # given that cameras' average distance to origin is (4.0 * `camera_scale`), what would the
     # scene's bound be?
     # (a scene's bound is the half width of its bounding box, e.g. a scene with bound 4.0 has a
-    # bounding box with width 8.0, centered at the origin) this parameter just specifies the 
+    # bounding box with width 8.0, centered at the origin) this parameter just specifies the
     # "aabb_scale" in the generated `transforms_{train,val,test}.json`.
     bound: float=4.0
 

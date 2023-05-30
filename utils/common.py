@@ -85,7 +85,7 @@ def vmap_jaxfn_with(
         spmd_axis_name: Hashable | None = None,
     ):
     return functools.partial(
-        jax.vmap, 
+        jax.vmap,
         in_axes=in_axes,
         out_axes=out_axes,
         axis_name=axis_name,

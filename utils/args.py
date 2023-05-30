@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import dataclasses
 from pathlib import Path
 from typing import Tuple
 
@@ -195,4 +196,32 @@ class NeRFTestingArgs(NeRFArgsBase):
         sharpness_threshold=-1.,
         world_scale=1.0,
         resolution_scale=1.0,
+    )
+
+
+@dataclass(frozen=True, kw_only=True)
+class NeRFGUIArgs(NeRFTrainingArgs):
+
+    @dataclass(frozen=True, kw_only=True)
+    class ViewportOptions:
+        W: int=1024
+        H: int=768
+
+        resolution_scale=0.3
+
+        control_window_width: int=300
+
+        #max number of loss steps shown on gui
+        max_show_loss_step: int=200
+
+    viewport: ViewportOptions=ViewportOptions()
+
+    train: TrainingArgs=TrainingArgs(
+        lr=1e-2,
+        tv_scale=0.,
+        bs=1<<18,
+        n_batches=5,  # render a frame every 5 steps
+        n_epochs=50,  # ignored
+        data_loop=1,  # ignored
+        validate_every=10,  # ignored
     )

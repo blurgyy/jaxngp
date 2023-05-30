@@ -90,7 +90,6 @@ def train_step(
         return loss, batch_metrics
 
     loss_grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-
     KEY, key = jran.split(KEY, 2)
     (_, batch_metrics), grads = loss_grad_fn(
         state.params,

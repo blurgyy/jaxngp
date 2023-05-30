@@ -102,6 +102,8 @@
           tensorflow
           keras
           tqdm
+          
+
           icecream
           pillow
           ipdb
@@ -119,6 +121,9 @@
           jax
           optax
           flax
+          
+          pillow
+          matplotlib
         ] ++ extraPackages;
     in rec {
       default = cudaDevShell;
