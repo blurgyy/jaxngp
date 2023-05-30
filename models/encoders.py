@@ -242,7 +242,12 @@ class HashGridEncoder(Encoder):
             adjacent_latents = latents[adjacent_indices]
 
             # [L, n_points, dim * 2, F]
-            tv = self.tv_scale * jnp.square(adjacent_latents - vert_latents[:, :, :1, :]).mean()
+            tv = self.tv_scale * jnp.square(adjacent_latents - vert_latents[:, :, :1, :])
+
+            # [L, n_points]
+            tv = tv.sum(axis=(-2, -1))
+
+            tv = tv.mean()
         else:
             tv = 0
 
