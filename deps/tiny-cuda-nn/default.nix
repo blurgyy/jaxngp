@@ -72,7 +72,7 @@ stdenv.mkDerivation (finalAttrs: rec {
     dropDot = x: builtins.replaceStrings ["."] [""] x;
   in ''
     export TCNN_CUDA_ARCHITECTURES=${
-      lib.concatStringsSep ";" (map dropDot cudaCapabilities)
+      lib.concatStringsSep "\\;" (map dropDot cudaCapabilities)
     }
     export CUDA_HOME=${cuda-native-redist}
     export LIBRARY_PATH=${cuda-native-redist}/lib/stubs:$LIBRARY_PATH
