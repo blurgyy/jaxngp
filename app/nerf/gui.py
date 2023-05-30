@@ -284,10 +284,8 @@ class Gui_trainer():
             KEY=key,
             transform_cw=transform,
             state=self.state.replace(
-                render=self.state.render.replace(
-                    random_bg=False,
-                    bg=self.back_color,
-                ),
+                raymarch=self.args.raymarch_eval,
+                render=self.args.render_eval.replace(bg=self.back_color),
                 nerf_fn=self.nerf_model_inference.apply,
             ),
             camera_override=self.camera,
