@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Zhang"
+  given-names: "Gaoyang"
+- family-names: "Chen"
+  given-names: "Yingxi"
+title: "jaxngp"
+date-released: 2023-05-31
+url: "https://github.com/blurgyy/jaxngp"

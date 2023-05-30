@@ -47,7 +47,7 @@ class Metrics:
 
 @dataclass(frozen=True, kw_only=True)
 class CreateScene:
-    # video or directory of image collection
+    # path to a video or a directory of image collection
     src: tyro.conf.Positional[Path]
 
     # where to write the images and transforms_{train,val,test}.json
@@ -63,13 +63,14 @@ class CreateScene:
     # "aabb_scale" in the generated `transforms_{train,val,test}.json`.
     bound: float=4.0
 
-    # scale the camera's positions, the mean camera-to-origin distance will be `4.0 * camera_scale`.
+    # scale the camera's positions, the mean camera-to-origin distance will be
+    # `4.0 * 2 * camera_scale`.
     camera_scale: float=1/3
 
     # should the scene be modeled with a background that is not part of the scene geometry?
     bg: bool=False
 
-    # how many frames to extract per second, only used when src is a video
+    # how many frames to extract per second, only required when src is a video
     fps: int | None=None
 
 
