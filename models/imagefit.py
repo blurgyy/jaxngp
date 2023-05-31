@@ -1,6 +1,6 @@
 from typing import Literal
-import chex
 
+import chex
 import flax.linen as nn
 from flax.linen.dtypes import Dtype
 import jax
@@ -12,7 +12,6 @@ class ImageFitter(nn.Module):
     encoding: Literal["hashgrid", "frequency"]
     encoding_dtype: Dtype
 
-    @nn.jit
     @nn.compact
     def __call__(self, uv: jax.Array) -> jax.Array:
         """

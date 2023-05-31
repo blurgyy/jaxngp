@@ -27,12 +27,12 @@ buildPythonPackage {
   buildInputs = [
     colorama
     frozendict
-    pyyaml
     typing-extensions
   ];
 
   propagatedBuildInputs = [
     docstring-parser
+    pyyaml
     rich
     shtab
   ];

@@ -14,14 +14,45 @@
     };
   };
 
-  outputs = inputs@{ self, nixpkgs, flake-utils, ... }: flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system: let
+  outputs = inputs@{ self, nixpkgs, flake-utils, ... }: let
+    deps = import ./deps;
+  in flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system: let
     inherit (nixpkgs) lib;
-    basePkgs = import nixpkgs { inherit system; };
+    colmapOverlays = final: prev: {
+      colmap = prev.colmap.overrideAttrs (o: rec {
+        pname = if prev.config.cudaSupport or false
+          then o.pname + "-cuda"
+          else o.pname;
+        version = "3.8";
+        src = prev.fetchFromGitHub {
+          owner = "colmap";
+          repo = "colmap";
+          rev = version;
+          hash = "sha256-1uUbUZdz49TloEaPJijNwa51DxIPjgz/fthnbWLfgS8=";
+        };
+        buildInputs = o.buildInputs ++ [
+          prev.flann
+          prev.metis
+        ];
+        cmakeFlags = o.cmakeFlags ++ (lib.optional
+          prev.config.cudaSupport
+          "-DCMAKE_CUDA_ARCHITECTURES=all-major"
+        );
+      });
+    };
+    basePkgs = import nixpkgs {
+      inherit system;
+      overlays = [
+        # NOTE: apply overlays for colmap before custom packages because latest pycolmap 0.3
+        # requires colmap 3.8
+        colmapOverlays
+        self.overlays.default
+      ];
+    };
   in {
     devShells = let
       pyVer = "310";
       py = "python${pyVer}";
-      depsWith = import ./deps { inherit lib; pkgs = basePkgs; };
       jaxOverlays = final: prev: {
           # avoid rebuilding opencv4 with cuda for tensorflow-datasets
           opencv4 = prev.opencv4.override {
@@ -43,56 +74,75 @@
             };
           };
         };
-        cudaPkgs = import nixpkgs {
-          inherit system;
-          config = {
-            allowUnfree = true;
-            cudaSupport = true;
-            packageOverrides = pkgs: {
-              linuxPackages = (import inputs.nixpkgs-with-nvidia-driver-fix {}).linuxPackages;
-            };
+      overlays = [
+        inputs.nixgl.overlays.default
+        colmapOverlays
+        self.overlays.default
+        jaxOverlays
+      ];
+      cudaPkgs = import nixpkgs {
+        inherit system overlays;
+        config = {
+          allowUnfree = true;
+          cudaSupport = true;
+          packageOverrides = pkgs: {
+            linuxPackages = (import inputs.nixpkgs-with-nvidia-driver-fix {}).linuxPackages;
           };
-          overlays = [
-            inputs.nixgl.overlays.default
-            jaxOverlays
-          ];
         };
+      };
       cpuPkgs = import nixpkgs {
-        inherit system;
+        inherit system overlays;
         config = {
           allowUnfree = true;
           cudaSupport = false;  # NOTE: disable cuda for cpu env
         };
-        overlays = [
-          inputs.nixgl.overlays.default
-          jaxOverlays
-        ];
       };
       mkPythonDeps = { pp, extraPackages }: with pp; [
           ipython
-          tensorflow
           tqdm
+
           icecream
-          (depsWith pp).tyro
           pillow
           ipdb
           colorama
+          imageio
+          ffmpeg-python
+          pydantic
+          natsort
 
+          pkgs.dearpygui
+          pkgs.pycolmap
+          pkgs.tyro
+
+          tensorflow
+          keras
           jaxlib-bin
           jax
           optax
           flax
+
+          pillow
+          matplotlib
         ] ++ extraPackages;
+      commonShellHook = ''
+        export PYTHONBREAKPOINT=ipdb.set_trace
+        export PYTHONDONTWRITEBYTECODE=1
+        export PYTHONUNBUFFERED=1
+        [[ "$-" == *i* ]] && exec "$SHELL"
+      '';
     in rec {
       default = cudaDevShell;
       cudaDevShell = cudaPkgs.mkShell {  # impure
         name = "cuda";
         buildInputs = [
-          cudaPkgs.colmapWithCuda
+          cudaPkgs.colmap
+          cudaPkgs.ffmpeg
           (cudaPkgs.${py}.withPackages (pp: mkPythonDeps {
               inherit pp;
-              extraPackages = [
-                (depsWith pp).spherical-harmonics-encoding-jax
+              extraPackages = with pp; [
+                pkgs.spherical-harmonics-encoding-jax
+                pkgs.volume-rendering-jax
+                pkgs.jax-tcnn
               ];
             }))
         ];
@@ -108,25 +158,25 @@
         shellHook = ''
           source <(sed -Ee '/\$@/d' ${lib.getExe cudaPkgs.nixgl.nixGLIntel})
           source <(sed -Ee '/\$@/d' ${lib.getExe cudaPkgs.nixgl.auto.nixGLNvidia}*)
-          [[ "$-" == *i* ]] && exec "$SHELL"
-        '';
+        '' + commonShellHook;
       };
 
       cpuDevShell = cpuPkgs.mkShell {
         name = "cpu";
-        buildInputs = with cpuPkgs; [
-          colmap
-          (python3.withPackages (pp: mkPythonDeps {
+        buildInputs = [
+          cpuPkgs.colmap
+          cpuPkgs.ffmpeg
+          (cpuPkgs.${py}.withPackages (pp: mkPythonDeps {
               inherit pp;
               extraPackages = [];
             }))
         ];
         shellHook = ''
-          [[ "$-" == *i* ]] && exec "$SHELL"
-        '';
+        '' + commonShellHook;
       };
-
-      shjax = cudaPkgs.${py}.pkgs.callPackage ./deps/spherical-harmonics-encoding-jax {};
     };
-  });
+    packages = deps.packages basePkgs;
+  }) // {
+    overlays.default = deps.overlay;
+  };
 }

@@ -14,7 +14,10 @@ result*
 *~
 
 .clangd
+.clang-format
 build/
 *.egg-info
 .venv
 .cache
+
+*.pyc

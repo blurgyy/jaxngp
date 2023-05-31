@@ -1,4 +1,79 @@
 {
+    "dearpygui": {
+        "cargoLocks": null,
+        "date": null,
+        "extract": null,
+        "name": "dearpygui",
+        "passthru": null,
+        "pinned": false,
+        "src": {
+            "deepClone": false,
+            "fetchSubmodules": true,
+            "leaveDotGit": false,
+            "name": null,
+            "owner": "hoffstadt",
+            "repo": "DearPyGui",
+            "rev": "v1.9.0",
+            "sha256": "sha256-5/LUuA4zDbpLTDUW3z/lRde6B1mEqnRzW72CCrGftZc=",
+            "type": "github"
+        },
+        "version": "v1.9.0"
+    },
+    "pycolmap": {
+        "cargoLocks": null,
+        "date": null,
+        "extract": null,
+        "name": "pycolmap",
+        "passthru": null,
+        "pinned": false,
+        "src": {
+            "deepClone": false,
+            "fetchSubmodules": true,
+            "leaveDotGit": false,
+            "name": null,
+            "owner": "colmap",
+            "repo": "pycolmap",
+            "rev": "v0.3.0",
+            "sha256": "sha256-t1rV34jyivXHY2Ji0dAotRYxs7LhNHk/7HQm9bqs97M=",
+            "type": "github"
+        },
+        "version": "v0.3.0"
+    },
+    "pyimgui": {
+        "cargoLocks": null,
+        "date": null,
+        "extract": null,
+        "name": "pyimgui",
+        "passthru": null,
+        "pinned": false,
+        "src": {
+            "name": null,
+            "sha256": "sha256-L7247tO429fqmK+eTBxlgrC8TalColjeFjM9jGU9Z+E=",
+            "type": "url",
+            "url": "https://pypi.io/packages/source/i/imgui/imgui-2.0.0.tar.gz"
+        },
+        "version": "2.0.0"
+    },
+    "tiny-cuda-nn": {
+        "cargoLocks": null,
+        "date": null,
+        "extract": null,
+        "name": "tiny-cuda-nn",
+        "passthru": null,
+        "pinned": false,
+        "src": {
+            "deepClone": false,
+            "fetchSubmodules": true,
+            "leaveDotGit": false,
+            "name": null,
+            "owner": "NVlabs",
+            "repo": "tiny-cuda-nn",
+            "rev": "v1.6",
+            "sha256": "sha256-qW6Fk2GB71fvZSsfu+mykabSxEKvaikZ/pQQZUycOy0=",
+            "type": "github"
+        },
+        "version": "v1.6"
+    },
     "tyro": {
         "cargoLocks": null,
         "date": null,

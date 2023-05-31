@@ -1,21 +1,31 @@
-from dataclasses import field
 from dataclasses import dataclass
+import dataclasses
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import Tuple
 
-from utils.types import LogLevel, RayMarchingOptions, RenderingOptions
+import tyro
+
+from utils.types import (
+    CameraOverrideOptions,
+    LogLevel,
+    OrbitTrajectoryOptions,
+    RayMarchingOptions,
+    RenderingOptions,
+    SceneOptions,
+    TransformsProvider,
+)
 
 
 @dataclass(frozen=True, kw_only=True)
 class CommonArgs:
     # log level
     logging: LogLevel = "INFO"
-    # float precision
-    prec: int = 32
+
     # random seed
     seed: int = 1_000_000_007
+
     # display model information after model init
-    display_model_summary: bool=False
+    summary: bool=False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -23,7 +33,9 @@ class TrainingArgs:
     # learning rate
     lr: float
 
-    momentum: Optional[float]
+    # scalar multipled to total variation loss, set this to a positive value to enable calculation
+    # of TV loss
+    tv_scale: float
 
     # batch size
     bs: int
@@ -38,12 +50,26 @@ class TrainingArgs:
     # dataloader overhead.
     data_loop: int
 
+    # will validate every `validate_every` epochs, set this to a large value to disable validation
+    validate_every: int
+
+    # number of latest checkpoints to keep
+    keep: int=1
+
+    # how many epochs should a new checkpoint to be kept (in addition to keeping the last `keep`
+    # checkpoints)
+    keep_every: int | None=8
+
+    @property
+    def keep_every_n_steps(self) -> int | None:
+        if self.keep_every is None:
+            return None
+        else:
+            return self.keep_every * self.n_batches
 
 @dataclass(frozen=True, kw_only=True)
 class ImageFitArgs:
-    common: CommonArgs=CommonArgs(
-        prec=32,
-    )
+    common: CommonArgs=CommonArgs()
     train: TrainingArgs=TrainingArgs(
         # paper:
         #   We observed fastest convergence with a learning rate of 10^{-4} for signed distance
@@ -51,7 +77,7 @@ class ImageFitArgs:
         #
         # We use a smaller learning rate since our batch size is much smaller the paper (see below).
         lr=1e-3,
-        momentum=None,  # using adam so momentum doesn't matter
+        tv_scale=0.,
         # paper:
         #   ...as well a a batch size of 2^{14} for neural radiance caching and 2^{18} otherwise.
         #
@@ -64,90 +90,138 @@ class ImageFitArgs:
         n_epochs=32,
         n_batches=2**30,
         data_loop=1,
+        validate_every=1,
     )
 
 
 @dataclass(frozen=True, kw_only=True)
-class _NeRFArgs:
-    # a nerf-synthetic format directory
-    data_root: Path
-
+class NeRFArgsBase:
     # experiment artifacts are saved under this directory
     exp_dir: Path
 
     raymarch: RayMarchingOptions
     render: RenderingOptions
-
-    # half width of axis-aligned bounding-box, i.e. aabb's width is `bound*2`
-    bound: float=1.5
+    scene: SceneOptions
 
     common: CommonArgs=CommonArgs()
 
 
 @dataclass(frozen=True, kw_only=True)
-class NeRFTrainingArgs(_NeRFArgs):
-    # number of images to validate
-    val_num: int=3
+class NeRFTrainingArgs(NeRFArgsBase):
+    # directories or transform.json files containing data for training
+    frames_train: tyro.conf.Positional[Tuple[Path, ...]]
+
+    # directories or transform.json files containing data for validation
+    frames_val: Tuple[Path, ...]=()
 
     # if specified, continue training from this checkpoint
-    train_ckpt: Optional[Path]=None
+    ckpt: Path | None=None
 
+    # training hyper parameters
     train: TrainingArgs=TrainingArgs(
         # This is a relatively large learning rate, should be used jointly with
         # `threasholded_exponential` as density activation, and random color as supervision for
         # transparent pixels.
         lr=1e-2,
-        momentum=None,
-        bs=2**10,
-        n_epochs=32,
-        n_batches=2**12,
+        tv_scale=0.,
+        bs=1024 * (1<<10),
+        n_epochs=50,
+        n_batches=2**10,
         data_loop=1,
+        validate_every=10,
     )
 
     # raymarching/rendering options during training
     raymarch: RayMarchingOptions=RayMarchingOptions(
-        steps=2**7,  # TODO: add coarse network, or implement ray-marching with early stop
-        stratified=True,
-        n_importance=2**7,
+        diagonal_n_steps=1<<10,
+        perturb=True,
+        density_grid_res=128,
     )
     render: RenderingOptions=RenderingOptions(
-        ray_chunk_size=2**10,
         bg=(1.0, 1.0, 1.0),  # white, but ignored by default due to random_bg=True
         random_bg=True,
+    )
+    scene: SceneOptions=SceneOptions(
+        sharpness_threshold=-1.,
+        world_scale=1.0,
+        resolution_scale=1.0,
     )
 
     # raymarching/rendering options for validating during training
     raymarch_eval: RayMarchingOptions=RayMarchingOptions(
-        steps=2**8,
-        stratified=True,
-        n_importance=2**8+2**9,
+        diagonal_n_steps=1<<10,
+        perturb=False,
+        density_grid_res=128,
     )
     render_eval: RenderingOptions=RenderingOptions(
-        ray_chunk_size=2**10,
         bg=(0.0, 0.0, 0.0),  # black
         random_bg=False,
     )
 
 
 @dataclass(frozen=True, kw_only=True)
-class NeRFTestingArgs(_NeRFArgs):
-    # if specified, switch to test mode and use this checkpoint
-    test_ckpt: Path
+class NeRFTestingArgs(NeRFArgsBase):
+    frames: tyro.conf.Positional[Tuple[Path, ...]]
 
-    # which test images should be tested on, indices are 0-based
-    test_indices: List[int]=field(default_factory=list)
+    camera_override: CameraOverrideOptions=None
 
-    # which split to test on
-    test_split: Literal["train", "test", "val"]="test"
+    # use checkpoint from this path (can be a directory) for testing
+    ckpt: Path
+
+    # if specified, render with a generated orbiting trajectory instead of the loaded frame
+    # transformations
+    trajectory: TransformsProvider="loaded"
+
+    orbit: OrbitTrajectoryOptions
+
+    # naturally sort frames according to their file names before testing
+    sort_frames: bool=False
+
+    # if specified value contains "video", a video will be saved; if specified value contains
+    # "image", rendered images will be saved.  Value can contain both "video" and "image", e.g.,
+    # `--save-as "video-image"` will save both video and images.
+    save_as: str="image and video"
 
     # raymarching/rendering options during testing
     raymarch: RayMarchingOptions=RayMarchingOptions(
-        steps=2**8,
-        stratified=True,
-        n_importance=2**8+2**9,
+        diagonal_n_steps=1<<10,
+        perturb=False,
+        density_grid_res=128,
     )
     render: RenderingOptions=RenderingOptions(
-        ray_chunk_size=2**10,
         bg=(0.0, 0.0, 0.0),  # black
         random_bg=False,
+    )
+    scene: SceneOptions=SceneOptions(
+        sharpness_threshold=-1.,
+        world_scale=1.0,
+        resolution_scale=1.0,
+    )
+
+
+@dataclass(frozen=True, kw_only=True)
+class NeRFGUIArgs(NeRFTrainingArgs):
+
+    @dataclass(frozen=True, kw_only=True)
+    class ViewportOptions:
+        W: int=1024
+        H: int=768
+
+        resolution_scale=0.3
+
+        control_window_width: int=300
+
+        #max number of loss steps shown on gui
+        max_show_loss_step: int=200
+
+    viewport: ViewportOptions=ViewportOptions()
+
+    train: TrainingArgs=TrainingArgs(
+        lr=1e-2,
+        tv_scale=0.,
+        bs=1<<18,
+        n_batches=5,  # render a frame every 5 steps
+        n_epochs=50,  # ignored
+        data_loop=1,  # ignored
+        validate_every=10,  # ignored
     )

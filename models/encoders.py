@@ -1,4 +1,3 @@
-import functools
 import math
 
 import chex
@@ -7,36 +6,55 @@ from flax.linen.dtypes import Dtype
 import jax
 import jax.numpy as jnp
 import jax.random as jran
+from jaxtcnn import HashGridMetadata, hashgrid_encode
 import shjax
 
 from utils.common import jit_jaxfn_with, vmap_jaxfn_with
+from utils.types import empty_impl
 
 
 cell_vert_offsets = {
     2: jnp.asarray([
-        [0, 0],
-        [0, 1],
-        [1, 0],
-        [1, 1],
+        [0., 0.],
+        [0., 1.],
+        [1., 0.],
+        [1., 1.],
     ]),
     3: jnp.asarray([
-        [0, 0, 0],
-        [0, 0, 1],
-        [0, 1, 0],
-        [0, 1, 1],
-        [1, 0, 0],
-        [1, 0, 1],
-        [1, 1, 0],
-        [1, 1, 1],
+        [0., 0., 0.],
+        [0., 0., 1.],
+        [0., 1., 0.],
+        [0., 1., 1.],
+        [1., 0., 0.],
+        [1., 0., 1.],
+        [1., 1., 0.],
+        [1., 1., 1.],
+    ]),
+}
+
+adjacent_offsets = {
+    2: jnp.asarray([
+        [0., 1.],
+        [1., 0.],
+        [0., -1.],
+        [-1., 0.],
+    ]),
+    3: jnp.asarray([
+        [0., 0., 1.],
+        [0., 1., 0.],
+        [1., 0., 0.],
+        [0., 0., -1.],
+        [0., -1., 0.],
+        [-1., 0., 0.],
     ]),
 }
 
 
-class Encoder(nn.Module):
-    pass
+class Encoder(nn.Module): ...
 
 
 # TODO: enforce types used in arrays
+@empty_impl
 class HashGridEncoder(Encoder):
     dim: int
     # Let's use the same notations as in the paper
@@ -52,28 +70,32 @@ class HashGridEncoder(Encoder):
     # Finest resolution (512 to 524288).
     N_max: int
 
+    tv_scale: float
+
     param_dtype: Dtype = jnp.float32
 
-    @nn.jit
+    @property
+    def b(self) -> float:
+        # Equation(3)
+        # Essentially, it is $(n_max / n_min) ** (1/(L - 1))$
+        return math.exp((math.log(self.N_max) - math.log(self.N_min)) / (self.L - 1))
+
     @nn.compact
     def __call__(self, pos: jax.Array) -> jax.Array:
         chex.assert_axis_dimension(pos, -1, self.dim)
 
-        # Equation(3)
-        # Essentially, it is $(n_max / n_min) ** (1/(L - 1))$
-        b = math.exp((math.log(self.N_max) - math.log(self.N_min)) / (self.L - 1))
-
-        resolutions, indexing_methods, offsets = [], [], [0]
+        scales, resolutions, first_hash_level, offsets = [], [], 0, [0]
         for i in range(self.L):
-            res = int(self.N_min * (b**i))
+            scale = self.N_min * (self.b**i) - 1
+            scales.append(scale)
+            res = math.ceil(scale) + 1
             resolutions.append(res)
 
-            n_entries = (res + 1) ** self.dim
+            n_entries = res ** self.dim
 
             if n_entries <= self.T:
-                indexing_methods.append(self.onebyone)
+                first_hash_level += 1
             else:
-                indexing_methods.append(self.hashing)
                 n_entries = self.T
 
             offsets.append(offsets[-1] + n_entries)
@@ -89,159 +111,196 @@ class HashGridEncoder(Encoder):
             self.param_dtype,
         )
 
-        # A list-like object, contents are: [
-        #   (indices_0, pos_scaled_0, vert_pos_0),
-        #   (indices_1, pos_scaled_1, vert_pos_1),
-        #   ...
-        #   (indices_{L-1}, pos_scaled_{L-1}, vert_pos_{L-1})
-        # ], where:
-        # indices [pos.shape[0], 2**dim] (int):
-        #   indices in hash table
-        # pos_scaled [pos.shape[0], 2**dim] (float):
-        #   query points' coordinates scaled to each hierarchies (float)
-        # vert_pos [pos.shape[0], 2**dim, dim] (int):
-        #   vertex coordinates of the enclosing grid cell's vertices (2**dim in total) of each
-        #   query point
-        indices_posscaled_vertpos_tuples = jax.tree_map(
-            lambda index_fn, res: index_fn(pos, self.dim, res, self.T),
-            indexing_methods,
-            resolutions,
-        )
+        @jax.vmap
+        @jax.vmap
+        def make_vert_pos(pos_scaled: jax.Array):
+            # [dim]
+            pos_floored = jnp.floor(pos_scaled)
+            # [2**dim, dim]
+            vert_pos = pos_floored[None, :] + cell_vert_offsets[self.dim]
+            return vert_pos.astype(jnp.uint32)
 
-        # indices [L, pos.shape[0], 2**dim] (int):
-        #   indices in hash table
-        # pos_scaled [L, pos.shape[0], 2**dim] (float):
-        #   query points' coordinates scaled to each hierarchies (float)
-        # vert_pos [L, pos.shape[0], 2**dim, dim] (int):
-        #   vertex coordinates of the enclosing grid cell's vertices (2**dim in total) of each
-        #   query point
-        indices, pos_scaled, vert_pos = map(jnp.stack, zip(*indices_posscaled_vertpos_tuples))
+        @jax.vmap
+        @jax.vmap
+        def make_adjacent_pos(pos_scaled: jax.Array):
+            # [dim]
+            pos_floored = jnp.floor(pos_scaled)
+            # [dim * 2, dim]
+            adjacent_pos = pos_floored[None, :] + adjacent_offsets[self.dim]
+            return adjacent_pos.astype(jnp.uint32)
 
-        # add offsets for each hash grid level
-        indices += jnp.asarray(offsets[:-1]).reshape((self.L, 1, 1))
+        @vmap_jaxfn_with(in_axes=(0, 0))
+        @vmap_jaxfn_with(in_axes=(None, 0))
+        def make_tiled_indices(res, vert_pos):
+            """(first 2 axes `[L, n_points]` are vmapped away)
+            Inputs:
+                res `uint32` `[L]`: each hierarchy's resolution
+                vert_pos `uint32` `[L, n_points, B, dim]`: integer positions of grid cell's
+                                                           vertices, of each level
 
-        # [L, pos.shape[0], 2**dim, F]
+            Returns:
+                indices `uint32` `[L, n_points, B]`: grid cell indices of the vertices
+            """
+            # [dim]
+            if self.dim == 2:
+                strides = jnp.stack([jnp.ones_like(res), res]).T
+            elif self.dim == 3:
+                strides = jnp.stack([jnp.ones_like(res), res, res ** 2]).T
+            else:
+                raise NotImplementedError("{} is only implemented for 2D and 3D data".format(__class__.__name__))
+            # [2**dim]
+            indices = jnp.sum(strides[None, :] * vert_pos, axis=-1)
+            return indices
+
+        @jax.vmap
+        @jax.vmap
+        def make_hash_indices(vert_pos):
+            """(first 2 axes `[L, n_points]` are vmapped away)
+            Inputs:
+                vert_pos `uint32` `[L, n_points, B, dim]`: integer positions of grid cell's
+                                                           vertices, of each level
+
+            Returns:
+                indices `uint32` `[L, n_points, B]`: grid cell indices of the vertices
+            """
+            # use primes as reported in the paper
+            primes = jnp.asarray([1, 2_654_435_761, 805_459_861], dtype=jnp.uint32)
+            # [2**dim]
+            if self.dim == 2:
+                indices = vert_pos[:, 0] ^ (vert_pos[:, 1] * primes[1])
+            elif self.dim == 3:
+                indices = vert_pos[:, 0] ^ (vert_pos[:, 1] * primes[1]) ^ (vert_pos[:, 2] * primes[2])
+            else:
+                raise NotImplementedError("{} is only implemented for 2D and 3D data".format(__class__.__name__))
+            return indices
+
+        def make_indices(vert_pos, resolutions, first_hash_level):
+            if first_hash_level > 0:
+                resolutions = jnp.asarray(resolutions, dtype=jnp.uint32)
+                indices = make_tiled_indices(resolutions[:first_hash_level], vert_pos[:first_hash_level, ...])
+            else:
+                indices = jnp.empty(0, dtype=jnp.uint32)
+            if first_hash_level < self.L:
+                indices = jnp.concatenate([indices, make_hash_indices(vert_pos[first_hash_level:, ...])], axis=0)
+            indices = jnp.mod(indices, self.T)
+            indices += jnp.asarray(offsets[:-1], dtype=jnp.uint32)[:, None, None]
+            return indices
+
+        @jax.vmap
+        @jax.vmap
+        def lerp_weights(pos_scaled: jax.Array):
+            """(first 2 axes `[L, n_points]` are vmapped away)
+            Inputs:
+                pos_scaled `float` `[L, n_points, dim]`: coordinates of query points, scaled to the
+                                                         hierarchy in question
+
+            Returns:
+                weights `float` `[L, n_points, 2**dim]`: linear interpolation weights for each cell
+                                                         vertex
+            """
+            # [dim]
+            pos_offset, _ = jnp.modf(pos_scaled)
+            # [2**dim, dim]
+            widths = jnp.clip(
+                # cell_vert_offsets: [2**dim, dim]
+                (1 - cell_vert_offsets[self.dim]) + (2 * cell_vert_offsets[self.dim] - 1) * pos_offset[None, :],
+                0,
+                1,
+            )
+            # [2**dim]
+            return jnp.prod(widths, axis=-1)
+
+        # [L]
+        scales = jnp.asarray(scales, dtype=jnp.float32)
+        # [L, n_points, dim]
+        pos_scaled = pos[None, :, :] * scales[:, None, None] + 0.5
+        # [L, n_points, 2**dim, dim]
+        vert_pos = make_vert_pos(pos_scaled)
+
+        # [L, n_points, 2**dim]
+        indices = make_indices(vert_pos, resolutions, first_hash_level)
+
+        # [L, n_points, 2**dim, F]
         vert_latents = latents[indices]
-        # [L, pos.shape[0], 2**dim]
-        # NOTE:
-        #   need to set out_axes=1 to keep the output batch dimension on the 1-th axis
-        vert_weights = self.lerp_weights(pos_scaled, vert_pos, self.dim)
+        # [L, n_points, 2**dim]
+        vert_weights = lerp_weights(pos_scaled)
 
-        # [L, pos.shape[0], F]
+        # [L, n_points, F]
         encodings = (vert_latents * vert_weights[..., None]).sum(axis=-2)
-        # [pos.shape[0], L*F]
+        # [n_points, L*F]
         encodings = encodings.transpose(1, 0, 2).reshape(-1, self.L * self.F)
-        return encodings
+
+        ## Total variation
+        if self.tv_scale > 0:
+            # [L, n_points, dim * 2, dim]
+            adjacent_pos = make_adjacent_pos(pos_scaled)
+
+            # [L, n_points, dim * 2]
+            adjacent_indices = make_indices(adjacent_pos, resolutions, first_hash_level)
+
+            # [L, n_points, dim * 2, F]
+            adjacent_latents = latents[adjacent_indices]
+
+            # [L, n_points, dim * 2, F]
+            tv = self.tv_scale * jnp.square(adjacent_latents - vert_latents[:, :, :1, :])
+
+            # [L, n_points]
+            tv = tv.sum(axis=(-2, -1))
+
+            tv = tv.mean()
+        else:
+            tv = 0
+
+        return encodings, tv
 
 
-    # PERF:
-    #   Make sure to jit the vmapped function, and NOT the other way around (always use jit as the
-    #   outmost decorator).
-    #   The @staticmethod decorator here doesn't degrade performance, but can only be add at top.
-    @staticmethod
-    @jit_jaxfn_with(static_argnames=["dim"])
-    @vmap_jaxfn_with(in_axes=(1, 1, None), out_axes=1)
-    def lerp_weights(pos_scaled: jax.Array, vert_pos: jax.Array, dim: int):
-        """
-        Inputs:
-            pos_scaled [L, ..., dim]: coordinates of query points, scaled to the hierarchy in question
-            vert_pos [L, ..., 2**dim, dim]: integer coordinates of the grid cells' vertices that enclose each of `pos_scaled`
-            dim int: space dimension
+@empty_impl
+class TCNNHashGridEncoder(HashGridEncoder):
+    @nn.compact
+    def __call__(self, pos: jax.Array) -> jax.Array:
+        chex.assert_axis_dimension(pos, -1, self.dim)
 
-        Returns:
-            weights [L, ..., 2**dim]: linear interpolation weights w.r.t. each cell vertex
-        """
-        chex.assert_type([pos_scaled, vert_pos, dim], [float, int, int])
-        chex.assert_axis_dimension(pos_scaled, -1, dim)
-        chex.assert_axis_dimension(vert_pos, -2, 2**dim)
-        chex.assert_axis_dimension(vert_pos, -1, dim)
-        chex.assert_scalar(dim)
-        # [L, ..., 1, dim]
-        pos_offset = pos_scaled[..., None, :] - vert_pos[..., 0:1, :]
-        # [L, ..., 2**dim, dim]
-        widths = jnp.clip(
-            # cell_vert_offsets: [2**dim, dim]
-            (1 - cell_vert_offsets[dim]) + (2 * cell_vert_offsets[dim] - 1) * pos_offset,
-            0,
-            1,
+        scales, resolutions, first_hash_level, offsets = [], [], 0, [0]
+        for i in range(self.L):
+            scale = self.N_min * (self.b**i) - 1
+            scales.append(scale)
+            res = math.ceil(scale) + 1
+            resolutions.append(res)
+
+            n_entries = res ** self.dim
+
+            if n_entries <= self.T:
+                first_hash_level += 1
+            else:
+                n_entries = self.T
+
+            offsets.append(offsets[-1] + n_entries)
+
+        latents = self.param(
+            "latent codes stored on grid vertices",
+            # paper:
+            #   We initialize the hash table entries using the uniform distribution U(−10^{−4}, 10^{−4})
+            #   to provide a small amount of randomness while encouraging initial predictions close
+            #   to zero.
+            lambda key, shape, dtype: jran.uniform(key, shape, dtype, -1e-4, 1e-4),
+            (offsets[-1], self.F),
+            self.param_dtype,
         )
-        # [L, ..., 2**dim]
-        return jnp.prod(widths, axis=-1)
+
+        return hashgrid_encode(
+            desc=HashGridMetadata(
+                L=self.L,
+                F=self.F,
+                N_min=self.N_min,
+                per_level_scale=self.b,
+            ),
+            offset_table_data=jnp.asarray(offsets, dtype=jnp.uint32),
+            coords_rm=pos.T,
+            params=latents,
+        ).T, 0
 
 
-    @staticmethod
-    @jit_jaxfn_with(static_argnames=["dim", "res", "T"])
-    @vmap_jaxfn_with(in_axes=(0, None, None, None))
-    def onebyone(pos: jax.Array, dim: int, res: int, T: int):
-        """
-        Inputs:
-            res int: resolution of the hierarchy in question
-            pos [..., dim]: spatial positions of the query points
-
-        Returns:
-            indices [..., 2**dim]: indices of the grid cell's vertices in the hash table
-            vert_pos [..., 2**dim, dim]: positions of the grid cell's vertices in the input space
-        """
-        chex.assert_type([pos, dim, res, T], [float, int, int, int])
-        chex.assert_axis_dimension(pos, -1, dim)
-        chex.assert_scalar(dim)
-        chex.assert_scalar(res)
-        chex.assert_scalar(T)
-        # [..., dim]
-        pos_scaled = pos * res
-        # [..., dim]
-        pos_floored = jnp.floor(pos_scaled).astype(int)
-        # [..., 2**dim, dim]
-        vert_pos = pos_floored[..., None, :] + cell_vert_offsets[dim]
-        # [..., 2**dim]
-        indices = functools.reduce(
-            lambda prev, d: prev * res + vert_pos[..., d],
-            range(dim),
-            0,
-        )
-        return indices, pos_scaled, vert_pos
-
-
-    @staticmethod
-    @jit_jaxfn_with(static_argnames=["dim", "res", "T"])
-    @vmap_jaxfn_with(in_axes=(0, None, None, None))
-    def hashing(pos: jax.Array, dim: int, res: int, T: int):
-        """
-        Inputs:
-            res int: resolution of the hierarchy in question
-            pos [..., dim]: spatial positions of the query points
-
-        Returns:
-            indices [..., 2**dim]: indices of the grid cell's vertices in the hash table
-            vert_pos [..., 2**dim, dim]: positions of the grid cell's vertices in the input space
-        """
-        chex.assert_type([pos, dim, res, T], [float, int, int, int])
-        chex.assert_axis_dimension(pos, -1, dim)
-        chex.assert_scalar(dim)
-        chex.assert_scalar(res)
-        chex.assert_scalar(T)
-        # [..., dim]
-        pos_scaled = pos * res
-        # [..., dim]
-        pos_floored = jnp.floor(pos_scaled).astype(int)
-        # [..., 2**dim, dim]
-        vert_pos = pos_floored[..., None, :] + cell_vert_offsets[dim]
-        vert_pos = vert_pos.astype(jnp.uint32)
-        # use primes as reported in the paper
-        primes = jax.tree_util.tree_map(lambda x: jnp.asarray(x, dtype=jnp.uint32), (
-            1,
-            2_654_435_761,
-            805_459_861,
-        ))
-        # [..., 2**dim]
-        indices = functools.reduce(
-            lambda prev, d: jnp.bitwise_xor(prev, vert_pos[..., d] * primes[d]),
-            range(dim),
-            jnp.asarray(0, dtype=jnp.uint32),
-        )
-        return jnp.mod(indices, T), pos_scaled, vert_pos
-
-
+@empty_impl
 class FrequencyEncoder(Encoder):
     """
     Frequency encoding from Equation(4) of the NeRF paper, except the encoded frequency orders are
@@ -261,7 +320,6 @@ class FrequencyEncoder(Encoder):
     # TODO:
     #   using a function for this (vmap, then jit the vmapped function) seems to be faster (~47ms vs
     #   ~57ms)
-    @nn.jit  # use nn.jit instead of jax.jit because first argument is a Module
     def __call__(self, pos: jax.Array) -> jax.Array:
         """
         Inuts:
@@ -282,22 +340,22 @@ class FrequencyEncoder(Encoder):
         return encodings
 
 
+@empty_impl
 class SphericalHarmonicsEncoderCuda(Encoder):
     # highest degree
     L: int
 
-    @nn.jit
     def __call__(self, dirs: jax.Array) -> jax.Array:
         "Just a thin wrapper on top of :func:`shjax.spherical_harmonics_encoding()`"
-        dirs /= jnp.linalg.norm(dirs, axis=-1, keepdims=True)
+        dirs /= jnp.linalg.norm(dirs, axis=-1, keepdims=True) + 1e-15
         return shjax.spherical_harmonics_encoding(dirs, self.L)
 
 
+@empty_impl
 class SphericalHarmonicsEncoder(Encoder):
     # highest degree
     L: int
 
-    @nn.jit
     def __call__(self, dirs: jax.Array) -> jax.Array:
         """
         Adapted from <https://github.com/NVlabs/tiny-cuda-nn/blob/39df2387a684e4fe0cfa33542aebf5eab237716b/include/tiny-cuda-nn/encodings/spherical_harmonics.h#L52-L123>
@@ -309,7 +367,7 @@ class SphericalHarmonicsEncoder(Encoder):
             encodings [..., L**2]: real parts of the spherical harmonics up to the L-th degree.
         """
         chex.assert_axis_dimension(dirs, -1, 3)
-        dirs /= jnp.linalg.norm(dirs, axis=-1, keepdims=True)
+        dirs /= jnp.linalg.norm(dirs, axis=-1, keepdims=True) + 1e-15
         x, y, z = dirs[..., 0], dirs[..., 1], dirs[..., 2]
         xy, xz, yz = x*y, x*z, y*z
         x2, y2, z2 = x*x, y*y, z*z
@@ -412,12 +470,14 @@ def bench_sh():
     @jax.jit
     def shjax_jitted(x):
         return sh(x)
-    @jax.jit
-    def shcuda_jitted(x):
-        return shcuda(x)
+    @jit_jaxfn_with(static_argnames=["L"])
+    # def shcuda_jitted(x):
+    #     return shcuda(x)
+    def shcuda_jitted(x, L):
+        return shjax.spherical_harmonics_encoding(x, L)
 
     d = jnp.asarray([[.1, .5, -.7]])
-    d /= jnp.linalg.norm(d, axis=-1, keepdims=True)
+    d /= jnp.linalg.norm(d, axis=-1, keepdims=True) + 1e-15
 
     result = sh(d)
     result_cuda = shcuda(d)
@@ -428,7 +488,7 @@ def bench_sh():
         K, key = jran.split(K, 2)
         n = 800*800
         d = jran.normal(key, (n, 3))
-        d /= jnp.linalg.norm(d)
+        d /= jnp.linalg.norm(d) + 1e-15
 
         print("{:03d}-th check ({} coordinates, degree={}): ".format(i+1, n, L), end="")
 
@@ -441,7 +501,7 @@ def bench_sh():
 
         stime = time.time()
         print("|cuda...", end="")
-        result_cuda = shcuda_jitted(d).block_until_ready()
+        result_cuda = shcuda_jitted(d, L).block_until_ready()
         etime = time.time()
         durms = 1000 * (etime - stime)
         print("{:.2f}ms|".format(durms), end="")
@@ -453,33 +513,85 @@ def bench_sh():
 def bench_hg():
     import time
 
+    dim=3
     L=16
+    F=2
+    T=2**19
+    N_min=16
+    per_level_scale=2.
+    N_max=int(N_min * per_level_scale**(L - 1))
 
     hg = HashGridEncoder(
-        dim=3,
-        L=16,
-        T=2**19,
-        F=2,
-        N_min=16,
-        N_max=2**12,
+        dim=dim,
+        L=L,
+        T=T,
+        F=F,
+        N_min=N_min,
+        N_max=N_max,
     )
     K = jran.PRNGKey(0xabcdef)
+
     variables = hg.init(K, jnp.zeros([5, 3]))
+    (params_array,) = variables["params"]["latent codes stored on grid vertices"],
+
+    print(params_array.shape)
 
     @jax.jit
     def hgjax_jitted(d):
         return hg.apply(variables, d)
 
+    hgmeta = HashGridMetadata(
+        L=L,
+        F=F,
+        N_min=N_min,
+        per_level_scale=per_level_scale,
+    )
+
+    resolutions, offsets = [], [0]
+    for i in range(L):
+        res = int(N_min * (per_level_scale**i))
+        resolutions.append(res)
+
+        n_entries = (res + 1) ** dim
+
+        if n_entries <= T:
+            pass
+        else:
+            n_entries = T
+
+        offsets.append(offsets[-1] + n_entries)
+
+    assert offsets[-1] == params_array.shape[0]
+
+    @jax.jit
+    def hgtcnn_jitted(d_row_major):  # expects input coordinates to have shape (dim, n_coords)
+        return hashgrid_encode(
+            desc=hgmeta,
+            offset_table_data=jnp.asarray(offsets, dtype=jnp.uint32),
+            coords_rm=d_row_major,
+            params=params_array,
+        )
+
+    print("starting!")
+
     for i in range(100):
         K, key = jran.split(K, 2)
         n = 256_000
         d = jran.uniform(key, (n, 3), minval=0, maxval=1.)
+        d_T = jran.uniform(key, (3, n), minval=0, maxval=1.)
 
         print("{:03d}-th check ({} coordinates, degree={}): ".format(i+1, n, L), end="")
 
         stime = time.time()
         print("|jax...", end="")
         result = hgjax_jitted(d).block_until_ready()
+        etime = time.time()
+        durms = 1000 * (etime - stime)
+        print("{:.2f}ms".format(durms), end="")
+
+        stime = time.time()
+        print("|tcnn...", end="")
+        result = hgtcnn_jitted(d_T).block_until_ready()
         etime = time.time()
         durms = 1000 * (etime - stime)
         print("{:.2f}ms|".format(durms), end="")
@@ -491,6 +603,6 @@ if __name__ == "__main__":
     print("bench_hg")
     bench_hg()
 
-    print()
-    print("bench_sh:")
-    bench_sh()
+    # print()
+    # print("bench_sh:")
+    # bench_sh()

@@ -1,4 +1,5 @@
-import logging
+from typing import List
+from typing_extensions import assert_never
 
 from PIL import Image
 from flax.training import checkpoints
@@ -7,98 +8,154 @@ import jax.numpy as jnp
 import jax.random as jran
 import numpy as np
 
-from models.nerfs import make_nerf_ngp
-from models.renderers import render_image
+from models.nerfs import make_nerf_ngp, make_skysphere_background_model_ngp
+from models.renderers import render_image_inference
 from utils import common, data
 from utils.args import NeRFTestingArgs
-from utils.data import make_nerf_synthetic_scene_metadata
-from utils.types import RigidTransformation
+from utils.types import NeRFState, RenderedImage, RigidTransformation
 
 
-def test(args: NeRFTestingArgs, logger: logging.Logger):
-    if not args.test_ckpt.exists():
-        logger.warn("specified checkpoint '{}' does not exist".format(args.test_ckpt))
+def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
+    logs_dir = args.exp_dir.joinpath("logs")
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    logger = common.setup_logging(
+        "nerf.test",
+        file=logs_dir.joinpath("test.log"),
+        level=args.common.logging.upper(),
+        file_level="DEBUG",
+    )
+    if not args.ckpt.exists():
+        logger.error("specified checkpoint '{}' does not exist".format(args.ckpt))
         exit(1)
 
-    if len(args.test_indices) == 0:
-        logger.warn("got empty test indices, you might want to specify some image indices via --test-indices")
-        logger.warn("proceeding anyway ...")
+    if args.trajectory == "orbit":
+        logger.debug("generating {} testing frames".format(args.orbit.n_frames))
+        scene_meta = data.load_scene(
+            srcs=args.frames,
+            scene_options=args.scene,
+            orbit_options=args.orbit,
+        )
+        logger.info("generated {} camera transforms for testing".format(len(scene_meta.frames)))
+    elif args.trajectory == "loaded":
+        logger.debug("loading testing frames from {}".format(args.frames))
+        scene_data, test_views = data.load_scene(
+            srcs=args.frames,
+            scene_options=args.scene,
+            sort_frames=args.sort_frames,
+        )
+        scene_meta = scene_data.meta
+        logger.info("loaded {} camera transforms for testing".format(len(scene_meta.frames)))
 
-    dtype = getattr(jnp, "float{}".format(args.common.prec))
-    logger.setLevel(args.common.logging.upper())
-
-    # deterministic
-    K = common.set_deterministic(seed=args.common.seed)
-
-    # model parameters
-    aabb = [[-args.bound, args.bound]] * 3
-    K, key = jran.split(K, 2)
-    model, init_input = (
-        make_nerf_ngp(aabb=aabb),
-        (jnp.zeros((1, 3), dtype=dtype), jnp.zeros((1, 3), dtype=dtype))
-    )
-    # initialize model structure but discard parameters, as parameters are loaded later
-    model.init(key, *init_input)
-    if args.common.display_model_summary:
-        print(model.tabulate(key, *init_input))
+    if args.camera_override.enabled:
+        scene_meta = scene_meta.replace(camera=args.camera_override.camera)
 
     # load parameters
-    params = checkpoints.restore_checkpoint(args.test_ckpt, target=None)["params"]
-    params = jax.tree_util.tree_map(lambda x: jnp.asarray(x), params)
-
-    scene_metadata_test, test_views = make_nerf_synthetic_scene_metadata(
-        rootdir=args.data_root,
-        split=args.test_split,
+    logger.debug("loading checkpoint from '{}'".format(args.ckpt))
+    state: NeRFState = checkpoints.restore_checkpoint(
+        args.ckpt,
+        target=NeRFState.empty(
+            raymarch=args.raymarch,
+            render=args.render,
+            scene_options=args.scene,
+            scene_meta=scene_meta,
+            nerf_fn=make_nerf_ngp(bound=scene_meta.bound, inference=True).apply,
+            bg_fn=make_skysphere_background_model_ngp(bound=scene_meta.bound).apply if scene_meta.bg else None,
+        ),
     )
+    # WARN:
+    #   flax.checkpoints.restore_checkpoint() returns a pytree with all arrays of numpy's array type,
+    #   which slows down inference.  use jax.device_put() to move them to jax's default device.
+    # REF: <https://github.com/google/flax/discussions/1199#discussioncomment-635132>
+    state = jax.device_put(state)
+    logger.info("checkpoint loaded from '{}'".format(args.ckpt))
 
-    logger.info("starting testing (totally {} image(s) to test)".format(len(args.test_indices)))
-    for test_i in args.test_indices:
-        if test_i < 0 or test_i >= len(test_views):
-            logger.warn("skipping out-of-bounds index {} (index should be in range [0, {}])".format(test_i, len(args.test_indices) - 1))
-        logger.info("testing on image index {}".format(test_i))
-        transform = RigidTransformation(
-            rotation=scene_metadata_test.all_transforms[test_i, :9].reshape(3, 3),
-            translation=scene_metadata_test.all_transforms[test_i, -3:].reshape(3),
+    rendered_images: List[RenderedImage] = []
+    try:
+        n_frames = len(scene_meta.frames)
+        logger.info("starting testing (totally {} transform(s) to test)".format(n_frames))
+        for test_i in common.tqdm(range(n_frames), desc="testing (resolultion: {}x{})".format(scene_meta.camera.W, scene_meta.camera.H)):
+            logger.debug("testing on frame {}".format(scene_meta.frames[test_i]))
+            transform = RigidTransformation(
+                rotation=scene_meta.frames[test_i].transform_matrix_jax_array[:3, :3],
+                translation=scene_meta.frames[test_i].transform_matrix_jax_array[:3, 3],
+            )
+            KEY, key = jran.split(KEY, 2)
+            bg, rgb, depth, _ = data.to_cpu(render_image_inference(
+                KEY=key,
+                transform_cw=transform,
+                state=state,
+            ))
+            rendered_images.append(RenderedImage(
+                bg=bg,
+                rgb=rgb,
+                depth=depth,  # call to data.mono_to_rgb is deferred below so as to minimize impact on rendering speed
+            ))
+    except KeyboardInterrupt:
+        logger.warn("keyboard interrupt, tested {} images".format(len(rendered_images)))
+
+    if args.trajectory == "loaded":
+        if args.camera_override.enabled:
+            logger.info("camera is overridden, not calculating psnr")
+        elif len(rendered_images) == 0:
+            logger.warn("tested 0 image, not calculating psnr")
+        else:
+            gt_rgbs_f32 = map(
+                lambda test_view, rendered_image: data.blend_rgba_image_array(
+                    test_view.image_rgba_u8.astype(jnp.float32) / 255,
+                    rendered_image.bg,
+                ),
+                test_views,
+                rendered_images,
+            )
+            logger.debug("calculating psnr")
+            mean_psnr = sum(map(
+                data.psnr,
+                map(data.f32_to_u8, gt_rgbs_f32),
+                map(lambda ri: ri.rgb, rendered_images),
+            )) / len(rendered_images)
+            logger.info("tested {} images, mean psnr={}".format(len(rendered_images), mean_psnr))
+
+    elif args.trajectory == "orbit":
+        logger.debug("using generated orbiting trajectory, not calculating psnr")
+
+    else:
+        assert_never("")
+
+    save_dest = args.exp_dir.joinpath("test")
+    save_dest.mkdir(parents=True, exist_ok=True)
+
+    if "video" in args.save_as:
+        dest_rgb_video = save_dest.joinpath("rgb.mp4")
+        dest_depth_video = save_dest.joinpath("depth.mp4")
+
+        logger.debug("saving predicted color images as a video at '{}'".format(dest_rgb_video))
+        data.write_video(
+            save_dest.joinpath("rgb.mp4"),
+            map(lambda img: img.rgb, rendered_images),
         )
-        K, key = jran.split(K, 2)
-        rgb, depth = render_image(
-            K=key,
-            aabb=aabb,
-            camera=scene_metadata_test.camera,
-            transform_cw=transform,
-            options=args.render,
-            raymarch_options=args.raymarch,
-            param_dict={"params": params},
-            nerf_fn=model.apply,
+
+        logger.debug("saving predicted depths as a video at '{}'".format(dest_depth_video))
+        data.write_video(
+            save_dest.joinpath("depth.mp4"),
+            map(lambda img: common.compose(data.mono_to_rgb, data.f32_to_u8)(img.depth), rendered_images),
         )
-        gt_image = Image.open(test_views[test_i].file)
-        gt_image = np.asarray(gt_image)
-        gt_image = data.blend_alpha_channel(gt_image, bg=args.render.bg)
-        logger.info("{}: psnr={}".format(test_views[test_i].file, data.psnr(gt_image, rgb)))
-        dest = args.exp_dir\
-            .joinpath(args.test_split)
-        dest.mkdir(parents=True, exist_ok=True)
 
-        # rgb
-        dest_rgb = dest.joinpath("{:03d}-pred.png".format(test_i))
-        logger.debug("saving comparison image to {}".format(dest_rgb))
-        Image.fromarray(np.asarray(rgb)).save(dest_rgb)
+    if "image" in args.save_as:
+        dest_rgb = save_dest.joinpath("rgb")
+        dest_depth = save_dest.joinpath("depth")
 
-        # comparison image
-        dest_comparison = dest.joinpath("{:03d}-comparison.png".format(test_i))
-        logger.debug("saving comparison image to {}".format(dest_comparison))
-        comparison_image_data = data.side_by_side(
-            gt_image,
-            rgb,
-            H=scene_metadata_test.camera.H,
-            W=scene_metadata_test.camera.W
-        )
-        comparison_image_data = data.add_border(comparison_image_data)
-        Image.fromarray(np.asarray(comparison_image_data)).save(dest_comparison)
+        dest_rgb.mkdir(parents=True, exist_ok=True)
+        dest_depth.mkdir(parents=True, exist_ok=True)
 
-        # depth
-        dest_depth = dest.joinpath("{:03d}-depth.png".format(test_i))
-        logger.debug("saving predicted depth image to {}".format(dest_depth))
-        Image.fromarray(np.asarray(depth)).save(dest_depth)
-
-    return params
+        logger.debug("saving as images")
+        for save_i, img in enumerate(common.tqdm(rendered_images, desc="saving images")):
+            common.compose(
+                np.asarray,
+                Image.fromarray
+            )(img.rgb).save(dest_rgb.joinpath("{:04d}.png".format(save_i)))
+            common.compose(
+                data.mono_to_rgb,
+                data.f32_to_u8,
+                np.asarray,
+                Image.fromarray
+            )(img.depth).save(dest_depth.joinpath("{:04d}.png".format(save_i)))

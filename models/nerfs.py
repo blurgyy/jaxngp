@@ -12,14 +12,20 @@ from models.encoders import (
     HashGridEncoder,
     SphericalHarmonicsEncoder,
     SphericalHarmonicsEncoderCuda,
+    TCNNHashGridEncoder,
 )
 from utils.common import mkValueError
-from utils.types import ActivationType, DirectionalEncodingType, PositionalEncodingType
-from utils.types import AABB
+from utils.types import (
+    ActivationType,
+    DirectionalEncodingType,
+    PositionalEncodingType,
+    empty_impl,
+)
 
 
+@empty_impl
 class NeRF(nn.Module):
-    aabb: AABB
+    bound: float
 
     position_encoder: Encoder
     direction_encoder: Encoder
@@ -30,30 +36,37 @@ class NeRF(nn.Module):
     density_activation: Callable
     rgb_activation: Callable
 
-    # TODO:
-    #   * input "dir" does not need to be batched
-    #   * use vmap
     @nn.compact
-    def __call__(self, xyz: jax.Array, dir: jax.Array) -> Tuple[jax.Array, jax.Array]:
+    def __call__(
+        self,
+        xyz: jax.Array,
+        dir: jax.Array | None,
+    ) -> jax.Array | Tuple[jax.Array, jax.Array]:
         """
         Inputs:
-            xyz [..., 3]: coordinates in $\R^3$.
-            dirs [..., 3]: **unit** vectors, representing viewing directions.
+            xyz `[..., 3]`: coordinates in $\R^3$.
+            dir `[..., 3]`: **unit** vectors, representing viewing directions.  If `None`, only
+                            return densities.
 
         Returns:
-            density [..., 1]: density (ray terminating probability) of each query points
-            rgb [..., 3]: predicted color for each query point
+            density `[..., 1]`: density (ray terminating probability) of each query points
+            rgb `[..., 3]`: predicted color for each query point
         """
+        original_aux_shapes = xyz.shape[:-1]
+        xyz = xyz.reshape(-1, 3)
         # scale and translate xyz coordinates into unit cube
-        bbox = jnp.asarray(self.aabb)
-        xyz = (xyz - bbox[:, 0]) / (bbox[:, 1] - bbox[:, 0])
+        xyz = (xyz + self.bound) / (2 * self.bound)
 
-        # [..., D_pos]
-        pos_enc = self.position_encoder(xyz)
+        # [..., D_pos], `float32`
+        pos_enc, tv = self.position_encoder(xyz)
 
         x = self.density_mlp(pos_enc)
         # [..., 1], [..., density_MLP_out-1]
         density, _ = jnp.split(x, [1], axis=-1)
+
+        if dir is None:
+            return density.reshape(*original_aux_shapes, 1), tv
+        dir = dir.reshape(-1, 3)
 
         # [..., D_dir]
         dir_enc = self.direction_encoder(dir)
@@ -62,7 +75,7 @@ class NeRF(nn.Module):
 
         density, rgb = self.density_activation(density), self.rgb_activation(rgb)
 
-        return density, rgb
+        return jnp.concatenate([density, rgb], axis=-1).reshape(*original_aux_shapes, 4), tv
 
 
 class CoordinateBasedMLP(nn.Module):
@@ -94,6 +107,81 @@ class CoordinateBasedMLP(nn.Module):
             kernel_init=self.kernel_init,
         )(x)
         return x
+
+
+class BackgroundModel(nn.Module): ...
+
+
+@empty_impl
+class SkySphereBg(BackgroundModel):
+    """
+    A sphere that centers at the origin and encloses a bounded scene and provides all the background
+    color, this is an over-simplified model.
+
+    When a ray intersects with the sphere from inside, it calculates the intersection point's
+    coordinate and predicts a color based on the intersection point and the viewing direction.
+    """
+
+    # radius
+    r: float
+
+    # encoder for position
+    position_encoder: Encoder
+
+    # encoder for viewing direction
+    direction_encoder: Encoder
+
+    # color predictor
+    rgb_mlp: CoordinateBasedMLP
+
+    activation: Callable
+
+    @nn.compact
+    def __call__(self, rays_o: jax.Array, rays_d: jax.Array) -> jax.Array:
+        # the distance of a point (o+td) on the ray to the origin is given by:
+        #
+        #   dist(t) = (dx^2 + dy^2 + dz^2)t^2 + 2(dx*ox + dy*oy + dz*oz)t + ox^2 + oy^2 + oz^2
+        #
+        # the minimal distance is achieved when
+        #
+        #   2(dx^2 + dy^2 + dz^2)t + 2(dx*ox + dy*oy + dz*oz) = 0,
+        #       ==> t = -(dx*ox + dy*oy + dz*oz) / (dx^2 + dy^2 + dz^2)
+        a = (rays_d * rays_d).sum(axis=-1)
+        b = 2 * (rays_o * rays_d).sum(axis=-1)
+        c = (rays_o * rays_o).sum(axis=-1) - self.r ** 2
+
+        # if min_dist < self.r, there are at most two intersections, given by:
+        #
+        #   dist(t) = r^2
+        #
+        # want the farther intersection point
+        t = jnp.maximum(
+            (-b + jnp.sqrt(b ** 2 - 4 * a * c)) / (2 * a),
+            (-b - jnp.sqrt(b ** 2 - 4 * a * c)) / (2 * a),
+        )
+        t = t.reshape(-1, 1)
+
+        finite_mask = jnp.isfinite(t)
+
+        pos = rays_o + t * rays_d
+        pos_dirs = jnp.where(
+            finite_mask,
+            pos / (jnp.linalg.norm(pos) + 1e-15),
+            0.,
+        )
+
+        # we then encode the positions/directions, and predict a view-dependent color for each ray
+        pos_enc = self.position_encoder(pos_dirs)
+        dir_enc = self.direction_encoder(rays_d)
+
+        colors = self.rgb_mlp(jnp.concatenate([pos_enc, dir_enc], axis=-1))
+        colors = self.activation(colors)
+
+        return jnp.where(
+            finite_mask,
+            colors,
+            0.,
+        )
 
 
 def make_activation(act: ActivationType):
@@ -168,52 +256,50 @@ def make_activation(act: ActivationType):
 
 
 def make_nerf(
-        aabb: AABB,
+    bound: float,
 
-        # encodings
-        pos_enc: PositionalEncodingType,
-        dir_enc: DirectionalEncodingType,
+    # encodings
+    pos_enc: PositionalEncodingType,
+    dir_enc: DirectionalEncodingType,
 
-        # encoding levels
-        pos_levels: int,
-        dir_levels: int,
+    # total variation
+    tv_scale: float,
 
-        # layer widths
-        density_Ds: List[int],
-        rgb_Ds: List[int],
+    # encoding levels
+    pos_levels: int,
+    dir_levels: int,
 
-        # output dimensions
-        density_out_dim: int,
-        rgb_out_dim: int,
+    # layer widths
+    density_Ds: List[int],
+    rgb_Ds: List[int],
 
-        # skip connections
-        density_skip_in_layers: List[int],
-        rgb_skip_in_layers: List[int],
+    # output dimensions
+    density_out_dim: int,
+    rgb_out_dim: int,
 
-        # activations
-        density_act: ActivationType,
-        rgb_act: ActivationType,
-    ) -> NeRF:
+    # skip connections
+    density_skip_in_layers: List[int],
+    rgb_skip_in_layers: List[int],
+
+    # activations
+    density_act: ActivationType,
+    rgb_act: ActivationType,
+) -> NeRF:
     if pos_enc == "identity":
         position_encoder = lambda x: x
     elif pos_enc == "frequency":
         raise NotImplementedError("Frequency encoding for NeRF is not tuned")
         position_encoder = FrequencyEncoder(dim=3, L=10)
-    elif pos_enc == "hashgrid":
-        bound_max = max(
-            [
-                aabb[0][1] - aabb[0][0],
-                aabb[1][1] - aabb[1][0],
-                aabb[2][1] - aabb[2][0],
-            ]
-        ) / 2
-        position_encoder = HashGridEncoder(
+    elif "hashgrid" in pos_enc:
+        HGEncoder = TCNNHashGridEncoder if "tcnn" in pos_enc else HashGridEncoder
+        position_encoder = HGEncoder(
             dim=3,
             L=pos_levels,
             T=2**19,
             F=2,
             N_min=2**4,
-            N_max=int(2**11 * bound_max),
+            N_max=int(2**11 * bound),
+            tv_scale=tv_scale,
             param_dtype=jnp.float32,
         )
     else:
@@ -251,7 +337,7 @@ def make_nerf(
     rgb_activation = make_activation(rgb_act)
 
     model = NeRF(
-        aabb=aabb,
+        bound=bound,
 
         position_encoder=position_encoder,
         direction_encoder=direction_encoder,
@@ -266,12 +352,64 @@ def make_nerf(
     return model
 
 
-def make_nerf_ngp(aabb: AABB) -> NeRF:
-    return make_nerf(
-        aabb=aabb,
+def make_skysphere_background_model(
+    radius: float,
 
-        pos_enc="hashgrid",
+    pos_levels: int,
+    dir_levels: int,
+
+    Ds: List[int],
+    skip_in_layers: List[int],
+
+    act: ActivationType,
+) -> SkySphereBg:
+    position_encoder = SphericalHarmonicsEncoder(L=pos_levels)
+    direction_encoder = SphericalHarmonicsEncoder(L=dir_levels)
+    rgb_mlp = CoordinateBasedMLP(
+        Ds=Ds,
+        out_dim=3,
+        skip_in_layers=skip_in_layers,
+    )
+    activation = make_activation(act)
+    return SkySphereBg(
+        r=radius,
+        position_encoder=position_encoder,
+        direction_encoder=direction_encoder,
+        rgb_mlp=rgb_mlp,
+        activation=activation,
+    )
+
+
+def make_skysphere_background_model_ngp(bound: float) -> SkySphereBg:
+    return make_skysphere_background_model(
+        radius=bound*4,
+        pos_levels=2,
+        dir_levels=4,
+        Ds=[32, 32],
+        skip_in_layers=[],
+        act="sigmoid",
+    )
+
+
+def make_nerf_ngp(
+    bound: float,
+    inference: bool,
+    tv_scale: float=0.,
+) -> NeRF:
+    return make_nerf(
+        bound=bound,
+
+        pos_enc=(
+            # TCNN's hash grid encoding runs faster at inference-time, but during training the JAX
+            # implementation is slightly faster.  It's possible to use one at training-time and
+            # another at inference-time, because the two implementations optimizes in an identical
+            # way (up to numerical error).
+            "tcnn-hashgrid"
+            if inference
+            else "hashgrid"
+        ),
         dir_enc="sh",
+        tv_scale=tv_scale,
 
         pos_levels=16,
         dir_levels=4,
@@ -279,7 +417,7 @@ def make_nerf_ngp(aabb: AABB) -> NeRF:
         density_Ds=[64],
         density_out_dim=16,
         density_skip_in_layers=[],
-        density_act="truncated_thresholded_exponential",
+        density_act="truncated_exponential",
 
         rgb_Ds=[64, 64],
         rgb_out_dim=3,
@@ -288,9 +426,9 @@ def make_nerf_ngp(aabb: AABB) -> NeRF:
     )
 
 
-def make_debug_nerf(aabb: AABB) -> NeRF:
+def make_debug_nerf(bound: float) -> NeRF:
     return NeRF(
-        aabb=aabb,
+        bound=bound,
         position_encoder=lambda x: x,
         direction_encoder=lambda x: x,
         density_mlp=CoordinateBasedMLP(
@@ -308,13 +446,12 @@ def make_debug_nerf(aabb: AABB) -> NeRF:
     )
 
 
-def make_test_cube(width: int, aabb: AABB, density: float=32) -> NeRF:
+def make_test_cube(width: int, bound: float, density: float=32) -> NeRF:
     @jax.jit
     @jax.vmap
     def cube_density_fn(x: jax.Array) -> jax.Array:
         # x is pre-normalized unit cube, we map it back to specified aabb.
-        bbox = jnp.asarray(aabb)  # [3, 2]
-        x = x * (bbox[:, 1] - bbox[:, 0]) + bbox[:, 0]
+        x = (x + bound) / (2 * bound)
         mask = (abs(x).max(axis=-1, keepdims=True) <= width/2).astype(float)
         # concatenate input xyz for use in later rgb querying
         return jnp.concatenate([density * mask, x], axis=-1)
@@ -328,7 +465,7 @@ def make_test_cube(width: int, aabb: AABB, density: float=32) -> NeRF:
         return x / width + .5
 
     return NeRF(
-        aabb=aabb,
+        bound=bound,
         position_encoder=lambda x: x,
         direction_encoder=lambda x: x,
         density_mlp=cube_density_fn,
@@ -342,8 +479,8 @@ def main():
     import jax.numpy as jnp
     import jax.random as jran
 
-    K = jran.PRNGKey(0)
-    K, key = jran.split(K, 2)
+    KEY = jran.PRNGKey(0)
+    KEY, key = jran.split(KEY, 2)
 
     m = make_nerf_ngp()
 
@@ -354,7 +491,7 @@ def main():
 
     m = make_test_cube(
         width=2,
-        aabb=[[-1, 1]] * 3,
+        bound=1,
         density=32,
     )
     # params = m.init(key, xyz, dir)

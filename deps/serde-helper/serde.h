@@ -1,13 +1,13 @@
 #pragma once
 
+#undef __noinline__  // REF: <https://github.com/NVIDIA/thrust/issues/1703#issuecomment-1197072268>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
 #include <string>
-
-#undef __noinline__  // REF: <https://github.com/NVIDIA/thrust/issues/1703#issuecomment-1197072268>
-#include <fmt/format.h>
 #define __noinline__ noinline
+
+#include <fmt/format.h>
 
 template <class To, class From>
 std::enable_if_t<
