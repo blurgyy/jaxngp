@@ -1,5 +1,5 @@
 {
-  description = "Instant Neural Graphics Primitivs in JAX";
+  description = "JAX implementation of instant-ngp (NeRF part)";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/22.11";
