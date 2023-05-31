@@ -1,7 +1,7 @@
 /data
 /logs
 
-result
+result*
 
 *.jpg
 *.JPG
