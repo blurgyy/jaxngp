@@ -229,7 +229,7 @@ usage: ...
 $
 $ # capture or download a video
 $ mkdir -p data/_src
-$ curl https://github.com/blurgyy/jaxngp/assets/44701880/318b14e9-d1d7-494b-be0c-6afd788ed2c1 -Lo data/_src/gundam.mp4
+$ curl https://github.com/blurgyy/jaxngp/assets/44701880/022a7b3c-344d-418f-aba0-0ccb9bfeb374 -Lo data/_src/gundam.mp4
 $
 $ # create a scene data from the video, set scene bound to 16, with a background color model
 $ python3 -m utils create-scene data/_src/gundam.mp4 --root-dir=data/gundam --matcher=Sequential --fps=5 --bound=16 --bg
@@ -274,10 +274,10 @@ $ python3 -m app.nerf test data/custom/gundam --{ckpt,exp-dir}=logs/gundam --tra
 
 [NeRF-synthetic]: <https://drive.google.com/drive/folders/1JDdLGDruGNXWnM1eqY1FNL9PlStjaKWi>
 
-[gundam-source]: <https://github.com/blurgyy/jaxngp/assets/44701880/318b14e9-d1d7-494b-be0c-6afd788ed2c1>
+[gundam-source]: <https://github.com/blurgyy/jaxngp/assets/44701880/022a7b3c-344d-418f-aba0-0ccb9bfeb374>
 [metasun-source]: <https://twitter.com/filiptronicek/status/1654894133801103360>
 
-[gundam-nvs]: <https://github.com/blurgyy/jaxngp/assets/44701880/d23d6f79-66e6-4022-9b06-d1b5b70bbcaa>
-[gui-teaser]: <https://github.com/blurgyy/jaxngp/assets/44701880/14d95331-0001-4c4b-90d5-72e49d686498>
+[gundam-nvs]: <https://github.com/blurgyy/jaxngp/assets/44701880/2ce8e57c-e179-469a-9ca2-10219fcba58d>
+[gui-teaser]: <https://github.com/blurgyy/jaxngp/assets/44701880/b94dcd0f-a66d-404e-aee2-87f91ddf52fe>
 
 [Demos]: <#demos>
