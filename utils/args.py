@@ -207,7 +207,7 @@ class NeRFGUIArgs(NeRFTrainingArgs):
         W: int=1024
         H: int=768
 
-        resolution_scale=0.3
+        resolution_scale: float=0.3
 
         control_window_width: int=300
 
