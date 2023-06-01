@@ -1,5 +1,6 @@
 #include <cstdint>
 
+#include <cuda_fp16.h>
 #include <cuda_device_runtime_api.h>
 #include <serde-helper/serde.h>
 #include <stdexcept>
@@ -17,7 +18,7 @@ namespace jaxtcnn {
 
 namespace {
 
-template <std::uint32_t DIM, std::uint32_t N_FEATURES_PER_LEVEL>
+template <typename PARAM_DTYPE, std::uint32_t DIM, std::uint32_t N_FEATURES_PER_LEVEL>
 void hashgrid_forward_launcher(cudaStream_t stream, void **buffers, char const *opaque, std::size_t opaque_len) {
     // buffer indexing helper
     std::uint32_t __buffer_idx = 0;
@@ -34,10 +35,10 @@ void hashgrid_forward_launcher(cudaStream_t stream, void **buffers, char const *
     // inputs
     std::uint32_t * const offset_table_data = static_cast<std::uint32_t *>(next_buffer());  // [L+1]
     float const * const __restrict__ coords_rm = static_cast<float *>(next_buffer());  // [dim, n_coords]
-    float const * const __restrict__ params = static_cast<float *>(next_buffer());  // [n_params, F]
+    PARAM_DTYPE const * const __restrict__ params = static_cast<PARAM_DTYPE *>(next_buffer());  // [n_params, F]
 
     // outputs
-    float * const __restrict__ encoded_positions_rm = static_cast<float *>(next_buffer());  // [L*F, n_coords]
+    PARAM_DTYPE * const __restrict__ encoded_positions_rm = static_cast<PARAM_DTYPE *>(next_buffer());  // [L*F, n_coords]
     float * const __restrict__ dy_dcoords_rm = static_cast<float *>(next_buffer());  // [dim*L*F, n_coords]
 
     // prepare input data for tcnn:kernel_grid
@@ -52,7 +53,7 @@ void hashgrid_forward_launcher(cudaStream_t stream, void **buffers, char const *
     static std::uint32_t constexpr n_threads = 512;
     dim3 const blocks = { tcnn::div_round_up(n_coords, n_threads), L, 1 };
     if (F == N_FEATURES_PER_LEVEL) {
-        tcnn::kernel_grid<float, DIM, N_FEATURES_PER_LEVEL, tcnn::HashType::CoherentPrime><<<blocks, n_threads, 0, stream>>>(
+        tcnn::kernel_grid<PARAM_DTYPE, DIM, N_FEATURES_PER_LEVEL, tcnn::HashType::CoherentPrime><<<blocks, n_threads, 0, stream>>>(
             n_coords  // n_elements
             , L * F  // num_grid_features
             , offset_table  // offset_table
@@ -78,6 +79,7 @@ void hashgrid_forward_launcher(cudaStream_t stream, void **buffers, char const *
     CUDA_CHECK_THROW(cudaGetLastError());
 }
 
+// only allow float32 backward
 template <std::uint32_t DIM, std::uint32_t N_FEATURES_PER_LEVEL>
 void hashgrid_backward_launcher(cudaStream_t stream, void **buffers, char const *opaque, std::size_t opaque_len) {
     // buffer indexing helper
@@ -161,7 +163,7 @@ void hashgrid_encode(
     char const *opaque,
     std::size_t opaque_len
 ) {
-    hashgrid_forward_launcher<3, 2>(stream, buffers, opaque, opaque_len);
+    hashgrid_forward_launcher<float, 3, 2>(stream, buffers, opaque, opaque_len);
 }
 
 void hashgrid_encode_backward(
@@ -171,6 +173,22 @@ void hashgrid_encode_backward(
     std::size_t opaque_len
 ) {
     hashgrid_backward_launcher<3, 2>(stream, buffers, opaque, opaque_len);
+}
+
+void hashgrid_encode_inference(
+    cudaStream_t stream,
+    void **buffers,
+    char const *opaque,
+    std::size_t opaque_len
+) {
+    using param_dtype =
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 600 // atomicAdd(__half2) is only supported with compute capability 60 and above
+        __half
+#else
+        float
+#endif
+    ;
+    hashgrid_forward_launcher<param_dtype, 3, 2>(stream, buffers, opaque, opaque_len);
 }
 
 }  // namespace jaxtcnn

@@ -52,10 +52,14 @@ def hashgrid_encode_abstract(
 
     param_dtype = jax.dtypes.canonicalize_dtype(params.dtype)
     if param_dtype != jnp.float32:
+        if param_dtype == jnp.float16:
+            extra_msg = "\n========\nTo use fp16 for inference, use `hashgrid_encode_inference` instead.\n========"
+        else:
+            extra_msg = ""
         raise NotImplementedError(
-            "hashgrid encoding is only implemented for parameters of type float32, got {}".format(
+            "forward pass of hashgrid encoding is only implemented for parameters of type float32, got {}".format(
                 param_dtype
-            )
+            ) + extra_msg
         )
 
     out_shapes = {
@@ -92,6 +96,8 @@ def hashgrid_encode_backward_abstract(
 
     n_params, _ = params.shape
 
+    chex.assert_type([coords_rm, params, dL_dy_rm, dy_dcoords_rm], jnp.float32)
+
     chex.assert_shape(offset_table_data, (L + 1,))
     chex.assert_shape(coords_rm, (dim, n_coords))
     chex.assert_shape(params, (n_params, F))
@@ -121,8 +127,12 @@ def hashgrid_encode_backward_abstract(
 
     param_dtype = jax.dtypes.canonicalize_dtype(params.dtype)
     if param_dtype != jnp.float32:
+        if param_dtype == jnp.float16:
+            extra_msg = "\n========\nTo use fp16 for inference, use `hashgrid_encode_inference` instead.\n========"
+        else:
+            extra_msg = ""
         raise NotImplementedError(
-            "hashgrid encoding is only implemented for parameters of type float32, got {}".format(
+            "backward pass of hashgrid encoding is only implemented for parameters of type float32, got {}".format(
                 param_dtype
             )
         )
@@ -135,4 +145,72 @@ def hashgrid_encode_backward_abstract(
     return (
         jax.ShapedArray(shape=out_shapes["dL_dparams"], dtype=jnp.float32),
         jax.ShapedArray(shape=out_shapes["dL_dcoords_rm"], dtype=jnp.float32),
+    )
+
+
+def hashgrid_encode_inference_abstract(
+    # arrays
+    offset_table_data: jax.Array,
+    coords_rm: jax.Array,
+    params: jax.Array,
+
+    # static args
+    L: int,
+    F: int,
+    N_min: int,
+    per_level_scale: float,
+):
+    dim, n_coords = coords_rm.shape
+    if dim != 3:
+        raise NotImplementedError(
+            "hashgrid encoding is only implemented for 3D coordinates, expected input coordinates to have shape ({}, n_coords), but got shape {}".format(
+                dim, coords_rm.shape
+            )
+        )
+
+    n_params, _ = params.shape
+
+    chex.assert_type(params, jnp.float16)
+
+    chex.assert_shape(offset_table_data, (L + 1,))
+    chex.assert_shape(coords_rm, (dim, n_coords))
+    chex.assert_shape(params, (n_params, F))
+
+    chex.assert_scalar(L)
+    chex.assert_scalar(F)
+    chex.assert_scalar(N_min)
+    chex.assert_scalar(per_level_scale)
+    chex.assert_type([L, F, N_min], int)
+    chex.assert_type(per_level_scale, float)
+
+    offset_dtype = jax.dtypes.canonicalize_dtype(offset_table_data.dtype)
+    if offset_dtype != jnp.uint32:
+        raise RuntimeError(
+            "hashgrid encoding expects `offset_table_data` (a prefix sum of the hash table sizes of each level) to be of type uint32, got {}".format(offset_dtype)
+        )
+
+    coord_dtype = jax.dtypes.canonicalize_dtype(coords_rm.dtype)
+    if coord_dtype != jnp.float32:
+        raise NotImplementedError(
+            "hashgrid encoding is only implemented for input coordinates of type float32, got {}".format(
+                coord_dtype
+            )
+        )
+
+    param_dtype = jax.dtypes.canonicalize_dtype(params.dtype)
+    if param_dtype != jnp.float16:
+        raise NotImplementedError(
+            "inference-time hashgrid encoding is only implemented for parameters of type float16, got {}".format(
+                param_dtype
+            )
+        )
+
+    out_shapes = {
+        "encoded_coords_rm": (L * F, n_coords),
+        "dy_dcoords_rm": (dim * L * F, n_coords),
+    }
+
+    return (
+        jax.ShapedArray(shape=out_shapes["encoded_coords_rm"], dtype=jnp.float16),
+        jax.ShapedArray(shape=out_shapes["dy_dcoords_rm"], dtype=jnp.float32),
     )

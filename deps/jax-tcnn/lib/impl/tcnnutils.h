@@ -42,4 +42,11 @@ void hashgrid_encode_backward(
     std::size_t opaque_len
 );
 
+void hashgrid_encode_inference(
+    cudaStream_t stream,
+    void **buffers,
+    const char *opaque,
+    std::size_t opaque_len
+);
+
 }  // namespace jaxtcnn

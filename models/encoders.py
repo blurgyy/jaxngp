@@ -6,7 +6,7 @@ from flax.linen.dtypes import Dtype
 import jax
 import jax.numpy as jnp
 import jax.random as jran
-from jaxtcnn import HashGridMetadata, hashgrid_encode
+from jaxtcnn import HashGridMetadata, hashgrid_encode, hashgrid_encode_inference
 import shjax
 
 from utils.common import jit_jaxfn_with, vmap_jaxfn_with
@@ -72,7 +72,8 @@ class HashGridEncoder(Encoder):
 
     tv_scale: float
 
-    param_dtype: Dtype = jnp.float32
+    compute_dtype: Dtype=jnp.float32
+    param_dtype: Dtype=jnp.float32
 
     @property
     def b(self) -> float:
@@ -287,7 +288,7 @@ class TCNNHashGridEncoder(HashGridEncoder):
             self.param_dtype,
         )
 
-        return hashgrid_encode(
+        return hashgrid_encode_inference(
             desc=HashGridMetadata(
                 L=self.L,
                 F=self.F,
@@ -296,8 +297,8 @@ class TCNNHashGridEncoder(HashGridEncoder):
             ),
             offset_table_data=jnp.asarray(offsets, dtype=jnp.uint32),
             coords_rm=pos.T,
-            params=latents,
-        ).T, 0
+            params=latents.astype(self.compute_dtype),
+        ).T.astype(self.param_dtype), 0
 
 
 @empty_impl

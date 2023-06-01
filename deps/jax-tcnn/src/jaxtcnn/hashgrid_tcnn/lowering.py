@@ -135,3 +135,61 @@ def hashgrid_encode_backward_lowering_rule(
             shapes["in.dy_dcoords_rm"],
         ),
     )
+
+
+def hashgrid_encode_inference_lowering_rule(
+    ctx: mlir.LoweringRule,
+
+    # arrays
+    offset_table_data: ir.Value,
+    coords_rm: ir.Value,
+    params: ir.Value,
+
+    # static args
+    L: int,
+    F: int,
+    N_min: int,
+    per_level_scale: float,
+):
+    dim, n_coords = ir.RankedTensorType(coords_rm.type).shape
+    n_params, _ = ir.RankedTensorType(params.type).shape
+
+    opaque = tcnnutils.make_hashgrid_descriptor(
+        n_coords,
+        L,
+        F,
+        N_min,
+        per_level_scale,
+    )
+
+    shapes = {
+        "in.offset_table_data": (L + 1,),
+        "in.coords_rm": (dim, n_coords),
+        "in.params": (n_params, F),
+
+        "out.encoded_coords_rm": (L * F, n_coords),
+        "out.dy_dcoords_rm": (dim * L * F, n_coords),
+    }
+
+    return custom_call(
+        call_target_name="hashgrid_encode",
+        out_types=[
+            ir.RankedTensorType.get(shapes["out.encoded_coords_rm"], ir.F16Type.get()),  # fp16
+            ir.RankedTensorType.get(shapes["out.dy_dcoords_rm"], ir.F32Type.get()),
+        ],
+        operands=[
+            offset_table_data,
+            coords_rm,
+            params,
+        ],
+        backend_config=opaque,
+        operand_layouts=default_layouts(
+            shapes["in.offset_table_data"],
+            shapes["in.coords_rm"],
+            shapes["in.params"],
+        ),
+        result_layouts=default_layouts(
+            shapes["out.encoded_coords_rm"],
+            shapes["out.dy_dcoords_rm"],
+        ),
+    )

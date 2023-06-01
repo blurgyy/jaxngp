@@ -2,6 +2,7 @@ import functools
 from typing import Callable, List, Tuple
 
 import flax.linen as nn
+from flax.linen.dtypes import Dtype
 import jax
 from jax.nn.initializers import Initializer
 import jax.numpy as jnp
@@ -89,8 +90,12 @@ class CoordinateBasedMLP(nn.Module):
     # as described in the paper
     kernel_init: Initializer=nn.initializers.glorot_uniform()
 
+    compute_dtype: Dtype=jnp.float32
+    param_dtype: Dtype=jnp.float32
+
     @nn.compact
     def __call__(self, x: jax.Array) -> jax.Array:
+        x = x.astype(self.compute_dtype)
         in_x = x
         for i, d in enumerate(self.Ds):
             if i in self.skip_in_layers:
@@ -106,7 +111,7 @@ class CoordinateBasedMLP(nn.Module):
             use_bias=False,
             kernel_init=self.kernel_init,
         )(x)
-        return x
+        return x.astype(self.param_dtype)
 
 
 class BackgroundModel(nn.Module): ...
@@ -284,6 +289,9 @@ def make_nerf(
     # activations
     density_act: ActivationType,
     rgb_act: ActivationType,
+
+    compute_dtype: Dtype,
+    param_dtype: Dtype,
 ) -> NeRF:
     if pos_enc == "identity":
         position_encoder = lambda x: x
@@ -300,7 +308,8 @@ def make_nerf(
             N_min=2**4,
             N_max=int(2**11 * bound),
             tv_scale=tv_scale,
-            param_dtype=jnp.float32,
+            compute_dtype=compute_dtype,
+            param_dtype=param_dtype,
         )
     else:
         raise mkValueError(
@@ -325,12 +334,16 @@ def make_nerf(
     density_mlp = CoordinateBasedMLP(
         Ds=density_Ds,
         out_dim=density_out_dim,
-        skip_in_layers=density_skip_in_layers
+        skip_in_layers=density_skip_in_layers,
+        compute_dtype=compute_dtype,
+        param_dtype=param_dtype,
     )
     rgb_mlp = CoordinateBasedMLP(
         Ds=rgb_Ds,
         out_dim=rgb_out_dim,
-        skip_in_layers=rgb_skip_in_layers
+        skip_in_layers=rgb_skip_in_layers,
+        compute_dtype=compute_dtype,
+        param_dtype=param_dtype,
     )
 
     density_activation = make_activation(density_act)
@@ -423,6 +436,9 @@ def make_nerf_ngp(
         rgb_out_dim=3,
         rgb_skip_in_layers=[],
         rgb_act="sigmoid",
+
+        compute_dtype=jnp.float16 if inference else jnp.float32,
+        param_dtype=jnp.float32,
     )
 
 

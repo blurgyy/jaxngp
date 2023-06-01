@@ -26,6 +26,7 @@ pybind11::dict get_hashgrid_registrations() {
     pybind11::dict dict;
     dict["hashgrid_encode"] = encapsulate_function(hashgrid_encode);
     dict["hashgrid_encode_backward"] = encapsulate_function(hashgrid_encode_backward);
+    dict["hashgrid_encode_inference"] = encapsulate_function(hashgrid_encode_inference);
     return dict;
 }
 

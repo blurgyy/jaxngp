@@ -27,6 +27,11 @@ hashgrid_encode_backward_p.multiple_results = True
 hashgrid_encode_backward_p.def_impl(functools.partial(xla.apply_primitive, hashgrid_encode_backward_p))
 hashgrid_encode_backward_p.def_abstract_eval(abstract.hashgrid_encode_backward_abstract)
 
+hashgrid_encode_inference_p = jax.core.Primitive("hashgrid🏁inference")
+hashgrid_encode_inference_p.multiple_results = True
+hashgrid_encode_inference_p.def_impl(functools.partial(xla.apply_primitive, hashgrid_encode_inference_p))
+hashgrid_encode_inference_p.def_abstract_eval(abstract.hashgrid_encode_inference_abstract)
+
 
 # lowering rules
 mlir.register_lowering(
@@ -37,6 +42,11 @@ mlir.register_lowering(
 mlir.register_lowering(
     prim=hashgrid_encode_backward_p,
     rule=lowering.hashgrid_encode_backward_lowering_rule,
+    platform="gpu",
+)
+mlir.register_lowering(
+    prim=hashgrid_encode_inference_p,
+    rule=lowering.hashgrid_encode_inference_lowering_rule,
     platform="gpu",
 )
 
