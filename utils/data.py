@@ -439,7 +439,7 @@ def set_pixels(imgarr: jax.Array, xys: jax.Array, selected: jax.Array, preds: ja
         return interm.reshape(H, W)
 
 
-# this does not give better results than a plain `jnp.unifrom(0, 1)` for supervising alpha via color
+# this does not give better results than a plain `jnp.uniform(0, 1)` for supervising alpha via color
 # blending.
 # TODO: for the "mic" scene, using white as background color actually performs better than using
 # random background on depth supervision, why?

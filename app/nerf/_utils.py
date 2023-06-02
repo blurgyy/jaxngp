@@ -62,7 +62,7 @@ def train_step(
         o_world, d_world = make_rays_worldspace()
         if state.use_background_model:
             # NOTE: use `params` (from loss_fn's inputs) instead of `state.params` (from
-            # train_step's inputs), as gradients are conly computed w.r.t. loss_fn's inputs.
+            # train_step's inputs), as gradients are only computed w.r.t. loss_fn's inputs.
             bg = state.bg_fn({"params": params["bg"]}, o_world, d_world)
         elif state.render.random_bg:
             KEY, key = jran.split(KEY, 2)

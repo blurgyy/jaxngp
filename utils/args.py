@@ -33,7 +33,7 @@ class TrainingArgs:
     # learning rate
     lr: float
 
-    # scalar multipled to total variation loss, set this to a positive value to enable calculation
+    # scalar multiplied to total variation loss, set this to a positive value to enable calculation
     # of TV loss
     tv_scale: float
 
@@ -84,7 +84,7 @@ class ImageFitArgs:
         # In our case, setting the batch size to a larger number hinders data loading performance,
         # and thus causes the GPU not being fully occupied.  On the other hand, setting the batch
         # size to a smaller one utilizes the GPU fully, but the iterations per second capped at
-        # some rate which results in lower throughput. setting bs to 2^{10} achieves a satisfing
+        # some rate which results in lower throughput. setting bs to 2^{10} achieves a satisfying
         # tradeoff here.
         bs=2**10,
         n_epochs=32,

@@ -419,7 +419,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     float * const __restrict__ dss = static_cast<float *>(next_buffer());  // [total_samples]
     float * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [total_samples]
 
-    // reset helper coutner and outputs to zeros
+    // reset helper counter and outputs to zeros
     CUDA_CHECK_THROW(cudaMemsetAsync(counter, 0x00, sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(rays_n_samples, 0x00, n_rays * sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(rays_sample_startidx, 0x00, n_rays * sizeof(int), stream));

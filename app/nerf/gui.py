@@ -28,18 +28,18 @@ class CKPT():
     step: int = 0
 
     def parse_ckpt(self, ckpt_name: str, ckpt_path: str) -> str:
-        sucess = False
+        success = False
         s = ckpt_name.split("_")
         if s[0] == "checkpoint" and Path(ckpt_path).exists:
             try:
                 self.step = int(s[1].split(".")[0])
                 self.ckpt_file_path = Path(ckpt_path)
                 self.need_load_ckpt = True
-                sucess = True
+                success = True
             except TypeError or ValueError as e:
                 self.logger.error(e)
             finally:
-                if sucess:
+                if success:
                     return "checkpoint loaded from '{}'".format(self.ckpt_file_path)
                 return "Fail to load checkpoint, causing the file is not a checkpoint"
 
@@ -209,7 +209,7 @@ class Gui_trainer():
             eps=1e-15,
             eps_root=1e-15,
             # In NeRF experiments, the network can converge to a reasonably low loss during the
-            # frist ~50k training steps (with 1024 rays per batch and 1024 samples per ray), but the
+            # first ~50k training steps (with 1024 rays per batch and 1024 samples per ray), but the
             # loss becomes NaN after about 50~150k training steps.
             # paper:
             #   To prevent divergence after long training periods, we apply a weak L2 regularization
@@ -1073,10 +1073,10 @@ class NeRFGUI():
                             dpg.add_theme_color(dpg.mvThemeCol_Header,
                                                 (0, 62, 89))
                     #control
-                    with dpg.collapsing_header(tag="_conrol_panel",
+                    with dpg.collapsing_header(tag="_control_panel",
                                                label="Control Panel",
                                                default_open=True):
-                        dpg.bind_item_theme("_conrol_panel", theme_head)
+                        dpg.bind_item_theme("_control_panel", theme_head)
                         #mode
                         with dpg.group(horizontal=True):
                             dpg.add_text("Visualization mode:   ")
@@ -1310,7 +1310,7 @@ class NeRFGUI():
                           parent="_primary_window",
                           width=self.W - 15,
                           height=self.H - 32)
-            dpg.configure_item("_conrol_panel",
+            dpg.configure_item("_control_panel",
                                label="Control Panel",
                                default_open=True)
             dpg.configure_item("_para_panel",

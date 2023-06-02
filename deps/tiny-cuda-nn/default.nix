@@ -63,7 +63,7 @@ stdenv.mkDerivation (finalAttrs: rec {
   ];
 
   # NOTE: We cannot use pythonImportsCheck for this module because it uses torch to immediately
-  #   initailize CUDA and GPU access is not allowed in the nix build environment.
+  #       initialize CUDA and GPU access is not allowed in the nix build environment.
   # NOTE: There are no tests for the C++ library or the python bindings, so we just skip the check
   #   phase -- we're not missing anything.
   doCheck = false;

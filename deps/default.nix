@@ -15,7 +15,7 @@ let
   # NOTE: removing unused compute capabilities will build faster, GPUs and their compute
   # capabilities can be found at:
   #   <https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/>
-  # All the compute cababilities since `5.0`. REF: <https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#features-and-technical-specifications-technical-specifications-per-compute-capability>
+  # All the compute capabilities since `5.0`. REF: <https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#features-and-technical-specifications-technical-specifications-per-compute-capability>
   cudaCapabilities = [
     # /nix/store/hsbbv8a72hwjrka8igd7hk66skvi03rp-cudatoolkit-11.7.0-unsplit/bin/nvcc --list-gpu-arch
     "3.5"

@@ -189,7 +189,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
         eps=1e-15,
         eps_root=1e-15,
         # In NeRF experiments, the network can converge to a reasonably low loss during the
-        # frist ~50k training steps (with 1024 rays per batch and 1024 samples per ray), but the
+        # first ~50k training steps (with 1024 rays per batch and 1024 samples per ray), but the
         # loss becomes NaN after about 50~150k training steps.
         # paper:
         #   To prevent divergence after long training periods, we apply a weak L2 regularization

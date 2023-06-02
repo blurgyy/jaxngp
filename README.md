@@ -133,7 +133,7 @@ usage: __main__.py train [-h] --exp-dir PATH [--raymarch.diagonal-n-steps INT]
 │ training hyper parameters                                                                        │
 │ ──────────────────────────────────────────────────────────────────────────────────────────────── │
 │ --train.lr FLOAT        learning rate (default: 0.01)                                            │
-│ --train.tv-scale FLOAT  scalar multipled to total variation loss, set this to a positive value   │
+│ --train.tv-scale FLOAT  scalar multiplied to total variation loss, set this to a positive value  │
 │                         to enable calculation of TV loss (default: 0.0)                          │
 │ --train.bs INT          batch size (default: 1048576)                                            │
 │ --train.n-epochs INT    training epochs (default: 50)                                            │
@@ -231,7 +231,7 @@ $ # capture or download a video
 $ mkdir -p data/_src
 $ curl https://github.com/blurgyy/jaxngp/assets/44701880/022a7b3c-344d-418f-aba0-0ccb9bfeb374 -Lo data/_src/gundam.mp4
 $
-$ # create a scene data from the video, set scene bound to 16, with a background color model
+$ # create a scene from the video, set scene bound to 16, with a background color model
 $ python3 -m utils create-scene data/_src/gundam.mp4 --root-dir=data/gundam --matcher=Sequential --fps=5 --bound=16 --bg
 [...]
 ```

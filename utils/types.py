@@ -670,7 +670,7 @@ class RenderedImage:
 class NeRFState(TrainState):
     # WARN:
     #   do not annotate fields with jax.Array as members with flax.truct.field(pytree_node=False),
-    #   otherwise wierd issues happen, e.g. jax tracer leak, array-to-boolean conversion exception
+    #   otherwise weird issues happen, e.g. jax tracer leak, array-to-boolean conversion exception
     #   while calling a jitted function with no helpful traceback.
     ogrid: OccupancyDensityGrid
 
