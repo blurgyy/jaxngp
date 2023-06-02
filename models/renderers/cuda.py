@@ -235,7 +235,7 @@ def render_image_inference(
     else:
         march_steps_cap = min(4, state.batch_config.mean_effective_samples_per_ray)
     march_steps_cap = int(march_steps_cap)
-    n_rays = min(65536 // march_steps_cap, o_world.shape[0])
+    n_rays = min(65536 // march_steps_cap, state.scene_meta.camera.n_pixels)
 
     counter = jnp.zeros(1, dtype=jnp.uint32)
     terminated = jnp.ones(n_rays, dtype=jnp.bool_)  # all rays are terminated at the beginning
