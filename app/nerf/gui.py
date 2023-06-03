@@ -282,7 +282,7 @@ class Gui_trainer():
         )
         self.camera = self.camera.scale_resolution(_scale)
 
-    def render_frame(self, _scale: float, _H: int, _W: int):
+    def render_frame(self, _scale: float, _H: int, _W: int, render_cost: bool):
         self.set_render_camera(_scale, _H, _W)
         #camera pose
         transform = RigidTransformation(
@@ -299,7 +299,7 @@ class Gui_trainer():
                 nerf_fn=self.nerf_model_inference.apply,
             ),
             camera_override=self.camera,
-            render_cost=True)
+            render_cost=render_cost)
 
         bg = self.get_npf32_image(bg,
                                   W=self.args.viewport.W,
@@ -310,9 +310,10 @@ class Gui_trainer():
         depth = self.color_depth(depth,
                                  W=self.args.viewport.W,
                                  H=self.args.viewport.H)
-        cost = self.get_cost_image(cost,
-                                   W=self.args.viewport.W,
-                                   H=self.args.viewport.H)
+        if render_cost:
+            cost = self.get_cost_image(cost,
+                                       W=self.args.viewport.W,
+                                       H=self.args.viewport.H)
         return (bg, rgb, depth, cost)
 
     def get_cost_image(self, cost, W, H):
@@ -643,13 +644,20 @@ class TrainThread(threading.Thread):
                     start_time = time.time()
                     self.trainer.setBackColor(self.back_color)
                     _, self.rgb, self.depth, self.cost = self.trainer.render_frame(
-                        self.scale, self.H, self.W)
+                        self.scale, self.H, self.W, self.mode == Mode.Cost)
                     if self.mode == Mode.Render:
                         self.framebuff = self.rgb
                     elif self.mode == Mode.Depth:
                         self.framebuff = self.depth
+                    elif self.mode == Mode.Cost:
+                        if self.cost is not None:
+                            self.framebuff = self.cost
+                        else:
+                            self.framebuff = np.tile(np.asarray(self.back_color, dtype=np.float32),
+                                                     (self.H, self.W, 1))
                     else:
-                        self.framebuff = self.cost
+                        raise NotImplementedError("visualization mode '{}' is not implemented"
+                                                  .format(self.mode))
                     self.frame_updated = True
                     end_time = time.time()
                     self.render_infer_time = end_time - start_time
@@ -1015,8 +1023,13 @@ class NeRFGUI():
                 self.mode = Mode.Render
             elif app_data == "depth":
                 self.mode = Mode.Depth
-            else:
+            elif app_data == "cost":
                 self.mode = Mode.Cost
+            else:
+                raise NotImplementedError("visualization mode '{}' is not implemented"
+                                          .format(self.mode))
+            if self.train_thread:
+                self.train_thread.test()
 
         def callback_loadCheckpoint(_, app_data):
             file_name = app_data['file_name']
