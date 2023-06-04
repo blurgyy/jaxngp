@@ -41,37 +41,47 @@ class NeRF(nn.Module):
         self,
         xyz: jax.Array,
         dir: jax.Array | None,
+        appearance_embeddings: jax.Array | None,
     ) -> jax.Array | Tuple[jax.Array, jax.Array]:
         """
         Inputs:
-            xyz `[..., 3]`: coordinates in $\R^3$.
+            xyz `[..., 3]`: coordinates in $\R^3$
             dir `[..., 3]`: **unit** vectors, representing viewing directions.  If `None`, only
-                            return densities.
+                            return densities
+            appearance_embeddings `[..., n_extra_learnable_dims]` or `[n_extra_learnable_dims]`:
+                per-image latent code to model illumination, if it's a 1D vector of length
+                `n_extra_learnable_dims`, all sampled points will use this embedding.
 
         Returns:
             density `[..., 1]`: density (ray terminating probability) of each query points
             rgb `[..., 3]`: predicted color for each query point
         """
         original_aux_shapes = xyz.shape[:-1]
-        xyz = xyz.reshape(-1, 3)
+        n_samples = functools.reduce(int.__mul__, original_aux_shapes)
+        xyz = xyz.reshape(n_samples, 3)
         # scale and translate xyz coordinates into unit cube
         xyz = (xyz + self.bound) / (2 * self.bound)
 
-        # [..., D_pos], `float32`
+        # [n_samples, D_pos], `float32`
         pos_enc, tv = self.position_encoder(xyz)
 
         x = self.density_mlp(pos_enc)
-        # [..., 1], [..., density_MLP_out-1]
+        # [n_samples, 1], [n_samples, density_MLP_out-1]
         density, _ = jnp.split(x, [1], axis=-1)
 
         if dir is None:
             return density.reshape(*original_aux_shapes, 1), tv
-        dir = dir.reshape(-1, 3)
+        dir = dir.reshape(n_samples, 3)
 
-        # [..., D_dir]
+        # [n_samples, D_dir]
         dir_enc = self.direction_encoder(dir)
-        # [..., 3]
-        rgb = self.rgb_mlp(jnp.concatenate([x, dir_enc], axis=-1))
+
+        # [n_samples, 3]
+        rgb = self.rgb_mlp(jnp.concatenate([
+            x,
+            dir_enc,
+            jnp.broadcast_to(appearance_embeddings, (n_samples, appearance_embeddings.shape[-1])),
+        ], axis=-1))
 
         density, rgb = self.density_activation(density), self.rgb_activation(rgb)
 
@@ -137,7 +147,12 @@ class SkySphereBg(BackgroundModel):
     activation: Callable
 
     @nn.compact
-    def __call__(self, rays_o: jax.Array, rays_d: jax.Array) -> jax.Array:
+    def __call__(
+        self,
+        rays_o: jax.Array,
+        rays_d: jax.Array,
+        appearance_embeddings: jax.Array,
+    ) -> jax.Array:
         # the distance of a point (o+td) on the ray to the origin is given by:
         #
         #   dist(t) = (dx^2 + dy^2 + dz^2)t^2 + 2(dx*ox + dy*oy + dz*oz)t + ox^2 + oy^2 + oz^2
@@ -173,8 +188,10 @@ class SkySphereBg(BackgroundModel):
         # we then encode the positions/directions, and predict a view-dependent color for each ray
         pos_enc = self.position_encoder(pos_dirs)
         dir_enc = self.direction_encoder(rays_d)
+        n_rays = functools.reduce(int.__mul__, rays_d.shape[:-1])
+        appearance_embeddings = appearance_embeddings.reshape(n_rays, -1)
 
-        colors = self.rgb_mlp(jnp.concatenate([pos_enc, dir_enc], axis=-1))
+        colors = self.rgb_mlp(jnp.concatenate([pos_enc, dir_enc, appearance_embeddings], axis=-1))
         colors = self.activation(colors)
 
         return jnp.where(

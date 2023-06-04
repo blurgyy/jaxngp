@@ -711,6 +711,7 @@ def load_scene(
                 .scale_world(scene_options.world_scale)
                 .scale_resolution(scene_options.resolution_scale)
         ),
+        n_extra_learnable_dims=transforms.n_extra_learnable_dims,
         frames=transforms.frames,
     )
 

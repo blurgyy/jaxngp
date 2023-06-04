@@ -86,6 +86,7 @@ __global__ void march_rays_kernel(
     // outputs
     , std::uint32_t * const __restrict__ rays_n_samples  // [n_rays]
     , std::uint32_t * const __restrict__ rays_sample_startidx  // [n_rays]
+    , std::uint32_t * const __restrict__ idcs  // [total_samples]
     , float * const __restrict__ xyzs  // [total_samples, 3]
     , float * const __restrict__ dirs  // [total_samples, 3]
     , float * const __restrict__ dss  // [total_samples]
@@ -179,6 +180,7 @@ __global__ void march_rays_kernel(
     rays_sample_startidx[i] = ray_sample_startidx;
 
     // output arrays
+    std::uint32_t * const __restrict__ ray_idcs = idcs + ray_sample_startidx;
     float * const __restrict__ ray_xyzs = xyzs + ray_sample_startidx * 3;
     float * const __restrict__ ray_dirs = dirs + ray_sample_startidx * 3;
     float * const __restrict__ ray_dss = dss + ray_sample_startidx;
@@ -223,6 +225,7 @@ __global__ void march_rays_kernel(
 
         float new_ray_t = ray_t + ds;
         if (occupied) {
+            ray_idcs[steps] = i;  // this sample point comes from the `i`-th ray
             ray_xyzs[steps * 3 + 0] = x;
             ray_xyzs[steps * 3 + 1] = y;
             ray_xyzs[steps * 3 + 2] = z;
@@ -427,6 +430,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     // outputs
     std::uint32_t * const __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     std::uint32_t * const __restrict__ rays_sample_startidx = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
+    std::uint32_t * const __restrict__ idcs = static_cast<std::uint32_t *>(next_buffer());  // [total_samples]
     float * const __restrict__ xyzs = static_cast<float *>(next_buffer());  // [total_samples, 3]
     float * const __restrict__ dirs = static_cast<float *>(next_buffer());  // [total_samples, 3]
     float * const __restrict__ dss = static_cast<float *>(next_buffer());  // [total_samples]
@@ -435,7 +439,8 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     // reset helper counter and outputs to zeros
     CUDA_CHECK_THROW(cudaMemsetAsync(counter, 0x00, sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(rays_n_samples, 0x00, n_rays * sizeof(std::uint32_t), stream));
-    CUDA_CHECK_THROW(cudaMemsetAsync(rays_sample_startidx, 0x00, n_rays * sizeof(int), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(rays_sample_startidx, 0x00, n_rays * sizeof(std::uint32_t), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(idcs, 0x00, total_samples * sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(xyzs, 0x00, total_samples * 3 * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(dirs, 0x00, total_samples * 3 * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(dss, 0x00, total_samples * sizeof(float), stream));
@@ -467,6 +472,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
         // outputs
         , rays_n_samples
         , rays_sample_startidx
+        , idcs
         , xyzs
         , dirs
         , dss
