@@ -130,6 +130,9 @@ class OccupancyDensityGrid:
             alive_indices_offset=np.cumsum([0] + [G3] * cascades).tolist(),
         )
 
+    def mean_density_up_to_cascade(self, cas: int) -> float | jax.Array:
+        return self.density[self.alive_indices[:self.alive_indices_offset[cas]]].mean()
+
 
 @empty_impl
 @dataclass
@@ -774,9 +777,8 @@ class NeRFState(TrainState):
 
     @jax.jit
     def threshold_ogrid(self) -> "NeRFState":
-        density_threshold = .01 * self.raymarch.diagonal_n_steps / (2 * min(self.scene_meta.bound, 1) * 3**.5)
-        mean_density = self.ogrid.density[self.ogrid.alive_indices[:self.ogrid.alive_indices_offset[1]]].mean()
-        density_threshold = jnp.minimum(density_threshold, mean_density)
+        mean_density = self.ogrid.mean_density_up_to_cascade(1)
+        density_threshold = jnp.minimum(self.density_threshold_from_min_step_size, mean_density)
         occupied_mask, occupancy_bitfield = packbits(
             density_threshold=density_threshold,
             density_grid=self.ogrid.density,
@@ -875,6 +877,10 @@ class NeRFState(TrainState):
                 ))).tolist(),
             ),
         )
+
+    @property
+    def density_threshold_from_min_step_size(self) -> float:
+        return .01 * self.raymarch.diagonal_n_steps / (2 * min(self.scene_meta.bound, 1) * 3**.5)
 
     @property
     def use_background_model(self) -> bool:
