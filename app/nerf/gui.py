@@ -174,8 +174,10 @@ class Gui_trainer():
                           inference=False,
                           tv_scale=self.args.train.tv_scale),
             make_nerf_ngp(bound=self.scene_meta.bound,
-                          inference=True), (jnp.zeros((1, 3),dtype=jnp.float32),
-                                            jnp.zeros((1, 3),dtype=jnp.float32)))
+                          inference=True), (jnp.zeros((1, 3), dtype=jnp.float32),
+                                            jnp.zeros((1, 3), dtype=jnp.float32),
+                                            jnp.zeros((1, self.scene_meta.n_extra_learnable_dims),
+                                                      dtype=jnp.float32)))
         self.KEY, key = jran.split(self.KEY, 2)
         self.nerf_variables = self.nerf_model_train.init(key, *init_input)
         if self.args.common.summary:
@@ -184,51 +186,16 @@ class Gui_trainer():
         if self.scene_meta.bg:
             self.bg_model, init_input = (make_skysphere_background_model_ngp(
                 bound=self.scene_meta.bound), (jnp.zeros((1, 3),dtype=jnp.float32),
-                                               jnp.zeros((1, 3),dtype=jnp.float32)))
+                                               jnp.zeros((1, 3),dtype=jnp.float32),
+                                               jnp.zeros((1, self.scene_meta.n_extra_learnable_dims),
+                                                      dtype=jnp.float32)))
             self.KEY, key = jran.split(self.KEY, 2)
             self.bg_variables = self.bg_model.init(key, *init_input)
 
-        lr_sch = optax.exponential_decay(
-            init_value=self.args.train.lr,
-            transition_steps=10_000,
-            decay_rate=1 /
-            3,  # decay to `1/3 * init_lr` after `transition_steps` steps
-            staircase=True,  # use integer division to determine lr drop step
-            transition_begin=
-            10_000,  # hold the initial lr value for the initial 10k steps (but first lr drop happens at 20k steps because `staircase` is specified)
-            end_value=self.args.train.lr /
-            100,  # stop decaying at `1/100 * init_lr`
-        )
-        self.optimizer = optax.adamw(
-            learning_rate=lr_sch,
-            b1=0.9,
-            b2=0.99,
-            # paper:
-            #   the small value of 𝜖 = 10^{−15} can significantly accelerate the convergence of the
-            #   hash table entries when their gradients are sparse and weak.
-            eps=1e-15,
-            eps_root=1e-15,
-            # In NeRF experiments, the network can converge to a reasonably low loss during the
-            # first ~50k training steps (with 1024 rays per batch and 1024 samples per ray), but the
-            # loss becomes NaN after about 50~150k training steps.
-            # paper:
-            #   To prevent divergence after long training periods, we apply a weak L2 regularization
-            #   (factor 10^{−6}) to the neural network weights, ...
-            weight_decay=1e-6,
-            # paper:
-            #   ... to the neural network weights, but not to the hash table entries.
-            mask={
-                "nerf": {
-                    "density_mlp": True,
-                    "rgb_mlp": True,
-                    "position_encoder": False,
-                },
-                "bg": self.scene_meta.bg,
-            },
-        )
         if self.ckpt.need_load_ckpt:
             self.load_checkpoint(self.ckpt.ckpt_file_path, self.ckpt.step)
         else:
+            self.KEY, key = jran.split(self.KEY, 2)
             self.state = NeRFState.create(
                 ogrid=OccupancyDensityGrid.create(
                     cascades=self.scene_meta.cascades,
@@ -256,8 +223,15 @@ class Gui_trainer():
                     "bg":
                     self.bg_variables["params"].unfreeze()
                     if self.scene_meta.bg else None,
+                    "appearance_embeddings": jran.uniform(
+                        key=key,
+                        shape=(len(self.scene_meta.frames), self.scene_meta.n_extra_learnable_dims),
+                        dtype=jnp.float32,
+                        minval=-1,
+                        maxval=1,
+                    )
                 },
-                tx=self.optimizer,
+                tx=make_optimizer(self.args.train.lr),
             )
             self.state = self.state.mark_untrained_density_grid()
         self.camera = PinholeCamera(
@@ -1495,7 +1469,6 @@ class NeRFGUI():
             else:
                 dpg.set_value("_texture", self.framebuff)
             dpg.render_dearpygui_frame()
-            import time
             time.sleep(0.01)
             if self.exit_flag:
                 if self.train_thread:

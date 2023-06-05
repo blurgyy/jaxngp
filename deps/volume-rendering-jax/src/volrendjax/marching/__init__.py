@@ -52,6 +52,7 @@ def march_rays(
 
     Returns:
         measured_batch_size_before_compaction `int`: total number of generated samples of all rays
+        idcs `[total_samples]`: indices indicating which ray the i-th sample comes from.
         rays_n_samples `[n_rays]`: number of samples of each ray, its sum is `total_samples`
                                    referenced below
         rays_sample_startidx `[n_rays]`: indices of each ray's first sample
@@ -75,7 +76,7 @@ def march_rays(
     chex.assert_scalar_positive(bound)
     chex.assert_scalar_non_negative(stepsize_portion)
 
-    measured_batch_size_before_compaction, rays_n_samples, rays_sample_startidx, xyzs, dirs, dss, z_vals = impl.march_rays_p.bind(
+    measured_batch_size_before_compaction, rays_n_samples, rays_sample_startidx, idcs, xyzs, dirs, dss, z_vals = impl.march_rays_p.bind(
         # arrays
         rays_o,
         rays_d,
@@ -93,7 +94,7 @@ def march_rays(
         stepsize_portion=stepsize_portion,
     )
 
-    return measured_batch_size_before_compaction[0], rays_n_samples, rays_sample_startidx, xyzs, dirs, dss, z_vals
+    return measured_batch_size_before_compaction[0], rays_n_samples, rays_sample_startidx, idcs, xyzs, dirs, dss, z_vals
 
 
 def march_rays_inference(

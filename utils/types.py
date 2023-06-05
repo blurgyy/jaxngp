@@ -406,7 +406,7 @@ class TransformJsonBase:
     # scene's bound, the name `aabb_scale` is for compatibility with instant-ngp (note that
     # instant-ngp requires this value to be a power of 2, other than that a value that can work with
     # instant-ngp will work with this code base as well).
-    aabb_scale: float=dataclasses.field(default_factory=lambda: 1., kw_only=True)
+    aabb_scale: float=dataclasses.field(default=1., kw_only=True)
 
     # scale camera's translation vectors by this factor while loading (default value taken from
     # NVLabs/instant-ngp/include/neural-graphics-primitives/nerf_loader.h), since current
@@ -416,11 +416,13 @@ class TransformJsonBase:
     # I.e. if the transform*.json specifies `"scale": 0.3`, loaded cameras' translation vectors will
     # be scaled by `0.6`.  See `utils.types.TransformJsonFrame.scale_camera_positions` for details.
     # NOTE: this value does not affect scene's bounding box
-    scale: float=dataclasses.field(default_factory=lambda: 1/3, kw_only=True)
+    scale: float=dataclasses.field(default=1/3, kw_only=True)
 
-    bg: bool=dataclasses.field(default_factory=lambda: False, kw_only=True)
+    bg: bool=dataclasses.field(default=False, kw_only=True)
 
-    up: Tuple[float, float, float]=dataclasses.field(default_factory=lambda: (0, 0, 1), kw_only=True)
+    up: Tuple[float, float, float]=dataclasses.field(default=(0, 0, 1), kw_only=True)
+
+    n_extra_learnable_dims: int=dataclasses.field(default=0, kw_only=True)
 
     def rotate_world_up(self) -> "TransformJsonBase":
         return self.replace(
@@ -582,6 +584,8 @@ class SceneMeta:
 
     # the camera model used to render this scene
     camera: PinholeCamera
+
+    n_extra_learnable_dims: int
 
     frames: Tuple[TransformJsonFrame, ...]=struct.field(pytree_node=False)
 
@@ -761,6 +765,7 @@ class NeRFState(TrainState):
             lambda coords_part: jax.jit(self.nerf_fn)(
                 {"params": self.locked_params["nerf"]},
                 coords_part,
+                None,
                 None,
             )[0].ravel(),
             jnp.array_split(jax.lax.stop_gradient(coordinates), max(1, n_grids // (max_inference))),

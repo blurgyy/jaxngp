@@ -27,9 +27,6 @@ def make_near_far_from_bound(
 ):
     "Calculates near and far intersections with the bounding box [-bound, bound]^3 for each ray."
 
-    # make sure d is normalized
-    d /= jnp.linalg.norm(d, axis=-1, keepdims=True) + 1e-15
-
     # avoid d[j] being zero
     eps = 1e-15
     d = jnp.where(
@@ -69,20 +66,19 @@ def make_near_far_from_bound(
 @jit_jaxfn_with(static_argnames=["total_samples"])
 def render_rays_train(
     KEY: jran.KeyArray,
+    view_idcs: jax.Array,
     o_world: jax.Array,
     d_world: jax.Array,
     bg: jax.Array,
     total_samples: int,
     state: NeRFState,
 ):
-    # make sure d_world is normalized
-    d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
     # skip the empty space between camera and scene bbox
     # [n_rays], [n_rays]
     t_starts, t_ends = make_near_far_from_bound(
         bound=state.scene_meta.bound,
         o=o_world,
-        d=d_world
+        d=d_world,
     )
 
     if state.raymarch.perturb:
@@ -90,7 +86,7 @@ def render_rays_train(
         noises = jran.uniform(key, shape=t_starts.shape, dtype=t_starts.dtype, minval=0., maxval=1.)
     else:
         noises = 0.
-    measured_batch_size_before_compaction, rays_n_samples, rays_sample_startidx, ray_pts, ray_dirs, dss, z_vals = march_rays(
+    measured_batch_size_before_compaction, rays_n_samples, rays_sample_startidx, ray_idcs, xyzs, dirs, dss, z_vals = march_rays(
         total_samples=total_samples,
         diagonal_n_steps=state.raymarch.diagonal_n_steps,
         K=state.scene_meta.cascades,
@@ -107,8 +103,9 @@ def render_rays_train(
 
     drgbs, tv = state.nerf_fn(
         {"params": state.params["nerf"]},
-        ray_pts,
-        ray_dirs,
+        xyzs,
+        dirs,
+        state.params["appearance_embeddings"][view_idcs[ray_idcs]],
     )
 
     effective_samples, final_rgbds = integrate_rays(
@@ -143,6 +140,7 @@ class MarchAndIntegrateInferencePayload:
 def march_and_integrate_inference(
     payload: MarchAndIntegrateInferencePayload,
     locked_nerf_params: FrozenVariableDict,
+    appearance_embedding: jax.Array,
 
     counter: jax.Array,
     rays_o: jax.Array,
@@ -182,6 +180,7 @@ def march_and_integrate_inference(
         {"params": locked_nerf_params},
         xyzs,
         jnp.broadcast_to(rays_d[indices, None, :], xyzs.shape),
+        jax.lax.stop_gradient(appearance_embedding),
     )
 
     terminate_cnt, terminated, rays_rgbd, rays_T = integrate_rays_inference(
@@ -258,6 +257,7 @@ def render_image_inference(
                     nerf_fn=state.nerf_fn,
                 ),
                 locked_nerf_params=state.locked_params["nerf"],
+                appearance_embedding=state.params["appearance_embeddings"][0],
 
                 counter=counter,
                 rays_o=o_world,

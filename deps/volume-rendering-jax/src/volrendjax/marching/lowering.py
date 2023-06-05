@@ -59,6 +59,7 @@ def march_rays_lowering_rule(
 
         "out.rays_n_samples": (n_rays,),
         "out.rays_sample_startidx": (n_rays,),
+        "out.idcs": (total_samples,),
         "out.xyzs": (total_samples, 3),
         "out.dirs": (total_samples, 3),
         "out.dss": (total_samples,),
@@ -71,6 +72,7 @@ def march_rays_lowering_rule(
             ir.RankedTensorType.get(shapes["helper.counter"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.rays_n_samples"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.rays_sample_startidx"], ir.IntegerType.get_unsigned(32)),
+            ir.RankedTensorType.get(shapes["out.idcs"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.xyzs"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.dirs"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.dss"], ir.F32Type.get()),
@@ -97,6 +99,7 @@ def march_rays_lowering_rule(
             shapes["helper.counter"],
             shapes["out.rays_n_samples"],
             shapes["out.rays_sample_startidx"],
+            shapes["out.idcs"],
             shapes["out.xyzs"],
             shapes["out.dirs"],
             shapes["out.dss"],

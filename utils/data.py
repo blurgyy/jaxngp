@@ -150,6 +150,7 @@ def write_transforms_json(
     bound: float,
     camera_scale: float,
     bg: bool,
+    n_extra_learnable_dims: int,
 ):
     "adapted from NVLabs/instant-ngp/scripts/colmap2nerf.py"
     scene_root_dir, images_dir, text_model_dir = (
@@ -247,6 +248,7 @@ def write_transforms_json(
         scale=camera_scale,
         bg=bg,
         up=[0, 0, 1],
+        n_extra_learnable_dims=n_extra_learnable_dims,
     )
     train_tj = all_transform_json.replace(frames=frames[:len(frames) // 2])
     val_tj = all_transform_json.replace(frames=frames[len(frames) // 2:len(frames) // 2 + len(frames) // 4])
@@ -264,6 +266,7 @@ def create_scene_from_single_camera_image_collection(
     bound: float,
     camera_scale: float,
     bg: bool,
+    n_extra_learnable_dims: int,
 ):
     raw_images_dir, scene_root_dir = Path(raw_images_dir), Path(scene_root_dir)
     scene_root_dir.mkdir(parents=True, exist_ok=True)
@@ -308,6 +311,7 @@ def create_scene_from_single_camera_image_collection(
         bound=bound,
         camera_scale=camera_scale,
         bg=bg,
+        n_extra_learnable_dims=n_extra_learnable_dims,
     )
 
 
@@ -318,6 +322,7 @@ def create_scene_from_video(
     camera_scale: float,
     bg: bool,
     fps: int,
+    n_extra_learnable_dims: int,
 ):
     video_path, scene_root_dir = Path(video_path), Path(scene_root_dir)
     raw_images_dir = scene_root_dir.joinpath("images-raw")
@@ -333,6 +338,7 @@ def create_scene_from_video(
         bound=bound,
         camera_scale=camera_scale,
         bg=bg,
+        n_extra_learnable_dims=n_extra_learnable_dims,
     )
 
 
@@ -711,6 +717,7 @@ def load_scene(
                 .scale_world(scene_options.world_scale)
                 .scale_resolution(scene_options.resolution_scale)
         ),
+        n_extra_learnable_dims=transforms.n_extra_learnable_dims,
         frames=transforms.frames,
     )
 
