@@ -73,6 +73,10 @@ class CreateScene:
     # how many frames to extract per second, only required when src is a video
     fps: int | None=None
 
+    # per-image appearance embeddings as used in NeRF-W, for modeling varying illumination
+    # conditions across images
+    n_extra_learnable_dims: int=16
+
 
 CmdCat = Annotated[
     Concatenate,
@@ -158,6 +162,7 @@ def main(args: Args):
                 bound=args.bound,
                 camera_scale=args.camera_scale,
                 bg=args.bg,
+                n_extra_learnable_dims=args.n_extra_learnable_dims,
             )
         else:
             assert args.fps is not None, "must specify extracted frames per second via --fps for video source"
@@ -168,6 +173,7 @@ def main(args: Args):
                 camera_scale=args.camera_scale,
                 bg=args.bg,
                 fps=args.fps,
+                n_extra_learnable_dims=args.n_extra_learnable_dims,
             )
 
     else:
