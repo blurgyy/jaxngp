@@ -134,11 +134,16 @@ __global__ void march_rays_kernel(
 
         // the bound of this mip is [-mip_bound, mip_bound]
         float const mip_bound = fminf(scalbnf(1.f, cascade), bound);
+        float const imip_bound = 1.f / mip_bound;
+
+        float const grid_xf = .5f * (x * imip_bound + 1) * G;
+        float const grid_yf = .5f * (y * imip_bound + 1) * G;
+        float const grid_zf = .5f * (z * imip_bound + 1) * G;
 
         // round down
-        std::uint32_t const grid_x = clampi((int)(.5f * (x / mip_bound + 1) * G), 0, G-1);
-        std::uint32_t const grid_y = clampi((int)(.5f * (y / mip_bound + 1) * G), 0, G-1);
-        std::uint32_t const grid_z = clampi((int)(.5f * (z / mip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_x = clampi((int)floorf(grid_xf), 0, G-1);
+        std::uint32_t const grid_y = clampi((int)floorf(grid_yf), 0, G-1);
+        std::uint32_t const grid_z = clampi((int)floorf(grid_zf), 0, G-1);
 
         std::uint32_t const occupancy_grid_idx = cascade * G3 + __morton3D(grid_x, grid_y, grid_z);
         bool const occupied = occupancy_bitfield[occupancy_grid_idx >> 3] & (1 << (occupancy_grid_idx & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
@@ -147,9 +152,9 @@ __global__ void march_rays_kernel(
         if (occupied) {
             ++ray_n_samples;
         } else {
-            float const tx = (((grid_x + .5f + .5f * signf(dx)) * iG * 2 - 1) * mip_bound - x) * idx;
-            float const ty = (((grid_y + .5f + .5f * signf(dy)) * iG * 2 - 1) * mip_bound - y) * idy;
-            float const tz = (((grid_z + .5f + .5f * signf(dz)) * iG * 2 - 1) * mip_bound - z) * idz;
+            float const tx = ((floorf(grid_xf + .5f + .5f * signf(dx)) * iG * 2 - 1) * mip_bound - x) * idx;
+            float const ty = ((floorf(grid_yf + .5f + .5f * signf(dy)) * iG * 2 - 1) * mip_bound - y) * idy;
+            float const tz = ((floorf(grid_zf + .5f + .5f * signf(dz)) * iG * 2 - 1) * mip_bound - z) * idz;
 
             // distance to next voxel
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
@@ -204,10 +209,14 @@ __global__ void march_rays_kernel(
         float const mip_bound = fminf(scalbnf(1.f, cascade), bound);
         float const imip_bound = 1.f / mip_bound;
 
+        float const grid_xf = .5f * (x * imip_bound + 1) * G;
+        float const grid_yf = .5f * (y * imip_bound + 1) * G;
+        float const grid_zf = .5f * (z * imip_bound + 1) * G;
+
         // round down
-        std::uint32_t const grid_x = clampi((int)(.5f * (x * imip_bound + 1) * G), 0, G-1);
-        std::uint32_t const grid_y = clampi((int)(.5f * (y * imip_bound + 1) * G), 0, G-1);
-        std::uint32_t const grid_z = clampi((int)(.5f * (z * imip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_x = clampi((int)floorf(grid_xf), 0, G-1);
+        std::uint32_t const grid_y = clampi((int)floorf(grid_yf), 0, G-1);
+        std::uint32_t const grid_z = clampi((int)floorf(grid_zf), 0, G-1);
 
         std::uint32_t const occupancy_grid_idx = cascade * G3 + __morton3D(grid_x, grid_y, grid_z);
         bool const occupied = occupancy_bitfield[occupancy_grid_idx >> 3] & (1 << (occupancy_grid_idx & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
@@ -225,9 +234,9 @@ __global__ void march_rays_kernel(
 
             ++steps;
         } else {
-            float const tx = (((grid_x + .5f + .5f * signf(dx)) * iG * 2 - 1) * mip_bound - x) * idx;
-            float const ty = (((grid_y + .5f + .5f * signf(dy)) * iG * 2 - 1) * mip_bound - y) * idy;
-            float const tz = (((grid_z + .5f + .5f * signf(dz)) * iG * 2 - 1) * mip_bound - z) * idz;
+            float const tx = ((floorf(grid_xf + .5f + .5f * signf(dx)) * iG * 2 - 1) * mip_bound - x) * idx;
+            float const ty = ((floorf(grid_yf + .5f + .5f * signf(dy)) * iG * 2 - 1) * mip_bound - y) * idy;
+            float const tz = ((floorf(grid_zf + .5f + .5f * signf(dz)) * iG * 2 - 1) * mip_bound - z) * idz;
 
             // distance to next voxel
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
@@ -313,10 +322,14 @@ __global__ void march_rays_inference_kernel(
         float const mip_bound = fminf(scalbnf(1.f, cascade), bound);
         float const imip_bound = 1.f / mip_bound;
 
+        float const grid_xf = .5f * (x * imip_bound + 1) * G;
+        float const grid_yf = .5f * (y * imip_bound + 1) * G;
+        float const grid_zf = .5f * (z * imip_bound + 1) * G;
+
         // round down
-        std::uint32_t const grid_x = clampi((int)(.5f * (x * imip_bound + 1) * G), 0, G-1);
-        std::uint32_t const grid_y = clampi((int)(.5f * (y * imip_bound + 1) * G), 0, G-1);
-        std::uint32_t const grid_z = clampi((int)(.5f * (z * imip_bound + 1) * G), 0, G-1);
+        std::uint32_t const grid_x = clampi((int)floorf(grid_xf), 0, G-1);
+        std::uint32_t const grid_y = clampi((int)floorf(grid_yf), 0, G-1);
+        std::uint32_t const grid_z = clampi((int)floorf(grid_zf), 0, G-1);
 
         std::uint32_t const occupancy_grid_idx = cascade * G3 + __morton3D(grid_x, grid_y, grid_z);
         bool const occupied = occupancy_bitfield[occupancy_grid_idx >> 3] & (1 << (occupancy_grid_idx & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
@@ -331,9 +344,9 @@ __global__ void march_rays_inference_kernel(
 
             ++steps;
         } else {
-            float const tx = (((grid_x + .5f + .5f * signf(dx)) * iG * 2 - 1) * mip_bound - x) * idx;
-            float const ty = (((grid_y + .5f + .5f * signf(dy)) * iG * 2 - 1) * mip_bound - y) * idy;
-            float const tz = (((grid_z + .5f + .5f * signf(dz)) * iG * 2 - 1) * mip_bound - z) * idz;
+            float const tx = ((floorf(grid_xf + .5f + .5f * signf(dx)) * iG * 2 - 1) * mip_bound - x) * idx;
+            float const ty = ((floorf(grid_yf + .5f + .5f * signf(dy)) * iG * 2 - 1) * mip_bound - y) * idy;
+            float const tz = ((floorf(grid_zf + .5f + .5f * signf(dz)) * iG * 2 - 1) * mip_bound - z) * idz;
 
             // distance to next voxel
             float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
