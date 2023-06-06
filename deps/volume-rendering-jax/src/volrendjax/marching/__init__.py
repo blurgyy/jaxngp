@@ -1,6 +1,5 @@
 from typing import Tuple
 
-import chex
 import jax
 import jax.numpy as jnp
 
@@ -68,13 +67,6 @@ def march_rays(
     """
     n_rays, _ = rays_o.shape
     noises = jnp.broadcast_to(noises, (n_rays,))
-
-    chex.assert_scalar_positive(total_samples)
-    chex.assert_scalar_positive(diagonal_n_steps)
-    chex.assert_scalar_positive(K)
-    chex.assert_scalar_positive(G)
-    chex.assert_scalar_positive(bound)
-    chex.assert_scalar_non_negative(stepsize_portion)
 
     measured_batch_size_before_compaction, rays_n_samples, rays_sample_startidx, idcs, xyzs, dirs, dss, z_vals = impl.march_rays_p.bind(
         # arrays

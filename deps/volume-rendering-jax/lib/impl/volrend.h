@@ -15,7 +15,7 @@
                 + cudaGetErrorString(result));                                                     \
     } while(0)
 
-#define SQRT3 1.732050807568877293527446341505872367
+static constexpr float SQRT3 = 1.732050807568877293527446341505872367f;
 
 namespace volrendjax {
 

@@ -29,6 +29,13 @@ def march_rays_abstract(
     chex.assert_shape(occupancy_bitfield, (K*G*G*G//8,))
     chex.assert_type(occupancy_bitfield, jnp.uint8)
 
+    chex.assert_scalar_positive(total_samples)
+    chex.assert_scalar_positive(diagonal_n_steps)
+    chex.assert_scalar_positive(K)
+    chex.assert_scalar_positive(G)
+    chex.assert_scalar_positive(bound)
+    chex.assert_scalar_non_negative(stepsize_portion)
+
     dtype = jax.dtypes.canonicalize_dtype(rays_o.dtype)
     if dtype != jnp.float32:
         raise NotImplementedError(
