@@ -204,6 +204,7 @@ def render_image_inference(
     state: NeRFState,
     camera_override: None | PinholeCamera=None,
     render_cost: bool=False,
+    appearance_embedding_index: int=0,
 ):
     if camera_override is not None:
         state = state.replace(scene_meta=state.scene_meta.replace(camera=camera_override))
@@ -217,7 +218,12 @@ def render_image_inference(
     else:
         rays_cost = None
     if state.use_background_model:
-        bg = state.bg_fn({"params": state.locked_params["bg"]}, o_world, d_world)
+        bg = state.bg_fn(
+            {"params": state.locked_params["bg"]},
+            o_world,
+            d_world,
+            state.locked_params["appearance_embeddings"][appearance_embedding_index],
+        )
     elif state.render.random_bg:
         KEY, key = jran.split(KEY, 2)
         bg = jran.uniform(key, (3,), dtype=jnp.float32, minval=0, maxval=1)
@@ -257,7 +263,7 @@ def render_image_inference(
                     nerf_fn=state.nerf_fn,
                 ),
                 locked_nerf_params=state.locked_params["nerf"],
-                appearance_embedding=state.params["appearance_embeddings"][0],
+                appearance_embedding=state.locked_params["appearance_embeddings"][appearance_embedding_index],
 
                 counter=counter,
                 rays_o=o_world,
