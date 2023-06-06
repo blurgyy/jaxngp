@@ -9,6 +9,7 @@ from . import impl
 # `__integrate_rays` function because the @jax.custom_vjp decorator makes the decorated function's
 # docstring invisible to LSPs).
 def integrate_rays(
+    near_distance: float,
     rays_sample_startidx: jax.Array,
     rays_n_samples: jax.Array,
     bgs: jax.Array,
@@ -18,6 +19,9 @@ def integrate_rays(
 ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     """
     Inputs:
+        near_distance `float`: camera's near distance, samples behind the camera's near plane with
+                               non-negligible introduce a penalty on their densities\n"
+
         rays_sample_startidx `[n_rays]`: i-th element is the index of the first sample in z_vals,
                                          densities, and rgbs of the i-th ray
         rays_n_samples `[n_rays]`: i-th element is the number of samples for the i-th ray
@@ -42,12 +46,13 @@ def integrate_rays(
                                    densities and rgbs.
     """
     counter, final_rgbds = impl.__integrate_rays(
-        rays_sample_startidx,
-        rays_n_samples,
-        bgs,
-        dss,
-        z_vals,
-        drgbs
+        near_distance=near_distance,
+        rays_sample_startidx=rays_sample_startidx,
+        rays_n_samples=rays_n_samples,
+        bgs=bgs,
+        dss=dss,
+        z_vals=z_vals,
+        drgbs=drgbs,
     )
 
     return counter[0], final_rgbds

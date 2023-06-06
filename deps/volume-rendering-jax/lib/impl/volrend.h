@@ -19,13 +19,26 @@
 
 namespace volrendjax {
 
-// Static parameters passed to `integrate_rays` and `integrate_rays_backward`
+// Static parameters passed to `integrate_rays`
 struct IntegratingDescriptor {
     // number of input rays
     std::uint32_t n_rays;
 
     // sum of number of samples of each ray
     std::uint32_t total_samples;
+};
+
+// Static parameters passed to `integrate_rays_backward`
+struct IntegratingBackwardDescriptor {
+    // number of input rays
+    std::uint32_t n_rays;
+
+    // sum of number of samples of each ray
+    std::uint32_t total_samples;
+
+    // camera's near distance, samples behind the camera's near plane with non-negligible
+    // (> ~exp(-10)) densities will be penalized
+    float near_distance;
 };
 
 // Static parameters passed to `integrate_rays_inference`

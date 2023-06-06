@@ -161,10 +161,29 @@ PYBIND11_MODULE(volrendutils_cuda, m) {
                 .total_samples = total_samples,
             });
           },
-          "Static arguments passed to the `integrate_rays` or `integrate_rays_backward` function.\n\n"
+          "Static arguments passed to the `integrate_rays` function.\n\n"
           "Args:\n"
           "    n_rays: number of rays\n"
           "    total_samples: sum of number of samples on each ray\n"
+          "\n"
+          "Returns:\n"
+          "    Serialized bytes that can be passed as the opaque parameter to `integrate_rays`\n"
+          "    or `integrate_rays_backward`"
+          );
+    m.def("make_integrating_backward_descriptor",
+          [](std::uint32_t const n_rays, std::uint32_t const total_samples, float const near_distance) {
+            return to_pybind11_bytes(IntegratingBackwardDescriptor{
+                .n_rays = n_rays,
+                .total_samples = total_samples,
+                .near_distance = near_distance,
+            });
+          },
+          "Static arguments passed to the `integrate_rays_backward` function.\n\n"
+          "Args:\n"
+          "    n_rays: number of rays\n"
+          "    total_samples: sum of number of samples on each ray\n"
+          "    near_distance: camera's near distance, samples behind the camera's near plane with\n"
+          "                   non-negligible introduce a penalty on their densities\n"
           "\n"
           "Returns:\n"
           "    Serialized bytes that can be passed as the opaque parameter to `integrate_rays`\n"

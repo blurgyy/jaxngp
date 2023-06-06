@@ -93,11 +93,14 @@ def integrate_rays_backward_lowring_rule(
 
     # gradient inputs
     dL_dfinal_rgbds: ir.Value,
+
+    # static argument
+    near_distance: float,
 ):
     n_rays, = ir.RankedTensorType(rays_sample_startidx.type).shape
     total_samples, = ir.RankedTensorType(z_vals.type).shape
 
-    opaque = volrendutils_cuda.make_integrating_descriptor(n_rays, total_samples)
+    opaque = volrendutils_cuda.make_integrating_backward_descriptor(n_rays, total_samples, near_distance)
 
     shapes = {
         "in.rays_sample_startidx": (n_rays,),

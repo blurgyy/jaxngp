@@ -187,7 +187,7 @@ class PinholeCamera:
     cx: float
     cy: float
 
-    near: float=0.1
+    near: float=0.3
 
     @property
     def n_pixels(self) -> int:
@@ -270,7 +270,7 @@ class CameraOverrideOptions:
     width: int | None=None
     height: int | None=None
     focal: float | None=None
-    near: float=0.1
+    near: float=0.3
 
     def __post_init__(self):
         if self.width is None and self.height is None:
@@ -833,7 +833,7 @@ class NeRFState(TrainState):
             p_cam = (p_aligned[..., None, :] * rot_cw.T).sum(-1)
 
             # camera looks along the -z axis
-            in_front_of_camera = p_cam[..., -1] < -self.scene_meta.camera.near - 1e-4
+            in_front_of_camera = p_cam[..., -1] < 0
 
             uvz = (p_cam[..., None, :] * self.scene_meta.camera.K).sum(-1)
             uvz /= uvz[..., -1:]

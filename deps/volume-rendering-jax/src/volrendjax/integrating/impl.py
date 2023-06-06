@@ -49,6 +49,7 @@ mlir.register_lowering(
 
 @jax.custom_vjp
 def __integrate_rays(
+    near_distance: float,
     rays_sample_startidx: jax.Array,
     rays_n_samples: jax.Array,
     bgs: jax.Array,
@@ -70,6 +71,7 @@ def __integrate_rays(
     return counter, final_rgbds
 
 def __fwd_integrate_rays(
+    near_distance: float,
     rays_sample_startidx: jax.Array,
     rays_n_samples: jax.Array,
     bgs: jax.Array,
@@ -80,15 +82,17 @@ def __fwd_integrate_rays(
     bgs = jax.numpy.broadcast_to(bgs, (rays_sample_startidx.shape[0], 3))
 
     primal_outputs = __integrate_rays(
-        rays_sample_startidx,
-        rays_n_samples,
-        bgs,
-        dss,
-        z_vals,
-        drgbs,
+        near_distance=near_distance,
+        rays_sample_startidx=rays_sample_startidx,
+        rays_n_samples=rays_n_samples,
+        bgs=bgs,
+        dss=dss,
+        z_vals=z_vals,
+        drgbs=drgbs,
     )
     counter, final_rgbds = primal_outputs
     aux = {
+        "in.near_distance": near_distance,
         "in.rays_sample_startidx": rays_sample_startidx,
         "in.rays_n_samples": rays_n_samples,
         "in.bgs": bgs,
@@ -114,9 +118,13 @@ def __bwd_integrate_rays(aux, grads):
         aux["out.final_rgbds"],
 
         dL_dfinal_rgbds,
+
+        near_distance=aux["in.near_distance"],
     )
     return (
-        # First 2 primal inputs are integer-valued arrays (`rays_sample_startidx`,
+        # The first primal input is `near_distance`, a static argument, return no gradient for it.
+        None,
+        # The next 2 primal inputs are integer-valued arrays (`rays_sample_startidx`,
         # `rays_n_samples`), return no gradient for them.
         # REF:
         #   <https://jax.readthedocs.io/en/latest/jep/4008-custom-vjp-update.html#what-to-update>:

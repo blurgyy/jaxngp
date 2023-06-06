@@ -105,6 +105,7 @@ __global__ void integrate_rays_kernel(
 __global__ void integrate_rays_backward_kernel(
     // static arguments
     std::uint32_t const n_rays
+    , float const near_distance
 
     // input arrays
     , std::uint32_t const * const __restrict__ rays_sample_startidx  // [n_rays]
@@ -168,7 +169,8 @@ __global__ void integrate_rays_backward_kernel(
     for (std::uint32_t sample_idx = 0; transmittance > T_THRESHOLD && sample_idx < n_samples; ++sample_idx) {
         float const z_val = ray_z_vals[sample_idx];
         float const delta_t = ray_dss[sample_idx];
-        float const alpha = 1.f - __expf(-ray_drgbs[sample_idx * 4] * delta_t);
+        float const density = ray_drgbs[sample_idx * 4];
+        float const alpha = 1.f - __expf(-density * delta_t);
 
         float const weight = transmittance * alpha;
 
@@ -200,7 +202,13 @@ __global__ void integrate_rays_backward_kernel(
             + ray_dL_dfinal_rgbd[2] * (transmittance * ray_drgbs[sample_idx * 4 + 3] - (ray_final_rgbd[2] - cur_rgb[2]))
             //// gradients from depth
             + ray_dL_dfinal_rgbd[3] * (transmittance * ray_z_vals[sample_idx] - (ray_final_rgbd[3] - cur_depth))
-        );
+        )
+        // Penalize samples for being behind the camera's near plane.  This loss requires there be
+        // samples behind the camera's near plane, so the ray's starting point should only be
+        // clipped above zero, instead of being clipped above the near distance.
+        // REF: <https://github.com/NVlabs/instant-ngp/commit/2b825d383e11655f46786bc0a67fd0681bfceb60>
+        + (density > 4e-5 && z_val < near_distance ? 1e-4f : 0.0f)
+        ;
 
         /// color gradients
         ray_dL_ddrgbs[sample_idx * 4 + 1] = weight * ray_dL_dfinal_rgbd[0];
@@ -354,10 +362,11 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
 
     // inputs
     /// static
-    IntegratingDescriptor const &desc =
-        *deserialize<IntegratingDescriptor>(opaque, opaque_len);
+    IntegratingBackwardDescriptor const &desc =
+        *deserialize<IntegratingBackwardDescriptor>(opaque, opaque_len);
     std::uint32_t const n_rays = desc.n_rays;
     std::uint32_t const total_samples = desc.total_samples;
+    float near_distance = desc.near_distance;
 
     /// arrays
     std::uint32_t const * const __restrict__ rays_sample_startidx = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
@@ -388,6 +397,7 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
     integrate_rays_backward_kernel<<<numBlocks, blockSize, 0, stream>>>(
         // static arguments
         n_rays
+        , near_distance
 
         // input arrays
         , rays_sample_startidx

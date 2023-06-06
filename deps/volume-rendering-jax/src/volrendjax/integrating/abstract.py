@@ -55,6 +55,9 @@ def integrate_rays_backward_abstract(
 
     # gradient inputs
     dL_dfinal_rgbds: jax.Array,
+
+    # static argument
+    near_distance: float,
 ):
     (n_rays,), (total_samples,) = rays_sample_startidx.shape, dss.shape
 
@@ -63,6 +66,8 @@ def integrate_rays_backward_abstract(
     chex.assert_shape(z_vals, (total_samples,))
     chex.assert_shape(drgbs, (total_samples, 4))
     chex.assert_shape([final_rgbds, dL_dfinal_rgbds], (n_rays, 4))
+
+    chex.assert_scalar_non_negative(near_distance)
 
     dtype = jax.dtypes.canonicalize_dtype(drgbs.dtype)
     if dtype != jnp.float32:

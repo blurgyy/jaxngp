@@ -109,6 +109,7 @@ def render_rays_train(
     )
 
     effective_samples, final_rgbds = integrate_rays(
+        near_distance=state.scene_meta.camera.near,
         rays_sample_startidx=rays_sample_startidx,
         rays_n_samples=rays_n_samples,
         bgs=bg,
