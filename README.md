@@ -187,15 +187,15 @@ usage: __main__.py train [-h] --exp-dir PATH [--raymarch.diagonal-n-steps INT]
 * `train`
   * Train for 10 epochs, with a batch size of 262144, on all the 400 (100\*train + 100\*validation + 200\*test) images from the `lego` scene of [NeRF-synthetic] dataset:
     ```bash
-    $ python3 -m app.nerf train data/nerf_synthetic/lego --exp-dir=logs/lego-trainvaltest --train.{n-epochs=10,bs=262144}
+    $ python3 -m app.nerf train data/nerf_synthetic/lego --exp-dir=logs/lego-trainvaltest --{n-epochs=10,bs=262144}
     ```
   * Train on the training and validation splits of the `drums` scene, with a weight of 1e-5 on the Total Variation (TV) loss (by default this weight is 0):
     ```bash
-    $ python3 -m app.nerf train data/nerf_synthetic/drums/transforms_{train,val}.json --exp-dir=logs/drums-trainval --train.tv-scale=1e-5
+    $ python3 -m app.nerf train data/nerf_synthetic/drums/transforms_{train,val}.json --exp-dir=logs/drums-trainval --tv-scale=1e-5
     ```
   * Train on the training split of the `mic` scene, validate with the validation split, validate after every epoch:
     ```bash
-    $ python3 -m app.nerf train data/nerf_synthetic/mic/transforms_train.json --frames-val=data/nerf_synthetic/mic/transforms_val.json --exp-dir=logs/mic --train.validate-every=1
+    $ python3 -m app.nerf train data/nerf_synthetic/mic/transforms_train.json --frames-val=data/nerf_synthetic/mic/transforms_val.json --exp-dir=logs/mic --validate-every=1
     ```
     > **Note**: The validated images are logged to [tensorboard], located under `--exp-dir`'s `logs/` directory.  View it in browser with:
     > ```bash
