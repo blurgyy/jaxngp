@@ -187,7 +187,11 @@ usage: __main__.py train [-h] --exp-dir PATH [--raymarch.diagonal-n-steps INT]
 ### Examples
 
 * `train`
-  * Train for 10 epochs, with a batch size of 262144, on all the 400 (100\*train + 100\*validation + 200\*test) images from the `lego` scene of [NeRF-synthetic] dataset:
+  * Just train with the default parameters on the `lego` scene from the [NeRF-synthetic] dataset:
+    ```bash
+    $ python3 -m app.nerf train data/nerf_synthetic/lego/transforms_train.json --exp-dir=logs/lego
+    ```
+  * Train for 10 epochs, with a batch size of 262144, on all the 400 (100\*train + 100\*validation + 200\*test) images from the `lego` scene:
     ```bash
     $ python3 -m app.nerf train data/nerf_synthetic/lego --exp-dir=logs/lego-trainvaltest --{n-epochs=10,bs=262144}
     ```
