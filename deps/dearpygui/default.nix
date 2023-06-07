@@ -19,8 +19,9 @@ buildPythonPackage {
   ];
   dontUseCmakeConfigure = true;
 
-  shellHook = "export MAKEFLAGS=-j$NIX_BUILD_CORES";
-  preBuild = "export MAKEFLAGS=-j$NIX_BUILD_CORES";
+  preBuild = ''
+    export MAKEFLAGS="''${MAKEFLAGS:+''${MAKEFLAGS} }-j$NIX_BUILD_CORES"
+  '';
 
   buildInputs = with xorg; [
     libX11

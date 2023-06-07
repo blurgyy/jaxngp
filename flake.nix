@@ -18,34 +18,9 @@
     deps = import ./deps;
   in flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system: let
     inherit (nixpkgs) lib;
-    colmapOverlays = final: prev: {
-      colmap = prev.colmap.overrideAttrs (o: rec {
-        pname = if prev.config.cudaSupport or false
-          then o.pname + "-cuda"
-          else o.pname;
-        version = "3.8";
-        src = prev.fetchFromGitHub {
-          owner = "colmap";
-          repo = "colmap";
-          rev = version;
-          hash = "sha256-1uUbUZdz49TloEaPJijNwa51DxIPjgz/fthnbWLfgS8=";
-        };
-        buildInputs = o.buildInputs ++ [
-          prev.flann
-          prev.metis
-        ];
-        cmakeFlags = o.cmakeFlags ++ (lib.optional
-          prev.config.cudaSupport
-          "-DCMAKE_CUDA_ARCHITECTURES=all-major"
-        );
-      });
-    };
     basePkgs = import nixpkgs {
       inherit system;
       overlays = [
-        # NOTE: apply overlays for colmap before custom packages because latest pycolmap 0.3
-        # requires colmap 3.8
-        colmapOverlays
         self.overlays.default
       ];
     };
@@ -76,7 +51,6 @@
         };
       overlays = [
         inputs.nixgl.overlays.default
-        colmapOverlays
         self.overlays.default
         jaxOverlays
       ];
@@ -100,7 +74,6 @@
       mkPythonDeps = { pp, extraPackages }: with pp; [
           ipython
           tqdm
-
           icecream
           pillow
           ipdb
@@ -135,7 +108,7 @@
       cudaDevShell = cudaPkgs.mkShell {  # impure
         name = "cuda";
         buildInputs = [
-          cudaPkgs.colmap
+          cudaPkgs.colmap-locked
           cudaPkgs.ffmpeg
           (cudaPkgs.${py}.withPackages (pp: mkPythonDeps {
               inherit pp;
@@ -164,7 +137,7 @@
       cpuDevShell = cpuPkgs.mkShell {
         name = "cpu";
         buildInputs = [
-          cpuPkgs.colmap
+          cpuPkgs.colmap-locked
           cpuPkgs.ffmpeg
           (cpuPkgs.${py}.withPackages (pp: mkPythonDeps {
               inherit pp;

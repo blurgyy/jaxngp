@@ -1,3 +1,8 @@
+[colmap-locked]
+src.github = "colmap/colmap"
+fetch.github = "colmap/colmap"
+git.fetchSubmodules = true
+
 [dearpygui]
 src.github = "hoffstadt/DearPyGui"
 fetch.github = "hoffstadt/DearPyGui"

@@ -6,7 +6,7 @@
 , cudatoolkit
 , boost17x
 , ceres-solver
-, colmap
+, colmap-locked
 , eigen
 , flann
 , freeimage
@@ -16,8 +16,12 @@
 , qt5
 }:
 
+let
+  cudaSupport = config.cudaSupport or false;
+in
+
 buildPythonPackage {
-  pname = if config.cudaSupport or false
+  pname = if cudaSupport
     then source.pname + "-cuda"
     else source.pname;
   inherit (source) version src;
@@ -34,7 +38,7 @@ buildPythonPackage {
   ];
 
   buildInputs = [
-    colmap
+    colmap-locked
     cudatoolkit
     boost17x
     ceres-solver
@@ -47,7 +51,9 @@ buildPythonPackage {
     qt5.qtbase
   ];
 
-  preBuild = "export MAKEFLAGS=-j$NIX_BUILD_CORES";
+  preBuild = ''
+    export MAKEFLAGS="''${MAKEFLAGS:+''${MAKEFLAGS} }-j$NIX_BUILD_CORES"
+  '';
 
   meta = {
     homepage = "https://github.com/colmap/pycolmap";
