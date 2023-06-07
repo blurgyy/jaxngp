@@ -240,7 +240,7 @@ def render_image_inference(
         march_steps_cap = max(4, min(state.batch_config.mean_effective_samples_per_ray // 2 + 1, 8))
     else:
         march_steps_cap = min(4, state.batch_config.mean_effective_samples_per_ray)
-    march_steps_cap = int(march_steps_cap)
+    march_steps_cap = max(1, int(march_steps_cap))
     n_rays = min(65536 // march_steps_cap, state.scene_meta.camera.n_pixels)
 
     counter = jnp.zeros(1, dtype=jnp.uint32)
