@@ -68,8 +68,8 @@ class TrainingArgs:
 
 @dataclass(frozen=True, kw_only=True)
 class ImageFitArgs:
-    common: CommonArgs=CommonArgs()
-    train: TrainingArgs=TrainingArgs(
+    common: tyro.conf.OmitArgPrefixes[CommonArgs]=CommonArgs()
+    train: tyro.conf.OmitArgPrefixes[TrainingArgs]=TrainingArgs(
         # paper:
         #   We observed fastest convergence with a learning rate of 10^{-4} for signed distance
         #   functions and 10^{-2} otherwise
@@ -102,7 +102,7 @@ class NeRFArgsBase:
     render: RenderingOptions
     scene: SceneOptions
 
-    common: CommonArgs=CommonArgs()
+    common: tyro.conf.OmitArgPrefixes[CommonArgs]=CommonArgs()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -117,7 +117,7 @@ class NeRFTrainingArgs(NeRFArgsBase):
     ckpt: Path | None=None
 
     # training hyper parameters
-    train: TrainingArgs=TrainingArgs(
+    train: tyro.conf.OmitArgPrefixes[TrainingArgs]=TrainingArgs(
         # This is a relatively large learning rate, should be used jointly with
         # `threasholded_exponential` as density activation, and random color as supervision for
         # transparent pixels.

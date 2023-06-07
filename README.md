@@ -63,18 +63,20 @@ The program's entrance is at `python3 -m app.nerf`.  It provides three subcomman
 
 ```markdown
 usage: __main__.py train [-h] --exp-dir PATH [--raymarch.diagonal-n-steps INT]
-                         [--raymarch.no-perturb] [--raymarch.density-grid-res INT]
-                         [--render.bg FLOAT FLOAT FLOAT] [--render.no-random-bg]
+                         [--raymarch.perturb | --raymarch.no-perturb]
+                         [--raymarch.density-grid-res INT] [--render.bg FLOAT FLOAT FLOAT]
+                         [--render.random-bg | --render.no-random-bg]
                          [--scene.sharpness-threshold FLOAT] [--scene.world-scale FLOAT]
                          [--scene.resolution-scale FLOAT]
-                         [--common.logging {DEBUG,INFO,WARN,WARNING,ERROR,CRITICAL}]
-                         [--common.seed INT] [--common.summary] [--frames-val PATH [PATH ...]]
-                         [--ckpt {None}|PATH] [--train.lr FLOAT] [--train.tv-scale FLOAT]
-                         [--train.bs INT] [--train.n-epochs INT] [--train.n-batches INT]
-                         [--train.data-loop INT] [--train.validate-every INT] [--train.keep INT]
-                         [--train.keep-every {None}|INT] [--raymarch-eval.diagonal-n-steps INT]
-                         [--raymarch-eval.perturb] [--raymarch-eval.density-grid-res INT]
-                         [--render-eval.bg FLOAT FLOAT FLOAT] [--render-eval.random-bg]
+                         [--logging {DEBUG,INFO,WARN,WARNING,ERROR,CRITICAL}] [--seed INT]
+                         [--summary | --no-summary] [--frames-val PATH [PATH ...]]
+                         [--ckpt {None}|PATH] [--lr FLOAT] [--tv-scale FLOAT] [--bs INT]
+                         [--n-epochs INT] [--n-batches INT] [--data-loop INT] [--validate-every INT]
+                         [--keep INT] [--keep-every {None}|INT]
+                         [--raymarch-eval.diagonal-n-steps INT]
+                         [--raymarch-eval.perturb | --raymarch-eval.no-perturb]
+                         [--raymarch-eval.density-grid-res INT] [--render-eval.bg FLOAT FLOAT FLOAT]
+                         [--render-eval.random-bg | --render-eval.no-random-bg]
                          PATH [PATH ...]
 
 ╭─ positional arguments ───────────────────────────────────────────────────────────────────────────╮
@@ -95,8 +97,9 @@ usage: __main__.py train [-h] --exp-dir PATH [--raymarch.diagonal-n-steps INT]
 │ --raymarch.diagonal-n-steps INT                                                                  │
 │                         for calculating the length of a minimal ray marching step, the NGP paper │
 │                         uses 1024 (appendix E.1) (default: 1024)                                 │
-│ --raymarch.no-perturb   whether to fluctuate the first sample along the ray with a tiny          │
-│                         perturbation (sets: perturb=False)                                       │
+│ --raymarch.perturb, --raymarch.no-perturb                                                        │
+│                         whether to fluctuate the first sample along the ray with a tiny          │
+│                         perturbation (default: True)                                             │
 │ --raymarch.density-grid-res INT                                                                  │
 │                         resolution for the auxiliary density/occupancy grid, the NGP paper uses  │
 │                         128 (appendix E.2) (default: 128)                                        │
@@ -107,8 +110,9 @@ usage: __main__.py train [-h] --exp-dir PATH [--raymarch.diagonal-n-steps INT]
 │ --render.bg FLOAT FLOAT FLOAT                                                                    │
 │                         background color for transparent parts of the image, has no effect if    │
 │                         `random_bg` is True (default: 1.0 1.0 1.0)                               │
-│ --render.no-random-bg   ignore `bg` specification and use random color for transparent parts of  │
-│                         the image (sets: random_bg=False)                                        │
+│ --render.random-bg, --render.no-random-bg                                                        │
+│                         ignore `bg` specification and use random color for transparent parts of  │
+│                         the image (default: True)                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ scene arguments ────────────────────────────────────────────────────────────────────────────────╮
 │ raymarching/rendering options during training                                                    │
@@ -124,27 +128,27 @@ usage: __main__.py train [-h] --exp-dir PATH [--raymarch.diagonal-n-steps INT]
 │                         also scaled to match the updated image resolution. (default: 1.0)        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ common arguments ───────────────────────────────────────────────────────────────────────────────╮
-│ --common.logging {DEBUG,INFO,WARN,WARNING,ERROR,CRITICAL}                                        │
+│ --logging {DEBUG,INFO,WARN,WARNING,ERROR,CRITICAL}                                               │
 │                         log level (default: INFO)                                                │
-│ --common.seed INT       random seed (default: 1000000007)                                        │
-│ --common.summary        display model information after model init (sets: summary=True)          │
+│ --seed INT              random seed (default: 1000000007)                                        │
+│ --summary, --no-summary                                                                          │
+│                         display model information after model init (default: False)              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ train arguments ────────────────────────────────────────────────────────────────────────────────╮
 │ training hyper parameters                                                                        │
 │ ──────────────────────────────────────────────────────────────────────────────────────────────── │
-│ --train.lr FLOAT        learning rate (default: 0.01)                                            │
-│ --train.tv-scale FLOAT  scalar multiplied to total variation loss, set this to a positive value  │
+│ --lr FLOAT              learning rate (default: 0.01)                                            │
+│ --tv-scale FLOAT        scalar multiplied to total variation loss, set this to a positive value  │
 │                         to enable calculation of TV loss (default: 0.0)                          │
-│ --train.bs INT          batch size (default: 1048576)                                            │
-│ --train.n-epochs INT    training epochs (default: 50)                                            │
-│ --train.n-batches INT   batches per epoch (default: 1024)                                        │
-│ --train.data-loop INT   loop within training data for this number of iterations, this helps      │
+│ --bs INT                batch size (default: 1048576)                                            │
+│ --n-epochs INT          training epochs (default: 50)                                            │
+│ --n-batches INT         batches per epoch (default: 1024)                                        │
+│ --data-loop INT         loop within training data for this number of iterations, this helps      │
 │                         reduce the effective dataloader overhead. (default: 1)                   │
-│ --train.validate-every INT                                                                       │
-│                         will validate every `validate_every` epochs, set this to a large value   │
+│ --validate-every INT    will validate every `validate_every` epochs, set this to a large value   │
 │                         to disable validation (default: 10)                                      │
-│ --train.keep INT        number of latest checkpoints to keep (default: 1)                        │
-│ --train.keep-every {None}|INT                                                                    │
+│ --keep INT              number of latest checkpoints to keep (default: 1)                        │
+│ --keep-every {None}|INT                                                                          │
 │                         how many epochs should a new checkpoint to be kept (in addition to       │
 │                         keeping the last `keep` checkpoints) (default: 8)                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -154,9 +158,9 @@ usage: __main__.py train [-h] --exp-dir PATH [--raymarch.diagonal-n-steps INT]
 │ --raymarch-eval.diagonal-n-steps INT                                                             │
 │                         for calculating the length of a minimal ray marching step, the NGP paper │
 │                         uses 1024 (appendix E.1) (default: 1024)                                 │
-│ --raymarch-eval.perturb                                                                          │
+│ --raymarch-eval.perturb, --raymarch-eval.no-perturb                                              │
 │                         whether to fluctuate the first sample along the ray with a tiny          │
-│                         perturbation (sets: perturb=True)                                        │
+│                         perturbation (default: False)                                            │
 │ --raymarch-eval.density-grid-res INT                                                             │
 │                         resolution for the auxiliary density/occupancy grid, the NGP paper uses  │
 │                         128 (appendix E.2) (default: 128)                                        │
@@ -167,9 +171,9 @@ usage: __main__.py train [-h] --exp-dir PATH [--raymarch.diagonal-n-steps INT]
 │ --render-eval.bg FLOAT FLOAT FLOAT                                                               │
 │                         background color for transparent parts of the image, has no effect if    │
 │                         `random_bg` is True (default: 0.0 0.0 0.0)                               │
-│ --render-eval.random-bg                                                                          │
+│ --render-eval.random-bg, --render-eval.no-random-bg                                              │
 │                         ignore `bg` specification and use random color for transparent parts of  │
-│                         the image (sets: random_bg=True)                                         │
+│                         the image (default: False)                                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
