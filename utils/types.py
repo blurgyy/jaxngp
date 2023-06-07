@@ -187,7 +187,7 @@ class PinholeCamera:
     cx: float
     cy: float
 
-    near: float=0.3
+    near: float
 
     @property
     def n_pixels(self) -> int:
@@ -270,7 +270,7 @@ class CameraOverrideOptions:
     width: int | None=None
     height: int | None=None
     focal: float | None=None
-    near: float=0.3
+    near: float | None=None
 
     def __post_init__(self):
         if self.width is None and self.height is None:
@@ -284,7 +284,7 @@ class CameraOverrideOptions:
                 near=self.near,
             )
         assert self.width > 0 and self.height > 0
-        if self.enabled and self.focal is None:
+        if self.focal is None:
             self.__init__(
                 width=self.width,
                 height=self.height,
@@ -292,24 +292,15 @@ class CameraOverrideOptions:
                 near=self.near,
             )
 
-    @property
-    def enabled(self) -> bool:
-        return (
-            self.width is not None
-            and self.height is not None
-        )
-
-    @property
-    def camera(self) -> PinholeCamera:
-        assert self.enabled
-        return PinholeCamera(
-            W=self.width,
-            H=self.height,
-            fx=self.focal,
-            fy=self.focal,
-            cx=self.width / 2,
-            cy=self.height / 2,
-            near=self.near,
+    def update_camera(self, camera: PinholeCamera | None=None) -> PinholeCamera:
+        return camera.replace(
+            W=self.width if self.width is not None else camera.W,
+            H=self.height if self.height is not None else camera.H,
+            fx=self.focal if self.focal is not None else camera.fx,
+            fy=self.focal if self.focal is not None else camera.fx,
+            cx=self.width / 2 if self.width is not None else camera.cx,
+            cy=self.height / 2 if self.height is not None else camera.cy,
+            near=self.near if self.near is not None else camera.near,
         )
 
 
@@ -326,6 +317,8 @@ class SceneOptions:
     # scale input images in case they are too large, camera intrinsics are also scaled to match the
     # updated image resolution.
     resolution_scale: float
+
+    camera_near: float
 
 
 @dataclass

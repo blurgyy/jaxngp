@@ -144,6 +144,7 @@ class NeRFTrainingArgs(NeRFArgsBase):
         sharpness_threshold=-1.,
         world_scale=1.0,
         resolution_scale=1.0,
+        camera_near=0.3,
     )
 
     # raymarching/rendering options for validating during training
@@ -195,6 +196,7 @@ class NeRFTestingArgs(NeRFArgsBase):
         sharpness_threshold=-1.,
         world_scale=1.0,
         resolution_scale=1.0,
+        camera_near=0.3,
     )
 
 

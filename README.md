@@ -67,7 +67,7 @@ usage: __main__.py train [-h] --exp-dir PATH [--raymarch.diagonal-n-steps INT]
                          [--raymarch.density-grid-res INT] [--render.bg FLOAT FLOAT FLOAT]
                          [--render.random-bg | --render.no-random-bg]
                          [--scene.sharpness-threshold FLOAT] [--scene.world-scale FLOAT]
-                         [--scene.resolution-scale FLOAT]
+                         [--scene.resolution-scale FLOAT] [--scene.camera-near FLOAT]
                          [--logging {DEBUG,INFO,WARN,WARNING,ERROR,CRITICAL}] [--seed INT]
                          [--summary | --no-summary] [--frames-val PATH [PATH ...]]
                          [--ckpt {None}|PATH] [--lr FLOAT] [--tv-scale FLOAT] [--bs INT]
@@ -126,6 +126,8 @@ usage: __main__.py train [-h] --exp-dir PATH [--raymarch.diagonal-n-steps INT]
 │ --scene.resolution-scale FLOAT                                                                   │
 │                         scale input images in case they are too large, camera intrinsics are     │
 │                         also scaled to match the updated image resolution. (default: 1.0)        │
+│ --scene.camera-near FLOAT                                                                        │
+│                         (default: 0.3)                                                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ common arguments ───────────────────────────────────────────────────────────────────────────────╮
 │ --logging {DEBUG,INFO,WARN,WARNING,ERROR,CRITICAL}                                               │

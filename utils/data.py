@@ -675,6 +675,7 @@ def load_scene(
             fy=focal,
             cx=_img.width / 2,
             cy=_img.height / 2,
+            near=scene_options.camera_near,
         )
 
     elif isinstance(transforms, TransformJsonNGP):
@@ -685,6 +686,7 @@ def load_scene(
             fy=transforms.fl_y,
             cx=transforms.cx,
             cy=transforms.cy,
+            near=scene_options.camera_near,
         )
 
     else:

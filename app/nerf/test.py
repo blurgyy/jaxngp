@@ -46,8 +46,8 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         scene_meta = scene_data.meta
         logger.info("loaded {} camera transforms for testing".format(len(scene_meta.frames)))
 
-    if args.camera_override.enabled:
-        scene_meta = scene_meta.replace(camera=args.camera_override.camera)
+    if args.camera_override is not None:
+        scene_meta = scene_meta.replace(camera=args.camera_override.update_camera(scene_meta.camera))
 
     # load parameters
     logger.debug("loading checkpoint from '{}'".format(args.ckpt))
