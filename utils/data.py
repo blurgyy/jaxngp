@@ -27,6 +27,7 @@ from .types import (
     RGBColor,
     RGBColorU8,
     RigidTransformation,
+    SceneCreationOptions,
     SceneData,
     SceneMeta,
     SceneOptions,
@@ -145,12 +146,7 @@ def write_transforms_json(
     scene_root_dir: Path,
     images_dir: Path,
     text_model_dir: Path,
-    # given that the cameras' average distance to the origin is (4.0 * `camera_scale`), what would
-    # the scene's bound be?
-    bound: float,
-    camera_scale: float,
-    bg: bool,
-    n_extra_learnable_dims: int,
+    opts: SceneCreationOptions,
 ):
     "adapted from NVLabs/instant-ngp/scripts/colmap2nerf.py"
     scene_root_dir, images_dir, text_model_dir = (
@@ -233,7 +229,7 @@ def write_transforms_json(
         new_m[0:3, 3] *= 4.0 / avglen
         frames[i] = f.replace(transform_matrix=new_m.tolist())
 
-    print("scene bound (i.e. half width of scene's aabb):", bound)
+    print("scene bound (i.e. half width of scene's aabb):", opts.bound)
     all_transform_json = TransformJsonNGP(
         frames=frames,
         fl_x=camera.fx,
@@ -242,13 +238,13 @@ def write_transforms_json(
         cy=camera.cy,
         w=camera.W,
         h=camera.H,
-        aabb_scale=bound,
+        aabb_scale=opts.bound,
     )
     all_transform_json: TransformJsonNGP = all_transform_json.replace(
-        scale=camera_scale,
-        bg=bg,
+        scale=opts.camera_scale,
+        bg=opts.bg,
         up=[0, 0, 1],
-        n_extra_learnable_dims=n_extra_learnable_dims,
+        n_extra_learnable_dims=opts.n_extra_learnable_dims,
     )
     train_tj = all_transform_json.replace(frames=frames[:len(frames) // 2])
     val_tj = all_transform_json.replace(frames=frames[len(frames) // 2:len(frames) // 2 + len(frames) // 4])
@@ -263,10 +259,7 @@ def create_scene_from_single_camera_image_collection(
     raw_images_dir: Path,
     scene_root_dir: Path,
     matcher: ColmapMatcherType,
-    bound: float,
-    camera_scale: float,
-    bg: bool,
-    n_extra_learnable_dims: int,
+    opts: SceneCreationOptions,
 ):
     raw_images_dir, scene_root_dir = Path(raw_images_dir), Path(scene_root_dir)
     scene_root_dir.mkdir(parents=True, exist_ok=True)
@@ -308,21 +301,15 @@ def create_scene_from_single_camera_image_collection(
         scene_root_dir=scene_root_dir,
         images_dir=undistorted_images_dir.joinpath("images"),
         text_model_dir=text_model_dir,
-        bound=bound,
-        camera_scale=camera_scale,
-        bg=bg,
-        n_extra_learnable_dims=n_extra_learnable_dims,
+        opts=opts,
     )
 
 
 def create_scene_from_video(
     video_path: Path,
     scene_root_dir: Path,
-    bound: float,
-    camera_scale: float,
-    bg: bool,
     fps: int,
-    n_extra_learnable_dims: int,
+    opts: SceneCreationOptions,
 ):
     video_path, scene_root_dir = Path(video_path), Path(scene_root_dir)
     raw_images_dir = scene_root_dir.joinpath("images-raw")
@@ -335,10 +322,7 @@ def create_scene_from_video(
         raw_images_dir=raw_images_dir,
         scene_root_dir=scene_root_dir,
         matcher="Sequential",
-        bound=bound,
-        camera_scale=camera_scale,
-        bg=bg,
-        n_extra_learnable_dims=n_extra_learnable_dims,
+        opts=opts,
     )
 
 

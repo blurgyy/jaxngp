@@ -340,15 +340,6 @@ class RigidTransformation:
         chex.assert_shape([self.rotation, self.translation], [(3, 3), (3,)])
 
 
-@dataclass
-class ImageMetadata:
-    H: int
-    W: int
-    xys: jax.Array  # int,[H*W, 2]: original integer coordinates in range [0, W] for x and [0, H] for y
-    uvs: jax.Array  # float,[H*W, 2]: normalized coordinates in range [0, 1]
-    rgbs: jax.Array  # float,[H*W, 3]: normalized rgb values in range [0, 1]
-
-
 @replace_impl
 @pydantic.dataclasses.dataclass(frozen=True)
 class TransformJsonFrame:
@@ -499,6 +490,33 @@ class TransformJsonNGP(TransformJsonBase):
 
     w: int
     h: int
+
+
+@replace_impl
+@pydantic.dataclasses.dataclass(frozen=True)
+class SceneCreationOptions:
+    # given that the cameras' average distance to the origin is (4.0 * `camera_scale`), what would
+    # the scene's bound be?
+    bound: float
+
+    # upon loading the created scene during training/inference, scale the camera positions with this
+    # factor
+    camera_scale: float
+
+    # whether to enable background model
+    bg: bool
+
+    # dimension of NeRF-W-style per-image appearance embeddings, set to 0 to disable
+    n_extra_learnable_dims: int
+
+
+@dataclass
+class ImageMetadata:
+    H: int
+    W: int
+    xys: jax.Array  # int,[H*W, 2]: original integer coordinates in range [0, W] for x and [0, H] for y
+    uvs: jax.Array  # float,[H*W, 2]: normalized coordinates in range [0, 1]
+    rgbs: jax.Array  # float,[H*W, 3]: normalized rgb values in range [0, 1]
 
 
 @dataclass
