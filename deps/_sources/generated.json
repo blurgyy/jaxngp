@@ -13,11 +13,11 @@
             "name": null,
             "owner": "hoffstadt",
             "repo": "DearPyGui",
-            "rev": "v1.9.0",
-            "sha256": "sha256-5/LUuA4zDbpLTDUW3z/lRde6B1mEqnRzW72CCrGftZc=",
+            "rev": "v1.9.1",
+            "sha256": "sha256-Af1jhQYT0CYNFMWihAtP6jRNYKm3XKEu3brFOPSGCnk=",
             "type": "github"
         },
-        "version": "v1.9.0"
+        "version": "v1.9.1"
     },
     "pycolmap": {
         "cargoLocks": null,
@@ -33,11 +33,11 @@
             "name": null,
             "owner": "colmap",
             "repo": "pycolmap",
-            "rev": "v0.3.0",
-            "sha256": "sha256-t1rV34jyivXHY2Ji0dAotRYxs7LhNHk/7HQm9bqs97M=",
+            "rev": "v0.4.0",
+            "sha256": "sha256-W3d+uHZXkH1/QlER1HV8t1MOBOrHIXYsVeYv1zbsbW4=",
             "type": "github"
         },
-        "version": "v0.3.0"
+        "version": "v0.4.0"
     },
     "pyimgui": {
         "cargoLocks": null,
@@ -83,10 +83,10 @@
         "pinned": false,
         "src": {
             "name": null,
-            "sha256": "sha256-8UaFs/mMsQKOOiuSpNrpvkRA0YmXDqTi7IIN3TV/Ti4=",
+            "sha256": "sha256-ygdNkRr4bjDDHioXoMWPZ1c0IamIkqGyvAuvJx3Bhis=",
             "type": "url",
-            "url": "https://pypi.io/packages/source/t/tyro/tyro-0.4.2.tar.gz"
+            "url": "https://pypi.io/packages/source/t/tyro/tyro-0.5.3.tar.gz"
         },
-        "version": "0.4.2"
+        "version": "0.5.3"
     }
 }

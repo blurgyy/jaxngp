@@ -3,24 +3,24 @@
 {
   dearpygui = {
     pname = "dearpygui";
-    version = "v1.9.0";
+    version = "v1.9.1";
     src = fetchFromGitHub ({
       owner = "hoffstadt";
       repo = "DearPyGui";
-      rev = "v1.9.0";
+      rev = "v1.9.1";
       fetchSubmodules = true;
-      sha256 = "sha256-5/LUuA4zDbpLTDUW3z/lRde6B1mEqnRzW72CCrGftZc=";
+      sha256 = "sha256-Af1jhQYT0CYNFMWihAtP6jRNYKm3XKEu3brFOPSGCnk=";
     });
   };
   pycolmap = {
     pname = "pycolmap";
-    version = "v0.3.0";
+    version = "v0.4.0";
     src = fetchFromGitHub ({
       owner = "colmap";
       repo = "pycolmap";
-      rev = "v0.3.0";
+      rev = "v0.4.0";
       fetchSubmodules = true;
-      sha256 = "sha256-t1rV34jyivXHY2Ji0dAotRYxs7LhNHk/7HQm9bqs97M=";
+      sha256 = "sha256-W3d+uHZXkH1/QlER1HV8t1MOBOrHIXYsVeYv1zbsbW4=";
     });
   };
   pyimgui = {
@@ -44,10 +44,10 @@
   };
   tyro = {
     pname = "tyro";
-    version = "0.4.2";
+    version = "0.5.3";
     src = fetchurl {
-      url = "https://pypi.io/packages/source/t/tyro/tyro-0.4.2.tar.gz";
-      sha256 = "sha256-8UaFs/mMsQKOOiuSpNrpvkRA0YmXDqTi7IIN3TV/Ti4=";
+      url = "https://pypi.io/packages/source/t/tyro/tyro-0.5.3.tar.gz";
+      sha256 = "sha256-ygdNkRr4bjDDHioXoMWPZ1c0IamIkqGyvAuvJx3Bhis=";
     };
   };
 }
