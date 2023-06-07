@@ -177,7 +177,7 @@ __global__ void integrate_rays_backward_kernel(
         cur_rgb[0] += weight * ray_drgbs[sample_idx * 4 + 1];
         cur_rgb[1] += weight * ray_drgbs[sample_idx * 4 + 2];
         cur_rgb[2] += weight * ray_drgbs[sample_idx * 4 + 3];
-        cur_depth += weight * ray_z_vals[sample_idx];
+        cur_depth += weight * z_val;
 
         // decay transmittance before gradient calculation, as transmittance used in gradient
         // calculation is T_{i+1}.  REF: <https://note.kiui.moe/others/nerf_gradient/>
@@ -201,7 +201,7 @@ __global__ void integrate_rays_backward_kernel(
             + ray_dL_dfinal_rgbd[1] * (transmittance * ray_drgbs[sample_idx * 4 + 2] - (ray_final_rgbd[1] - cur_rgb[1]))
             + ray_dL_dfinal_rgbd[2] * (transmittance * ray_drgbs[sample_idx * 4 + 3] - (ray_final_rgbd[2] - cur_rgb[2]))
             //// gradients from depth
-            + ray_dL_dfinal_rgbd[3] * (transmittance * ray_z_vals[sample_idx] - (ray_final_rgbd[3] - cur_depth))
+            + ray_dL_dfinal_rgbd[3] * (transmittance * z_val - (ray_final_rgbd[3] - cur_depth))
         )
         // Penalize samples for being behind the camera's near plane.  This loss requires there be
         // samples behind the camera's near plane, so the ray's starting point should only be
@@ -260,13 +260,14 @@ __global__ void integrate_rays_inference_kernel(
         float ray_depth = rays_rgbd[ray_idx * 4 + 3];
         for (std::uint32_t sample_idx = 0; ray_T > T_THRESHOLD && sample_idx < ray_n_samples; ++sample_idx) {
             float const ds = ray_dss[sample_idx];
+            float const z_val = ray_z_vals[sample_idx];
             float const density = ray_drgbs[sample_idx * 4];
             float const alpha = 1.f - __expf(-density * ds);
             float const weight = ray_T * alpha;
             r += weight * ray_drgbs[sample_idx * 4 + 1];
             g += weight * ray_drgbs[sample_idx * 4 + 2];
             b += weight * ray_drgbs[sample_idx * 4 + 3];
-            ray_depth += weight * ray_z_vals[sample_idx];;
+            ray_depth += weight * z_val;
             ray_T *= (1.f - alpha);
         }
 
