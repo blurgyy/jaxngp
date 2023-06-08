@@ -101,7 +101,6 @@ def train_step(
         d_cam_zs = -jnp.ones_like(perm)
         # [N, 3]
         d_cam = jnp.stack([d_cam_xs, d_cam_ys, d_cam_zs]).T
-        d_cam /= jnp.linalg.norm(d_cam, axis=-1, keepdims=True) + 1e-15
 
         # [N, 3]
         o_world = scene.all_transforms[view_idcs, -3:]  # WARN: using `perm` instead of `view_idcs` here
@@ -114,7 +113,6 @@ def train_step(
         # equavalent to performing `d_cam[i] @ R_cws[i].T` for each i in [0, N)
         d_world = (d_cam[:, None, :] * R_cws).sum(-1)
 
-        # d_cam was normalized already, normalize d_world just to be sure
         d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
 
         o_world += scene.meta.camera.near * d_world

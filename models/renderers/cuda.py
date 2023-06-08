@@ -47,7 +47,6 @@ def make_rays_worldspace(
     d_cam_zs = -jnp.ones_like(d_cam_idcs)
     # [H*W, 3]
     d_cam = jnp.stack([d_cam_xs, d_cam_ys, d_cam_zs]).T
-    d_cam /= jnp.linalg.norm(d_cam, axis=-1, keepdims=True) + 1e-15
 
     # [H*W, 3]
     o_world = jnp.broadcast_to(transform_cw.translation, d_cam.shape)

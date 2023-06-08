@@ -347,7 +347,6 @@ class SphericalHarmonicsEncoderCuda(Encoder):
 
     def __call__(self, dirs: jax.Array) -> jax.Array:
         "Just a thin wrapper on top of :func:`shjax.spherical_harmonics_encoding()`"
-        dirs /= jnp.linalg.norm(dirs, axis=-1, keepdims=True) + 1e-15
         return shjax.spherical_harmonics_encoding(dirs, self.L)
 
 
@@ -367,7 +366,6 @@ class SphericalHarmonicsEncoder(Encoder):
             encodings [..., L**2]: real parts of the spherical harmonics up to the L-th degree.
         """
         chex.assert_axis_dimension(dirs, -1, 3)
-        dirs /= jnp.linalg.norm(dirs, axis=-1, keepdims=True) + 1e-15
         x, y, z = dirs[..., 0], dirs[..., 1], dirs[..., 2]
         xy, xz, yz = x*y, x*z, y*z
         x2, y2, z2 = x*x, y*y, z*z
