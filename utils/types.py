@@ -223,6 +223,7 @@ class PinholeCamera:
             fy=float(fy),
             cx=float(cx),
             cy=float(cy),
+            near=0.,
         )
 
     def scale_resolution(self, scale: int | float) -> "PinholeCamera":
