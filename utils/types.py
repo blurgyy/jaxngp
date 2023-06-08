@@ -831,7 +831,6 @@ class NeRFState(TrainState):
         grid_vertices = xyzs[:, None, :] + vertex_offsets
         alive_marker = jnp.zeros(n_grids, dtype=jnp.bool_)
 
-        @jax.jit
         def mark_untrained_density_grid_single_frame(
             alive_marker: jax.Array,
             transform_cw: jax.Array,
@@ -847,7 +846,13 @@ class NeRFState(TrainState):
             # camera looks along the -z axis
             in_front_of_camera = p_cam[..., -1] < 0
 
-            uvz = (p_cam[..., None, :] * self.scene_meta.camera.K).sum(-1)
+            uvz = map(
+                jax.jit(lambda p: (p * self.scene_meta.camera.K).sum(-1)),
+                jnp.array_split(p_cam[..., None, :], self.scene_meta.cascades),
+            )
+            uvz = jnp.concatenate(list(uvz), axis=0)
+
+            # uvz = (p_cam[..., None, :] * self.scene_meta.camera.K).sum(-1)
             uvz /= uvz[..., -1:]
             uv = uvz[..., :2] / jnp.asarray([self.scene_meta.camera.W, self.scene_meta.camera.H], dtype=jnp.float32)
             within_frame_range = (uv >= 0.) & (uv < 1.)
