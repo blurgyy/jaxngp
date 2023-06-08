@@ -814,10 +814,10 @@ class NeRFState(TrainState):
         level, pos_idcs = all_indices // G3, all_indices % G3
         mip_bound = jnp.minimum(2 ** level, self.scene_meta.bound).astype(jnp.float32)
         cell_width = 2 * mip_bound / G
-        xyzs = morton3d_invert(pos_idcs).astype(jnp.float32)  # [G3, 3]
-        xyzs /= G  # in range [0, 1)
-        xyzs -= 0.5  # in range [-0.5, 0.5)
-        xyzs *= 2 * mip_bound[:, None]  # in range [-mip_bound, mip_bound)
+        grid_xyzs = morton3d_invert(pos_idcs).astype(jnp.float32)  # [G3, 3]
+        grid_xyzs /= G  # in range [0, 1)
+        grid_xyzs -= 0.5  # in range [-0.5, 0.5)
+        grid_xyzs *= 2 * mip_bound[:, None]  # in range [-mip_bound, mip_bound)
         vertex_offsets = cell_width[:, None, None] * jnp.asarray([
             [0, 0, 0],
             [0, 0, 1],
@@ -828,31 +828,25 @@ class NeRFState(TrainState):
             [1, 1, 0],
             [1, 1, 1],
         ], dtype=jnp.float32)
-        grid_vertices = xyzs[:, None, :] + vertex_offsets
-        alive_marker = jnp.zeros(n_grids, dtype=jnp.bool_)
+        all_grid_vertices = grid_xyzs[:, None, :] + vertex_offsets
 
+        @jax.jit
         def mark_untrained_density_grid_single_frame(
             alive_marker: jax.Array,
             transform_cw: jax.Array,
+            grid_vertices: jax.Array,
         ):
             rot_cw, t_cw = transform_cw[:3, :3], transform_cw[:3, 3]
             # p_world, p_cam, T: [3, 1]
             # rot_cw: [3, 3]
             # p_world = rot_cw @ p_cam + t_cw
-            #   => p_cam = rot_cw.T @ (p_world - t_cw)
             p_aligned = grid_vertices - t_cw
             p_cam = (p_aligned[..., None, :] * rot_cw.T).sum(-1)
 
             # camera looks along the -z axis
             in_front_of_camera = p_cam[..., -1] < 0
 
-            uvz = map(
-                jax.jit(lambda p: (p * self.scene_meta.camera.K).sum(-1)),
-                jnp.array_split(p_cam[..., None, :], self.scene_meta.cascades),
-            )
-            uvz = jnp.concatenate(list(uvz), axis=0)
-
-            # uvz = (p_cam[..., None, :] * self.scene_meta.camera.K).sum(-1)
+            uvz = (p_cam[..., None, :] * self.scene_meta.camera.K).sum(-1)
             uvz /= uvz[..., -1:]
             uv = uvz[..., :2] / jnp.asarray([self.scene_meta.camera.W, self.scene_meta.camera.H], dtype=jnp.float32)
             within_frame_range = (uv >= 0.) & (uv < 1.)
@@ -869,8 +863,18 @@ class NeRFState(TrainState):
         # )))
         # np.savetxt("cams.xyz", cam_t)
 
+        alive_marker = jnp.zeros(n_grids, dtype=jnp.bool_)
         for frame in (pbar := tqdm(self.scene_meta.frames, desc="marking trainable grids".format(n_grids), bar_format=tqdm_format)):
-            alive_marker = mark_untrained_density_grid_single_frame(alive_marker, frame.transform_matrix_jax_array)
+            new_alive_marker_parts = map(
+                lambda alive_marker_part, grid_vertices_part: mark_untrained_density_grid_single_frame(
+                    alive_marker=alive_marker_part,
+                    transform_cw=frame.transform_matrix_jax_array,
+                    grid_vertices=grid_vertices_part,
+                ),
+                jnp.array_split(alive_marker, self.scene_meta.cascades),  # alive_marker_part
+                jnp.array_split(all_grid_vertices, self.scene_meta.cascades),  # grid_vertices_part
+            )
+            alive_marker = jnp.concatenate(list(new_alive_marker_parts), axis=0)
             n_alive_grids = alive_marker.sum()
             ratio_trainable = n_alive_grids / n_grids
             pbar.set_description_str("marked {}/{} ({:.2f}%) grids as trainable".format(n_alive_grids, n_grids, ratio_trainable * 100))
