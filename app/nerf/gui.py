@@ -192,6 +192,7 @@ class Gui_trainer():
             self.KEY, key = jran.split(self.KEY, 2)
             self.bg_variables = self.bg_model.init(key, *init_input)
 
+        self.optimizer = make_optimizer(self.args.train.lr)
         if self.ckpt.need_load_ckpt:
             self.load_checkpoint(self.ckpt.ckpt_file_path, self.ckpt.step)
         else:
@@ -231,7 +232,7 @@ class Gui_trainer():
                         maxval=1,
                     )
                 },
-                tx=make_optimizer(self.args.train.lr),
+                tx=self.optimizer,
             )
             self.state = self.state.mark_untrained_density_grid()
         self.camera = PinholeCamera(
@@ -314,37 +315,16 @@ class Gui_trainer():
             self.logger.info("loading checkpoint from '{}'".format(path))
             state: NeRFState = checkpoints.restore_checkpoint(
                 path,
-                target=NeRFState.create(
-                    ogrid=OccupancyDensityGrid.create(
-                        cascades=self.scene_meta.cascades,
-                        grid_resolution=self.args.raymarch.density_grid_res,
-                    ),
-                    batch_config=NeRFBatchConfig.create(
-                        mean_effective_samples_per_ray=self.args.raymarch.
-                        diagonal_n_steps,
-                        mean_samples_per_ray=self.args.raymarch.
-                        diagonal_n_steps,
-                        n_rays=self.args.train.bs //
-                        self.args.raymarch.diagonal_n_steps,
-                    ),
+                target=NeRFState.empty(
                     raymarch=self.args.raymarch,
                     render=self.args.render,
                     scene_options=self.args.scene,
                     scene_meta=self.scene_meta,
-                    # unfreeze the frozen dict so that the weight_decay mask can apply, see:
-                    #   <https://github.com/deepmind/optax/issues/160>
-                    #   <https://github.com/google/flax/issues/1223>
                     nerf_fn=self.nerf_model_train.apply,
                     bg_fn=self.bg_model.apply if self.scene_meta.bg else None,
-                    params={
-                        "nerf":
-                        self.nerf_variables["params"].unfreeze(),
-                        "bg":
-                        self.bg_variables["params"].unfreeze()
-                        if self.scene_meta.bg else None,
-                    },
                     tx=self.optimizer,
-                ))
+                ),
+            )
             # WARN:
             #   flax.checkpoints.restore_checkpoint() returns a pytree with all arrays of numpy's array type,
             #   which slows down inference.  use jax.device_put() to move them to jax's default device.
