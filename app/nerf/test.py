@@ -94,7 +94,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         logger.warn("keyboard interrupt, tested {} images".format(len(rendered_images)))
 
     if args.trajectory == "loaded":
-        if args.camera_override.enabled:
+        if args.camera_override is not None:
             logger.info("camera is overridden, not calculating psnr")
         elif len(rendered_images) == 0:
             logger.warn("tested 0 image, not calculating psnr")
