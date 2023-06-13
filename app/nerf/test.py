@@ -46,7 +46,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         scene_meta = scene_data.meta
         logger.info("loaded {} camera transforms for testing".format(len(scene_meta.frames)))
 
-    if args.camera_override is not None:
+    if args.camera_override.enabled:
         scene_meta = scene_meta.replace(camera=args.camera_override.update_camera(scene_meta.camera))
 
     # load parameters
@@ -94,7 +94,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         logger.warn("keyboard interrupt, tested {} images".format(len(rendered_images)))
 
     if args.trajectory == "loaded":
-        if args.camera_override is not None:
+        if args.camera_override.enabled:
             logger.info("camera is overridden, not calculating psnr")
         elif len(rendered_images) == 0:
             logger.warn("tested 0 image, not calculating psnr")

@@ -304,6 +304,15 @@ class CameraOverrideOptions:
             near=self.near if self.near is not None else camera.near,
         )
 
+    @property
+    def enabled(self) -> bool:
+        return (
+            self.width is not None
+            or self.height is not None
+            or self.focal is not None
+            or self.near is not None
+        )
+
 
 @empty_impl
 @replace_impl
