@@ -97,14 +97,11 @@ def __hashgrid_encode_fwd(
     coords_rm: jax.Array,
     params: jax.Array,
 ):
-    primal_outputs = hashgrid_encode_p.bind(
-        offset_table_data,
-        coords_rm,
-        params,
-        L=desc.L,
-        F=desc.F,
-        N_min=desc.N_min,
-        per_level_scale=desc.per_level_scale,
+    primal_outputs = __hashgrid_encode(
+        desc=desc,
+        offset_table_data=offset_table_data,
+        coords_rm=coords_rm,
+        params=params,
     )
     encoded_coords_rm, dy_dcoords_rm = primal_outputs
     aux = {
