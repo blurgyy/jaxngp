@@ -58,15 +58,33 @@ def sparse_reconstruction(
     images_dir: Path,
     sparse_reconstruction_dir: Path,
     db_path: Path,
+    matcher: ColmapMatcherType,
 ) -> Dict[int, pycolmap.Reconstruction]:
     images_dir, sparse_reconstruction_dir = Path(images_dir), Path(sparse_reconstruction_dir)
+    mapping_options = pycolmap.IncrementalMapperOptions(
+        # principal point estimation is an ill-posed problem in general (`False` is already the
+        # default, setting to False here explicitly works as a reminder to self)
+        ba_refine_principal_point=False,
+        # <colmap/colmap>:src/colmap/util/option_manager.cc:ModifyForExtremeQuality
+        ba_local_max_num_iterations=40,
+        ba_local_max_refinements=3,
+        ba_global_max_num_iterations=100,
+        # below 3 options are for individual/video data, for internet photos, they should be left
+        # default
+        # <colmap/colmap>:src/colmap/util/option_manager.cc:ModifyForVideoData,ModifyForIndividualData
+        min_focal_length_ratio=0.1,
+        max_focal_length_ratio=10,
+        max_extra_param=1e15,
+    )
+    if matcher == "Sequential":
+        # <colmap/colmap>:src/colmap/util/option_manager.cc:ModifyForVideoData
+        mapping_options.ba_global_images_ratio = 1.4
+        mapping_options.ba_global_points_ratio = 1.4
     maps = pycolmap.incremental_mapping(
         database_path=db_path,
         image_path=images_dir,
         output_path=sparse_reconstruction_dir,
-        options=pycolmap.IncrementalMapperOptions(
-            ba_refine_principal_point=True,
-        ),
+        options=mapping_options,
     )
     return maps
 

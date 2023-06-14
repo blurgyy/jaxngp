@@ -279,6 +279,7 @@ def create_scene_from_single_camera_image_collection(
         images_dir=raw_images_dir,
         sparse_reconstruction_dir=sparse_reconstruction_dir,
         db_path=db_path,
+        matcher=matcher,
     )
     if len(maps) == 0:
         raise RuntimeError("mapping with colmap failed")
