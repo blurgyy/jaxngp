@@ -20,7 +20,6 @@ import numpy as np
 from . import sfm
 from .common import jit_jaxfn_with, mkValueError, tqdm
 from .types import (
-    ColmapMatcherType,
     ImageMetadata,
     OrbitTrajectoryOptions,
     PinholeCamera,
@@ -258,7 +257,6 @@ def write_transforms_json(
 def create_scene_from_single_camera_image_collection(
     raw_images_dir: Path,
     scene_root_dir: Path,
-    matcher: ColmapMatcherType,
     opts: SceneCreationOptions,
 ):
     raw_images_dir, scene_root_dir = Path(raw_images_dir), Path(scene_root_dir)
@@ -273,13 +271,13 @@ def create_scene_from_single_camera_image_collection(
 
     sfm.extract_features(images_dir=raw_images_dir, db_path=db_path)
 
-    sfm.match_features(matcher=matcher, db_path=db_path)
+    sfm.match_features(matcher=opts.matcher, db_path=db_path)
 
     maps = sfm.sparse_reconstruction(
         images_dir=raw_images_dir,
         sparse_reconstructions_dir=sparse_reconstructions_dir,
         db_path=db_path,
-        matcher=matcher,
+        matcher=opts.matcher,
     )
     if len(maps) == 0:
         raise RuntimeError("mapping with colmap failed")
@@ -326,7 +324,6 @@ def create_scene_from_video(
     create_scene_from_single_camera_image_collection(
         raw_images_dir=raw_images_dir,
         scene_root_dir=scene_root_dir,
-        matcher="Sequential",
         opts=opts,
     )
 

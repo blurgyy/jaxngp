@@ -502,15 +502,18 @@ class SceneCreationOptions:
     # the scene's bound be?
     bound: float
 
+    # `Sequntial` for continuous frames, `Exhaustive` for all possible pairs
+    matcher: ColmapMatcherType
+
     # upon loading the created scene during training/inference, scale the camera positions with this
     # factor
-    camera_scale: float
+    camera_scale: float=dataclasses.field(default=1/3)
 
     # whether to enable background model
-    bg: bool
+    bg: bool=dataclasses.field(default=False)
 
     # dimension of NeRF-W-style per-image appearance embeddings, set to 0 to disable
-    n_extra_learnable_dims: int
+    n_extra_learnable_dims: int=dataclasses.field(default=16)
 
 
 @dataclass

@@ -20,7 +20,7 @@ from utils.data import (
     psnr,
     side_by_side,
 )
-from utils.types import ColmapMatcherType, RGBColor, SceneCreationOptions
+from utils.types import RGBColor, SceneCreationOptions
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -53,18 +53,10 @@ class CreateScene:
     # where to write the images and transforms_{train,val,test}.json
     root_dir: Path
 
-    # `Sequntial` for continuous frames, `Exhaustive` for all possible pairs
-    matcher: ColmapMatcherType
-
     # how many frames to extract per second, only required when src is a video
     fps: int | None=None
 
-    scene_opts: tyro.conf.OmitArgPrefixes[SceneCreationOptions]=SceneCreationOptions(
-        bound=4.0,
-        camera_scale=1/3,
-        bg=False,
-        n_extra_learnable_dims=16,
-    )
+    scene_opts: tyro.conf.OmitArgPrefixes[SceneCreationOptions]
 
 CmdCat = Annotated[
     Concatenate,
@@ -146,7 +138,6 @@ def main(args: Args):
             create_scene_from_single_camera_image_collection(
                 raw_images_dir=args.src,
                 scene_root_dir=args.root_dir,
-                matcher=args.matcher,
                 opts=args.scene_opts,
             )
         else:
