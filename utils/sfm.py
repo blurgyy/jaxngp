@@ -56,11 +56,11 @@ def match_features(
 
 def sparse_reconstruction(
     images_dir: Path,
-    sparse_reconstruction_dir: Path,
+    sparse_reconstructions_dir: Path,
     db_path: Path,
     matcher: ColmapMatcherType,
 ) -> Dict[int, pycolmap.Reconstruction]:
-    images_dir, sparse_reconstruction_dir = Path(images_dir), Path(sparse_reconstruction_dir)
+    images_dir, sparse_reconstructions_dir = Path(images_dir), Path(sparse_reconstructions_dir)
     mapping_options = pycolmap.IncrementalMapperOptions(
         # principal point estimation is an ill-posed problem in general (`False` is already the
         # default, setting to False here explicitly works as a reminder to self)
@@ -83,10 +83,29 @@ def sparse_reconstruction(
     maps = pycolmap.incremental_mapping(
         database_path=db_path,
         image_path=images_dir,
-        output_path=sparse_reconstruction_dir,
+        output_path=sparse_reconstructions_dir,
         options=mapping_options,
     )
     return maps
+
+
+def colmap_bundle_adjustment(
+    sparse_reconstruction_dir: Path,
+    max_num_iterations: int,
+) -> pycolmap.Reconstruction:
+    sparse_reconstruction_dir = Path(sparse_reconstruction_dir)
+    ba_options = {
+        "refine_principal_point": True,
+        "solver_options": {
+            "max_num_iterations": max_num_iterations,
+        },
+    }
+    recon = pycolmap.bundle_adjustment(
+        input_path=sparse_reconstruction_dir,
+        output_path=sparse_reconstruction_dir,
+        options=ba_options,
+    )
+    return recon
 
 
 def undistort(

@@ -26,6 +26,10 @@ buildPythonPackage {
     else source.pname;
   inherit (source) version src;
 
+  patches = [
+    ./expose-bundle-adjustment-function.patch
+  ];
+
   nativeBuildInputs = [
     cmake
     setuptools-scm

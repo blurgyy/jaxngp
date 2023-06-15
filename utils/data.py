@@ -267,7 +267,7 @@ def create_scene_from_single_camera_image_collection(
     artifacts_dir = scene_root_dir.joinpath("artifacts")
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     db_path = artifacts_dir.joinpath("colmap.db")
-    sparse_reconstruction_dir = artifacts_dir.joinpath("sparse")
+    sparse_reconstructions_dir = artifacts_dir.joinpath("sparse")
     undistorted_images_dir = scene_root_dir.joinpath("images-undistorted")
     text_model_dir = artifacts_dir.joinpath("text")
 
@@ -277,7 +277,7 @@ def create_scene_from_single_camera_image_collection(
 
     maps = sfm.sparse_reconstruction(
         images_dir=raw_images_dir,
-        sparse_reconstruction_dir=sparse_reconstruction_dir,
+        sparse_reconstructions_dir=sparse_reconstructions_dir,
         db_path=db_path,
         matcher=matcher,
     )
@@ -285,11 +285,15 @@ def create_scene_from_single_camera_image_collection(
         raise RuntimeError("mapping with colmap failed")
     elif len(maps) > 1:
         warnings.warn(
-            "colmap reconstructed more than 1 maps")
+            "colmap reconstructed more than 1 maps, we will only use the first map")
+
+    sparse_recon_dir = sparse_reconstructions_dir.joinpath("0")
+
+    sfm.colmap_bundle_adjustment(sparse_reconstruction_dir=sparse_recon_dir, max_num_iterations=200)
 
     sfm.undistort(
         images_dir=raw_images_dir,
-        sparse_reconstruction_dir=sparse_reconstruction_dir.joinpath("0"),  # just use the first map reconstructed by colmap
+        sparse_reconstruction_dir=sparse_recon_dir,
         undistorted_images_dir=undistorted_images_dir,
     )
 
