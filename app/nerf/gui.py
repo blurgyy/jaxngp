@@ -133,7 +133,7 @@ class Gui_trainer():
     compacted_batch: int = -1
     not_compacted_batch: int = -1
     rays_num: int = -1
-    camera_near: float = 1.0
+    camera_near: float = 0.1
     camera: PinholeCamera = field(init=False)
     need_exit: bool = False
 
@@ -265,7 +265,7 @@ class Gui_trainer():
             translation=jnp.squeeze(self.camera_pose[:3, 3].reshape(-1, 3),
                                     axis=0))
         self.KEY, key = jran.split(self.KEY, 2)
-        bg, rgb, depth, cost = render_image_inference(
+        bg, rgb, disparity, cost = render_image_inference(
             KEY=key,
             transform_cw=transform,
             state=self.state.replace(
@@ -282,14 +282,14 @@ class Gui_trainer():
         rgb = self.get_npf32_image(rgb,
                                    W=self.args.viewport.W,
                                    H=self.args.viewport.H)
-        depth = self.color_depth(depth,
-                                 W=self.args.viewport.W,
-                                 H=self.args.viewport.H)
+        disparity = self.color_disparity(disparity,
+                                         W=self.args.viewport.W,
+                                         H=self.args.viewport.H)
         if render_cost:
             cost = self.get_cost_image(cost,
                                        W=self.args.viewport.W,
                                        H=self.args.viewport.H)
-        return (bg, rgb, depth, cost)
+        return (bg, rgb, disparity, cost)
 
     def get_cost_image(self, cost, W, H):
         img = Image.fromarray(np.array(cost, dtype=np.uint8))
@@ -298,14 +298,14 @@ class Gui_trainer():
         cost = np.array(img, dtype=np.float32) / 255.
         return cost
 
-    def color_depth(self, depth, W, H):
-        depth = np.array(data.f32_to_u8(data.mono_to_rgb(depth)),
+    def color_disparity(self, disparity, W, H):
+        disparity = np.array(data.f32_to_u8(data.mono_to_rgb(disparity)),
                          dtype=np.uint8)
-        img = Image.fromarray(depth, mode='RGBA')
+        img = Image.fromarray(disparity, mode='RGBA')
         img = img.convert('RGB')
         img = img.resize(size=(W, H), resample=Image.NEAREST)
-        depth = np.array(img, dtype=np.float32) / 255.
-        return depth
+        disparity = np.array(img, dtype=np.float32) / 255.
+        return disparity
 
     def load_checkpoint(self, path: Path, step: int):
         self.loading_ckpt = True
@@ -540,7 +540,7 @@ class TrainThread(threading.Thread):
         self.back_color = back_color
         self.framebuff = None
         self.rgb = None
-        self.depth = None
+        self.disparity = None
         self.trainer = None
         self.initFrame()
         self.train_infer_time = -1
@@ -562,7 +562,7 @@ class TrainThread(threading.Thread):
                              (self.H, self.W, 1))
         self.framebuff = frame_init.copy()
         self.rgb = frame_init.copy()
-        self.depth = frame_init.copy()
+        self.disparity = frame_init.copy()
         self.cost = frame_init.copy()
         self.frame_updated = True
 
@@ -597,12 +597,12 @@ class TrainThread(threading.Thread):
                     self.havestart = True
                     start_time = time.time()
                     self.trainer.setBackColor(self.back_color)
-                    _, self.rgb, self.depth, self.cost = self.trainer.render_frame(
+                    _, self.rgb, self.disparity, self.cost = self.trainer.render_frame(
                         self.scale, self.H, self.W, self.mode == Mode.Cost)
                     if self.mode == Mode.Render:
                         self.framebuff = self.rgb
-                    elif self.mode == Mode.Depth:
-                        self.framebuff = self.depth
+                    elif self.mode == Mode.Disparity:
+                        self.framebuff = self.disparity
                     elif self.mode == Mode.Cost:
                         if self.cost is not None:
                             self.framebuff = self.cost
@@ -765,7 +765,7 @@ class TrainThread(threading.Thread):
 
 class Mode(Enum):
     Render = 1
-    Depth = 2
+    Disparity = 2
     Cost = 3
 
 
@@ -975,8 +975,8 @@ class NeRFGUI():
         def callback_mode(_, app_data):
             if app_data == "render":
                 self.mode = Mode.Render
-            elif app_data == "depth":
-                self.mode = Mode.Depth
+            elif app_data == "disparity":
+                self.mode = Mode.Disparity
             elif app_data == "cost":
                 self.mode = Mode.Cost
             else:
@@ -1047,10 +1047,10 @@ class NeRFGUI():
                         #mode
                         with dpg.group(horizontal=True):
                             dpg.add_text("Visualization mode:   ")
-                            items = ["render", "depth", "cost"]
+                            items = ["render", "disparity", "cost"]
                             dpg.add_combo(items=items,
                                           callback=callback_mode,
-                                          width=70,
+                                          width=max(map(len, items)) * 10,
                                           default_value="render")
                         # train / stop/reset
                         with dpg.group(horizontal=True):
@@ -1112,7 +1112,7 @@ class NeRFGUI():
                             dpg.add_text("near plane")
                             dpg.add_input_text(tag="_camera_near",
                                                width=40,
-                                               default_value=1.0,
+                                               default_value=0.1,
                                                decimal=True)
                         with dpg.group(horizontal=True):
                             dpg.add_text("centroid:")
