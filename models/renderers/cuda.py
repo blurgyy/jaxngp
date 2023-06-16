@@ -144,7 +144,9 @@ def render_rays_train(
         {"params": state.params["nerf"]},
         xyzs,
         dirs,
-        state.params["appearance_embeddings"][view_idcs[ray_idcs]],
+        state.params["appearance_embeddings"][view_idcs[ray_idcs]]
+        if "appearance_embeddings" in state.params
+        else jnp.zeros_like(ray_idcs),
     )
 
     effective_samples, final_rgbds = integrate_rays(
@@ -303,7 +305,11 @@ def render_image_inference(
                     nerf_fn=state.nerf_fn,
                 ),
                 locked_nerf_params=state.locked_params["nerf"],
-                appearance_embedding=state.locked_params["appearance_embeddings"][appearance_embedding_index],
+                appearance_embedding=(
+                    state.locked_params["appearance_embeddings"][appearance_embedding_index]
+                    if "appearance_embeddings" in state.locked_params
+                    else jnp.zeros(0)
+                ),
 
                 counter=counter,
                 rays_o=o_world,
