@@ -105,9 +105,9 @@ def make_near_far_from_bound(
 @jit_jaxfn_with(static_argnames=["total_samples"])
 def render_rays_train(
     KEY: jran.KeyArray,
-    view_idcs: jax.Array,
     o_world: jax.Array,
     d_world: jax.Array,
+    appearance_embeddings: jax.Array,
     bg: jax.Array,
     total_samples: int,
     state: NeRFState,
@@ -144,9 +144,7 @@ def render_rays_train(
         {"params": state.params["nerf"]},
         xyzs,
         dirs,
-        state.params["appearance_embeddings"][view_idcs[ray_idcs]]
-        if "appearance_embeddings" in state.params
-        else jnp.zeros_like(ray_idcs),
+        appearance_embeddings[ray_idcs],
     )
 
     effective_samples, final_rgbds = integrate_rays(
@@ -252,6 +250,11 @@ def render_image_inference(
         state = state.replace(scene_meta=state.scene_meta.replace(camera=camera_override))
 
     o_world, d_world = make_rays_worldspace(camera=state.scene_meta.camera, transform_cw=transform_cw)
+    appearance_embedding = (
+        state.locked_params["appearance_embeddings"][appearance_embedding_index]
+            if "appearance_embeddings" in state.locked_params
+            else jnp.empty(0)
+    )
     t_starts, t_ends = make_near_far_from_bound(state.scene_meta.bound, o_world, d_world)
     rays_rgbd = jnp.zeros((state.scene_meta.camera.n_pixels, 4), dtype=jnp.float32)
     rays_T = jnp.ones(state.scene_meta.camera.n_pixels, dtype=jnp.float32)
@@ -264,7 +267,7 @@ def render_image_inference(
             {"params": state.locked_params["bg"]},
             o_world,
             d_world,
-            state.locked_params["appearance_embeddings"][appearance_embedding_index],
+            appearance_embedding,
         )
     elif state.render.random_bg:
         KEY, key = jran.split(KEY, 2)
@@ -305,11 +308,7 @@ def render_image_inference(
                     nerf_fn=state.nerf_fn,
                 ),
                 locked_nerf_params=state.locked_params["nerf"],
-                appearance_embedding=(
-                    state.locked_params["appearance_embeddings"][appearance_embedding_index]
-                    if "appearance_embeddings" in state.locked_params
-                    else jnp.zeros(0)
-                ),
+                appearance_embedding=appearance_embedding,
 
                 counter=counter,
                 rays_o=o_world,

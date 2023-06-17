@@ -124,12 +124,17 @@ def train_step(
     # this parameter, instead from the outer-scope `state.params`.
     def loss_fn(params_to_optimize, gt_rgba_f32, KEY):
         o_world, d_world = make_rays_worldspace()
+        appearance_embeddings = (
+            params_to_optimize["appearance_embeddings"][view_idcs]
+                if "appearance_embeddings" in params_to_optimize
+                else jnp.empty(0)
+        )
         if state.use_background_model:
             bg = state.bg_fn(
                 {"params": params_to_optimize["bg"]},
                 o_world,
                 d_world,
-                params_to_optimize["appearance_embeddings"][view_idcs],
+                appearance_embeddings,
             )
         elif state.render.random_bg:
             KEY, key = jran.split(KEY, 2)
@@ -139,9 +144,9 @@ def train_step(
         KEY, key = jran.split(KEY, 2)
         batch_metrics, pred_rgbds, tv = render_rays_train(
             KEY=key,
-            view_idcs=view_idcs,
             o_world=o_world,
             d_world=d_world,
+            appearance_embeddings=appearance_embeddings,
             bg=bg,
             total_samples=total_samples,
             state=state.replace(params=params_to_optimize),

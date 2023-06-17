@@ -188,8 +188,7 @@ __global__ void integrate_rays_backward_kernel(
         ray_dL_dz_vals[sample_idx] = weight * ray_dL_dfinal_rgbd[3];
 
         /// density gradients
-        ray_dL_ddrgbs[sample_idx * 4] = delta_t * (
-            0.f
+        float sample_dL_ddensity = delta_t * (
             //// gradients from final_rgbs
             ///// NOTE:
             /////   although `ray_final_rgb` now includes both the rays composed color and
@@ -202,13 +201,16 @@ __global__ void integrate_rays_backward_kernel(
             + ray_dL_dfinal_rgbd[2] * (transmittance * ray_drgbs[sample_idx * 4 + 3] - (ray_final_rgbd[2] - cur_rgb[2]))
             //// gradients from depth
             + ray_dL_dfinal_rgbd[3] * (transmittance * z_val - (ray_final_rgbd[3] - cur_depth))
-        )
-        // Penalize samples for being behind the camera's near plane.  This loss requires there be
-        // samples behind the camera's near plane, so the ray's starting point should only be
-        // clipped above zero, instead of being clipped above the near distance.
-        // REF: <https://github.com/NVlabs/instant-ngp/commit/2b825d383e11655f46786bc0a67fd0681bfceb60>
-        + (density > 4e-5 && z_val < near_distance ? 1e-4f : 0.0f)
-        ;
+        );
+        //// gradients from regularizations
+        ///// Penalize samples for being behind the camera's near plane.  This loss requires there
+        ///// to be samples behind the camera's near plane, so the ray's starting point should only
+        ///// be clipped above zero, instead of being clipped above the near distance.
+        ///// REF: <https://github.com/NVlabs/instant-ngp/commit/2b825d383e11655f46786bc0a67fd0681bfceb60>
+        sample_dL_ddensity += (density > 4e-5 && z_val < near_distance ? 1e-4f : 0.0f);
+
+        // assign density gradients to output
+        ray_dL_ddrgbs[sample_idx * 4 + 0] = sample_dL_ddensity;
 
         /// color gradients
         ray_dL_ddrgbs[sample_idx * 4 + 1] = weight * ray_dL_dfinal_rgbd[0];
