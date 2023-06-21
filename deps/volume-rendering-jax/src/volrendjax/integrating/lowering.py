@@ -44,6 +44,7 @@ def integrate_rays_lowering_rule(
         "helper.counter": (1,),
 
         "out.final_rgbds": (n_rays, 4),
+        "out.final_opacities": (n_rays,),
     }
 
     return custom_call(
@@ -51,6 +52,7 @@ def integrate_rays_lowering_rule(
         out_types=[
             ir.RankedTensorType.get(shapes["helper.counter"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.final_rgbds"], ir.F32Type.get()),
+            ir.RankedTensorType.get(shapes["out.final_opacities"], ir.F32Type.get()),
         ],
         operands=[
             rays_sample_startidx,
@@ -72,6 +74,7 @@ def integrate_rays_lowering_rule(
         result_layouts=default_layouts(
             shapes["helper.counter"],
             shapes["out.final_rgbds"],
+            shapes["out.final_opacities"],
         ),
     )
 
@@ -90,6 +93,7 @@ def integrate_rays_backward_lowring_rule(
 
     # original outputs
     final_rgbds: ir.Value,
+    final_opacities: ir.Value,
 
     # gradient inputs
     dL_dfinal_rgbds: ir.Value,
@@ -112,6 +116,7 @@ def integrate_rays_backward_lowring_rule(
         "in.drgbs": (total_samples, 4),
 
         "in.final_rgbds": (n_rays, 4),
+        "in.final_opacities": (n_rays,),
 
         "in.dL_dfinal_rgbds": (n_rays, 4),
 
@@ -137,6 +142,7 @@ def integrate_rays_backward_lowring_rule(
             drgbs,
 
             final_rgbds,
+            final_opacities,
 
             dL_dfinal_rgbds,
         ],
@@ -150,6 +156,7 @@ def integrate_rays_backward_lowring_rule(
             shapes["in.drgbs"],
 
             shapes["in.final_rgbds"],
+            shapes["in.final_opacities"],
 
             shapes["in.dL_dfinal_rgbds"],
         ),

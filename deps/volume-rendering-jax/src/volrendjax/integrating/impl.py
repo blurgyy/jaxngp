@@ -59,7 +59,7 @@ def __integrate_rays(
 ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     bgs = jax.numpy.broadcast_to(bgs, (rays_sample_startidx.shape[0], 3))
 
-    counter, final_rgbds = integrate_rays_p.bind(
+    counter, final_rgbds, final_opacities = integrate_rays_p.bind(
         rays_sample_startidx,
         rays_n_samples,
         bgs,
@@ -68,7 +68,7 @@ def __integrate_rays(
         drgbs,
     )
 
-    return counter, final_rgbds
+    return counter, final_rgbds, final_opacities
 
 def __fwd_integrate_rays(
     near_distance: float,
@@ -90,7 +90,7 @@ def __fwd_integrate_rays(
         z_vals=z_vals,
         drgbs=drgbs,
     )
-    counter, final_rgbds = primal_outputs
+    counter, final_rgbds, final_opacities = primal_outputs
     aux = {
         "in.near_distance": near_distance,
         "in.rays_sample_startidx": rays_sample_startidx,
@@ -102,11 +102,12 @@ def __fwd_integrate_rays(
 
         "out.counter": counter,
         "out.final_rgbds": final_rgbds,
+        "out.final_opacities": final_opacities,
     }
     return primal_outputs, aux
 
 def __bwd_integrate_rays(aux, grads):
-    _, dL_dfinal_rgbds = grads
+    _, dL_dfinal_rgbds, dL_dfinal_opacities = grads  # dL_dfinal_rgbds should be zeros everywhere
     dL_dbgs, dL_dz_vals, dL_ddrgbs = integrate_rays_bwd_p.bind(
         aux["in.rays_sample_startidx"],
         aux["in.rays_n_samples"],
@@ -116,6 +117,7 @@ def __bwd_integrate_rays(aux, grads):
         aux["in.drgbs"],
 
         aux["out.final_rgbds"],
+        aux["out.final_opacities"],
 
         dL_dfinal_rgbds,
 

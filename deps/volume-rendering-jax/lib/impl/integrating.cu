@@ -37,8 +37,9 @@ __global__ void integrate_rays_kernel(
     // helper
     , std::uint32_t * const __restrict__ counter  // [1]
 
-    // output arrays (4)
+    // output arrays (2)
     , float * const __restrict__ final_rgbds  // [n_rays, 4]
+    , float * const __restrict__ final_opacities  // [n_rays]
 ) {
     std::uint32_t const i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_rays) { return; }
@@ -79,9 +80,10 @@ __global__ void integrate_rays_kernel(
     // write to global memory at last
     // stop ray marching and **set the remaining contribution to zero** as soon as the transmittance
     // of the ray drops below a threshold
+    float const opacity = 1.f - ray_transmittance;
+    final_opacities[i] = opacity;
     if (ray_transmittance <= T_THRESHOLD){ 
-        float const denom = 1 - ray_transmittance;
-        float idenom = 1.f / denom;
+        float idenom = 1.f / opacity;
         final_rgbds[i*4+0] = r * idenom;
         final_rgbds[i*4+1] = g * idenom;
         final_rgbds[i*4+2] = b * idenom;
@@ -119,9 +121,13 @@ __global__ void integrate_rays_backward_kernel(
 
     /// original outputs
     , float const * const __restrict__ final_rgbds  // [n_rays, 4]
+    , float const * const __restrict__ final_opacities  // [n_rays]
 
     /// gradient inputs
     , float const * const __restrict__ dL_dfinal_rgbds  // [n_rays, 4]
+    /* background color blending is done inside the integrate_rays kernel, so no need to accept a
+     * `dL_dfinal_opacities` parameter, it would be all zeros anyway
+     **/
 
     // output arrays
     , float * const __restrict__ dL_dbgs  // [n_rays, 3]
@@ -148,6 +154,7 @@ __global__ void integrate_rays_backward_kernel(
         final_rgbds[i * 4 + 2],
         final_rgbds[i * 4 + 3],
     };
+    float const ray_final_opacity = final_opacities[i];
 
     /// gradient inputs
     float const ray_dL_dfinal_rgbd[4] = {
@@ -190,15 +197,18 @@ __global__ void integrate_rays_backward_kernel(
         /// density gradients
         float sample_dL_ddensity = delta_t * (
             //// gradients from final_rgbs
-            ///// NOTE:
-            /////   although `ray_final_rgb` now includes both the rays composed color and
-            /////   optionally a background color, gradients from final_rgbs to densities does not
-            /////   change.
-            ///// TODO:
-            /////   write this up in a public post
-            + ray_dL_dfinal_rgbd[0] * (transmittance * ray_drgbs[sample_idx * 4 + 1] - (ray_final_rgbd[0] - cur_rgb[0]))
-            + ray_dL_dfinal_rgbd[1] * (transmittance * ray_drgbs[sample_idx * 4 + 2] - (ray_final_rgbd[1] - cur_rgb[1]))
-            + ray_dL_dfinal_rgbd[2] * (transmittance * ray_drgbs[sample_idx * 4 + 3] - (ray_final_rgbd[2] - cur_rgb[2]))
+            + ray_dL_dfinal_rgbd[0] * (
+                transmittance * ray_drgbs[sample_idx * 4 + 1] - (ray_final_rgbd[0] - cur_rgb[0])
+                - ray_bgs[0] * (1.f - ray_final_opacity)
+            )
+            + ray_dL_dfinal_rgbd[1] * (
+                transmittance * ray_drgbs[sample_idx * 4 + 2] - (ray_final_rgbd[1] - cur_rgb[1])
+                - ray_bgs[1] * (1.f - ray_final_opacity)
+            )
+            + ray_dL_dfinal_rgbd[2] * (
+                transmittance * ray_drgbs[sample_idx * 4 + 3] - (ray_final_rgbd[2] - cur_rgb[2])
+                - ray_bgs[2] * (1.f - ray_final_opacity)
+            )
             //// gradients from depth
             + ray_dL_dfinal_rgbd[3] * (transmittance * z_val - (ray_final_rgbd[3] - cur_depth))
         );
@@ -330,10 +340,12 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
 
     // outputs
     float * const __restrict__ final_rgbds = static_cast<float *>(next_buffer());  // [n_rays, 4]
+    float * const __restrict__ final_opacities = static_cast<float *>(next_buffer());  // [n_rays]
 
     // reset all outputs to zero
     CUDA_CHECK_THROW(cudaMemsetAsync(counter, 0x00, sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(final_rgbds, 0x00, n_rays * 4 * sizeof(float), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(final_opacities, 0x00, n_rays * sizeof(float), stream));
 
     // kernel launch
     std::uint32_t static constexpr blockSize = 512;
@@ -352,6 +364,7 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
         , counter
         // output arrays (2)
         , final_rgbds
+        , final_opacities
     );
 
     // abort on error
@@ -381,6 +394,7 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
     float const * const __restrict__ drgbs = static_cast<float *>(next_buffer());  // [total_samples, 4]
     //// original outputs
     float const * const __restrict__ final_rgbds = static_cast<float *>(next_buffer());  // [n_rays, 4]
+    float const * const __restrict__ final_opacities = static_cast<float *>(next_buffer());  // [n_rays]
     //// gradient inputs
     float const * const __restrict__ dL_dfinal_rgbds = static_cast<float *>(next_buffer());  // [n_rays, 4]
 
@@ -412,6 +426,7 @@ void integrate_rays_backward_launcher(cudaStream_t stream, void **buffers, char 
         , drgbs
         /// original outputs
         , final_rgbds
+        , final_opacities
         /// gradient inputs
         , dL_dfinal_rgbds
 
