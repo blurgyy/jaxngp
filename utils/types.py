@@ -158,7 +158,7 @@ class NeRFBatchConfig:
         )
 
     def update(self, /, new_measured_batch_size: int, new_measured_batch_size_before_compaction: int) -> "NeRFBatchConfig":
-        decay = .95
+        decay = .6  # so that an old value decays to ~<1% after 10 steps
         return self.replace(
             running_mean_effective_samples_per_ray=self.running_mean_effective_samples_per_ray * decay + (1 - decay) * new_measured_batch_size / self.n_rays,
             running_mean_samples_per_ray=self.running_mean_samples_per_ray * decay + (1 - decay) * new_measured_batch_size_before_compaction / self.n_rays,
