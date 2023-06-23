@@ -16,9 +16,9 @@ Benchmarks
 
 |                                            | mic   | ficus | chair | hotdog | materials | drums | ship  | lego  | average |
 |:--- |:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| jaxngp _@33.7k steps_ <br> (this codebase) | 36.07 | 33.23 | 35.06 | 37.09  | 29.54     | 25.78 | 30.93 | 36.08 | 32.973  |
-| jaxngp _@51.2k steps_ <br> (this codebase) | 35.99 | 33.28 | 34.99 | 37.16  | 29.57     | 25.83 | 30.93 | 36.11 | 32.983  |
-| paper ([instant-ngp])                      | 36.22 | 33.51 | 35.00 | 37.40  | 29.78     | 26.02 | 31.10 | 36.39 | 33.176  |
+| _@33.7k steps_ (this codebase) | 37.04 | 33.14 | 35.10 | 37.21  | 29.50     | 25.85 | 30.93 | 35.95 | 33.09   |
+| _@51.2k steps_ (this codebase) | 37.07 | 33.17 | 35.16 | 37.26  | 29.50     | 25.86 | 30.94 | 36.03 | 33.124  |
+| paper ([instant-ngp])          | 36.22 | 33.51 | 35.00 | 37.40  | 29.78     | 26.02 | 31.10 | 36.39 | 33.176  |
 
 <sup>
 For each scene, the network is trained on 100 training images (800x800 each) for 30k steps with
@@ -254,7 +254,7 @@ $ python3 -m utils train data/gundam --exp-dir=logs/gundam
 [...]
 $
 $ # Render novel views, with a resolution of 1920x1080, save results as images and a video (video shown below in the Demo section)
-$ python3 -m app.nerf test data/custom/gundam --{ckpt,exp-dir}=logs/gundam --trajectory=orbit --camera-override.{width=1920,height=1080} --orbit.high=1 --save-as="video and images"
+$ python3 -m app.nerf test data/gundam --{ckpt,exp-dir}=logs/gundam --trajectory=orbit --camera-override.{width=1920,height=1080} --orbit.high=1 --save-as="video and images"
 ```
 
 ### Demos
@@ -287,7 +287,7 @@ $ python3 -m app.nerf test data/custom/gundam --{ckpt,exp-dir}=logs/gundam --tra
 [gundam-source]: <https://github.com/blurgyy/jaxngp/assets/44701880/022a7b3c-344d-418f-aba0-0ccb9bfeb374>
 [metasun-source]: <https://twitter.com/filiptronicek/status/1654894133801103360>
 
-[gundam-nvs]: <https://github.com/blurgyy/jaxngp/assets/44701880/2ce8e57c-e179-469a-9ca2-10219fcba58d>
+[gundam-nvs]: <https://github.com/blurgyy/jaxngp/assets/44701880/d41c2039-4ef8-4acf-ac6e-419bbf20b9c8>
 [gui-teaser]: <https://github.com/blurgyy/jaxngp/assets/44701880/b94dcd0f-a66d-404e-aee2-87f91ddf52fe>
 
 [Demos]: <#demos>
