@@ -217,10 +217,13 @@ __global__ void integrate_rays_backward_kernel(
         ///// to be samples behind the camera's near plane, so the ray's starting point should only
         ///// be clipped above zero, instead of being clipped above the near distance.
         ///// REF: <https://github.com/NVlabs/instant-ngp/commit/2b825d383e11655f46786bc0a67fd0681bfceb60>
-        sample_dL_ddensity += (density > 4e-5 && z_val < near_distance ? 1e-4f : 0.0f);
+        float sample_dReg_ddensity = (density > 4e-5 && z_val < near_distance ? 1e-4f : 0.0f);
 
+        // gradient scaling, as proposed in _Floaters No More: Radiance Field Gradient Scaling for
+        // Improved Near-Camera Training_, EGSR23
+        float grad_scalar = fminf(z_val * z_val, 1.f);
         // assign density gradients to output
-        ray_dL_ddrgbs[sample_idx * 4 + 0] = sample_dL_ddensity;
+        ray_dL_ddrgbs[sample_idx * 4 + 0] = grad_scalar * sample_dL_ddensity + sample_dReg_ddensity;
 
         /// color gradients
         ray_dL_ddrgbs[sample_idx * 4 + 1] = weight * ray_dL_dfinal_rgbd[0];
