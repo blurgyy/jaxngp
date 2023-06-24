@@ -185,11 +185,14 @@ class SkySphereBg(BackgroundModel):
             0.,
         )
 
+        n_rays = functools.reduce(int.__mul__, rays_d.shape[:-1])
         # we then encode the positions/directions, and predict a view-dependent color for each ray
         pos_enc = self.position_encoder(pos_dirs)
         dir_enc = self.direction_encoder(rays_d)
-        n_rays = functools.reduce(int.__mul__, rays_d.shape[:-1])
-        appearance_embeddings = appearance_embeddings.reshape(n_rays, -1)
+        appearance_embeddings = jnp.broadcast_to(
+            appearance_embeddings,
+            shape=(n_rays, appearance_embeddings.shape[-1]),
+        )
 
         colors = self.rgb_mlp(jnp.concatenate([pos_enc, dir_enc, appearance_embeddings], axis=-1))
         colors = self.activation(colors)
