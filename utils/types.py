@@ -565,7 +565,7 @@ class ViewMetadata:
         x, y = x.reshape(-1, 1), y.reshape(-1, 1)
         return jnp.concatenate([x, y], axis=-1)
 
-    # float, [H*W, 4]: normalized rgba values in range [0, 1]
+    # float, [H*W, 4]: rgba values of type uint8
     @property
     def rgba_u8(self) -> jax.Array:
         flattened = self.image_rgba_u8.reshape(self.H * self.W, -1)
