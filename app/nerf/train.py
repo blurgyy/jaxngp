@@ -41,70 +41,74 @@ def train_epoch(
     interrupted = False
 
     try:
-        for _ in (pbar := common.tqdm(range(n_batches), desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs))):
-            KEY, key_perm, key_train_step = jran.split(KEY, 3)
-            perm = jran.choice(key_perm, scene.meta.n_pixels, shape=(state.batch_config.n_rays,), replace=True)
-            state, metrics = train_step(
-                KEY=key_train_step,
-                state=state,
-                total_samples=total_samples,
-                scene=scene,
-                perm=perm,
-            )
-            n_processed_rays += state.batch_config.n_rays
-            loss = metrics["loss"]
-            if total_loss is None:
-                total_loss = loss
-            else:
-                total_loss = jax.tree_util.tree_map(
-                    lambda total, new: total + new * state.batch_config.n_rays,
-                    total_loss,
-                    loss,
+        with common.tqdm(range(n_batches), desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs)) as pbar:
+            start = int(state.step) % n_batches
+            pbar.update(start)
+            for _ in range(start, n_batches):
+                KEY, key_perm, key_train_step = jran.split(KEY, 3)
+                perm = jran.choice(key_perm, scene.meta.n_pixels, shape=(state.batch_config.n_rays,), replace=True)
+                state, metrics = train_step(
+                    KEY=key_train_step,
+                    state=state,
+                    total_samples=total_samples,
+                    scene=scene,
+                    perm=perm,
                 )
-
-            pbar.set_description_str(
-                desc="Training epoch#{:03d}/{:d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss:{{rgb={:.2e}({:.2f}dB),tv={:.2e}}}".format(
-                    ep_log,
-                    total_epochs,
-                    metrics["measured_batch_size"],
-                    metrics["measured_batch_size_before_compaction"],
-                    state.batch_config.running_mean_effective_samples_per_ray,
-                    state.batch_config.running_mean_samples_per_ray,
-                    state.batch_config.n_rays,
-                    loss["rgb"],
-                    data.linear_to_db(loss["rgb"], maxval=1),
-                    loss["total_variation"],
-                )
-            )
-
-            if state.should_call_update_ogrid:
-                # update occupancy grid
-                for cas in range(state.scene_meta.cascades):
-                    KEY, key = jran.split(KEY, 2)
-                    state = state.update_ogrid_density(
-                        KEY=key,
-                        cas=cas,
-                        update_all=bool(state.should_update_all_ogrid_cells),
-                        max_inference=total_samples,
+                n_processed_rays += state.batch_config.n_rays
+                loss = metrics["loss"]
+                if total_loss is None:
+                    total_loss = loss
+                else:
+                    total_loss = jax.tree_util.tree_map(
+                        lambda total, new: total + new * state.batch_config.n_rays,
+                        total_loss,
+                        loss,
                     )
-                state = state.threshold_ogrid()
 
-            state = state.update_batch_config(
-                new_measured_batch_size=metrics["measured_batch_size"],
-                new_measured_batch_size_before_compaction=metrics["measured_batch_size_before_compaction"],
-            )
-            if state.should_commit_batch_config:
-                state = state.replace(batch_config=state.batch_config.commit(total_samples))
+                pbar.set_description_str(
+                    desc="Training epoch#{:03d}/{:d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss:{{rgb={:.2e}({:.2f}dB),tv={:.2e}}}".format(
+                        ep_log,
+                        total_epochs,
+                        metrics["measured_batch_size"],
+                        metrics["measured_batch_size_before_compaction"],
+                        state.batch_config.running_mean_effective_samples_per_ray,
+                        state.batch_config.running_mean_samples_per_ray,
+                        state.batch_config.n_rays,
+                        loss["rgb"],
+                        data.linear_to_db(loss["rgb"], maxval=1),
+                        loss["total_variation"],
+                    )
+                )
+                pbar.update(1)
 
-            if state.should_write_batch_metrics:
-                logger.write_scalar("batch/↓loss (rgb)", loss["rgb"], state.step)
-                logger.write_scalar("batch/↑estimated PSNR (db)", data.linear_to_db(loss["rgb"], maxval=1), state.step)
-                logger.write_scalar("batch/↓loss (total variation)", loss["total_variation"], state.step)
-                logger.write_scalar("batch/effective batch size (not compacted)", metrics["measured_batch_size_before_compaction"], state.step)
-                logger.write_scalar("batch/↑effective batch size (compacted)", metrics["measured_batch_size"], state.step)
-                logger.write_scalar("rendering/↓effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
-                logger.write_scalar("rendering/↓marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
-                logger.write_scalar("rendering/↑number of rays", state.batch_config.n_rays, state.step)
+                if state.should_call_update_ogrid:
+                    # update occupancy grid
+                    for cas in range(state.scene_meta.cascades):
+                        KEY, key = jran.split(KEY, 2)
+                        state = state.update_ogrid_density(
+                            KEY=key,
+                            cas=cas,
+                            update_all=bool(state.should_update_all_ogrid_cells),
+                            max_inference=total_samples,
+                        )
+                    state = state.threshold_ogrid()
+
+                state = state.update_batch_config(
+                    new_measured_batch_size=metrics["measured_batch_size"],
+                    new_measured_batch_size_before_compaction=metrics["measured_batch_size_before_compaction"],
+                )
+                if state.should_commit_batch_config:
+                    state = state.replace(batch_config=state.batch_config.commit(total_samples))
+
+                if state.should_write_batch_metrics:
+                    logger.write_scalar("batch/↓loss (rgb)", loss["rgb"], state.step)
+                    logger.write_scalar("batch/↑estimated PSNR (db)", data.linear_to_db(loss["rgb"], maxval=1), state.step)
+                    logger.write_scalar("batch/↓loss (total variation)", loss["total_variation"], state.step)
+                    logger.write_scalar("batch/effective batch size (not compacted)", metrics["measured_batch_size_before_compaction"], state.step)
+                    logger.write_scalar("batch/↑effective batch size (compacted)", metrics["measured_batch_size"], state.step)
+                    logger.write_scalar("rendering/↓effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
+                    logger.write_scalar("rendering/↓marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
+                    logger.write_scalar("rendering/↑number of rays", state.batch_config.n_rays, state.step)
     except (InterruptedError, KeyboardInterrupt):
         interrupted = True
 
@@ -119,6 +123,9 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
     if args.exp_dir.exists():
         logger.error("specified experiment directory '{}' already exists".format(args.exp_dir))
         exit(1)
+    if args.ckpt is not None and not args.ckpt.exists():
+        logger.error("specified checkpoint '{}' does not exist".format(args.ckpt))
+        exit(2)
     logs_dir = args.exp_dir.joinpath("logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
     logger = common.setup_logging(
@@ -212,11 +219,13 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
         },
         tx=make_optimizer(args.train.lr),
     )
-    state = state.mark_untrained_density_grid()
+    if args.ckpt is not None:
+        state = checkpoints.restore_checkpoint(args.ckpt, target=state)
+    state = state.mark_untrained_density_grid()  # still needs to mark grids even if state is loaded
 
     logger.info("starting training")
     # training loop
-    for ep in range(args.train.n_epochs):
+    for ep in range(state.epoch(args.train.n_batches), args.train.n_epochs):
         gc.collect()
 
         ep_log = ep + 1

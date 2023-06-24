@@ -891,9 +891,9 @@ class NeRFState(TrainState):
             ratio_trainable = n_alive_grids / n_grids
             pbar.set_description_str("marked {}/{} ({:.2f}%) grids as trainable".format(n_alive_grids, n_grids, ratio_trainable * 100))
 
-        marked_density = jnp.where(alive_marker, 1e-15, -1.)
+        marked_density = jnp.where(alive_marker, self.ogrid.density, -1.)
         marked_occ_mask, marked_occupancy = packbits(
-            density_threshold=-.5,
+            density_threshold=min(self.density_threshold_from_min_step_size, self.ogrid.mean_density_up_to_cascade(1)) if self.step > 0 else -.5,
             density_grid=marked_density
         )
 
@@ -915,6 +915,9 @@ class NeRFState(TrainState):
                 ))).tolist(),
             ),
         )
+
+    def epoch(self, n_batches: int) -> int:
+        return self.step // n_batches
 
     @property
     def density_threshold_from_min_step_size(self) -> float:
