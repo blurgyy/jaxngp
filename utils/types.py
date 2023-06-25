@@ -21,6 +21,14 @@ from volrendjax import morton3d_invert, packbits
 from ._constants import tqdm_format
 
 
+CameraModelType = Literal[
+    "SIMPLE_PINHOLE",
+    "PINHOLE",
+    "SIMPLE_RADIAL",
+    "RADIAL",
+    "OPENCV",
+    "OPENCV_FISHEYE",
+]
 PositionalEncodingType = Literal["identity", "frequency", "hashgrid", "tcnn-hashgrid"]
 DirectionalEncodingType = Literal["identity", "sh", "shcuda"]
 EncodingType = Literal[PositionalEncodingType, DirectionalEncodingType]
@@ -174,7 +182,7 @@ class NeRFBatchConfig:
 
 
 @dataclass
-class PinholeCamera:
+class Camera:
     # resolutions
     W: int
     H: int
@@ -188,6 +196,16 @@ class PinholeCamera:
     cy: float
 
     near: float
+
+    # distortion parameters
+    k1: float=0.
+    k2: float=0.
+    k3: float=0.
+    k4: float=0.
+    p1: float=0.
+    p2: float=0.
+
+    model: CameraModelType=struct.field(default="OPENCV", pytree_node=False)
 
     @property
     def n_pixels(self) -> int:
@@ -206,7 +224,7 @@ class PinholeCamera:
         return jnp.asarray(self.K_numpy)
 
     @classmethod
-    def from_colmap_txt(cls, txt_path: str | Path) -> "PinholeCamera":
+    def from_colmap_txt(cls, txt_path: str | Path) -> "Camera":
         """
         Example usage:
             cam = PinholeCamera.from_colmap_txt("path/to/txt")
@@ -226,7 +244,7 @@ class PinholeCamera:
             near=0.,
         )
 
-    def scale_resolution(self, scale: int | float) -> "PinholeCamera":
+    def scale_resolution(self, scale: int | float) -> "Camera":
         return self.replace(
             W=int(self.W * scale),
             H=int(self.H * scale),
@@ -236,8 +254,124 @@ class PinholeCamera:
             cy=self.cy * scale,
         )
 
-    def scale_world(self, scale: int | float) -> "PinholeCamera":
+    def scale_world(self, scale: int | float) -> "Camera":
         return self.replace(near=self.near * scale)
+
+    def distort(self, x: jax.Array, y: jax.Array) -> jax.Array:
+        """Computes distorted coords.
+        REF:
+            * <https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html>
+            * <https://en.wikipedia.org/wiki/Distortion_%28optics%29>
+
+        Inputs:
+            x, y `float`: normalized undistorted coordinates
+
+        Returns:
+            x, y `float`: distorted coordinates
+        """
+        x2, y2 = jnp.square(x), jnp.square(y)
+        r2 = x2 + y2
+        r4 = r2 * r2
+        r6 = r2 * r4
+        r8 = r4 * r4
+        k1, k2, k3, k4, = self.k1, self.k2, self.k3, self.k4
+
+        def radial_distort(val):
+            return val * (1 + k1 * r2 + k2 * r4 + k3 * r6 + k4 * r8)
+
+        p1, p2 = self.p1, self.p2
+
+        # radial distort
+        xd, yd = radial_distort(x), radial_distort(y)
+
+        # tangential distort
+        xdyd = xd * yd
+        xd = xd + (2 * p1 * xdyd + p2 * (r2 + 2 * x2))
+        yd = yd + (p2 * (r2 + 2 * y2) + 2 * p2 * xdyd)
+
+        return xd, yd
+
+    def undistort(self, x: jax.Array, y: jax.Array, eps: float=1e-3, max_iterations: int=10) -> jax.Array:
+        """Computes undistorted coords.
+        REF:
+            * <https://github.com/google-research/multinerf/blob/b02228160d3179300c7d499dca28cb9ca3677f32/internal/camera_utils.py#L477-L509>
+            * <https://github.com/nerfstudio-project/nerfstudio/blob/004d8ca9d24b294b1877d4d5599879c4ce812bc7/nerfstudio/cameras/camera_utils.py#L411-L448>
+
+        Inputs:
+            x, y `float`: normalized (x_normalized = (x + cx) / fx) distorted coordinates
+            eps `float`: epsilon for the convergence
+            max_iterations `int`: maximum number of iterations to perform
+
+        Returns:
+            x, y `float`: undistorted coordinates
+        """
+        # the original distorted coordinates
+        xd, yd = x.copy(), y.copy()
+
+        @jax.jit
+        def compute_residual_and_jacobian(x, y) -> Tuple[Tuple[jax.Array, jax.Array], Tuple[jax.Array, jax.Array, jax.Array, jax.Array]]:
+            """Auxiliary function of radial_and_tangential_undistort() that computes residuals and
+            jacobians.
+            REF:
+                * <https://github.com/google-research/multinerf/blob/b02228160d3179300c7d499dca28cb9ca3677f32/internal/camera_utils.py#L427-L474>
+                * <https://github.com/nerfstudio-project/nerfstudio/blob/004d8ca9d24b294b1877d4d5599879c4ce812bc7/nerfstudio/cameras/camera_utils.py#L345-L407>
+
+            Inputs:
+                x: The updated x coordinates.
+                y: The updated y coordinates.
+
+            Returns:
+                The residuals (fx, fy) and jacobians (fx_x, fx_y, fy_x, fy_y).
+            """
+            k1, k2, k3, k4 = self.k1, self.k2, self.k3, self.k4
+            p1, p2 = self.p1, self.p2
+            # let r(x, y) = x^2 + y^2;
+            #     d(x, y) = 1 + k1 * r(x, y) + k2 * r(x, y) ^2 + k3 * r(x, y)^3 +
+            #                   k4 * r(x, y)^4;
+            r = x * x + y * y
+            d = 1.0 + r * (k1 + r * (k2 + r * (k3 + r * k4)))
+
+            # The perfect projection is:
+            # xd = x * d(x, y) + 2 * p1 * x * y + p2 * (r(x, y) + 2 * x^2);
+            # yd = y * d(x, y) + 2 * p2 * x * y + p1 * (r(x, y) + 2 * y^2);
+            #
+            # Let's define
+            #
+            # fx(x, y) = x * d(x, y) + 2 * p1 * x * y + p2 * (r(x, y) + 2 * x^2) - xd;
+            # fy(x, y) = y * d(x, y) + 2 * p2 * x * y + p1 * (r(x, y) + 2 * y^2) - yd;
+            #
+            # We are looking for a solution that satisfies
+            # fx(x, y) = fy(x, y) = 0;
+            fx = d * x + 2 * p1 * x * y + p2 * (r + 2 * x * x) - xd
+            fy = d * y + 2 * p2 * x * y + p1 * (r + 2 * y * y) - yd
+
+            # Compute derivative of d over [x, y]
+            d_r = k1 + r * (2.0 * k2 + r * (3.0 * k3 + r * 4.0 * k4))
+            d_x = 2.0 * x * d_r
+            d_y = 2.0 * y * d_r
+
+            # Compute derivative of fx over x and y.
+            fx_x = d + d_x * x + 2.0 * p1 * y + 6.0 * p2 * x
+            fx_y = d_y * x + 2.0 * p1 * x + 2.0 * p2 * y
+
+            # Compute derivative of fy over x and y.
+            fy_x = d_x * y + 2.0 * p2 * y + 2.0 * p1 * x
+            fy_y = d + d_y * y + 2.0 * p2 * x + 6.0 * p1 * y
+
+            return (fx, fy), (fx_x, fx_y, fy_x, fy_y)
+
+        for _ in range(max_iterations):
+            (fx, fy), (fx_x, fx_y, fy_x, fy_y) = compute_residual_and_jacobian(x, y)
+            denominator = fy_x * fx_y - fx_x * fy_y
+            x_numerator = fx * fy_y - fy * fx_y
+            y_numerator = fy * fx_x - fx * fy_x
+            step_x = jnp.where(jnp.abs(denominator) > eps, x_numerator / denominator, jnp.zeros_like(denominator))
+            step_y = jnp.where(jnp.abs(denominator) > eps, y_numerator / denominator, jnp.zeros_like(denominator))
+
+            x = x + step_x
+            y = y + step_y
+
+        return x, y
 
 
 @empty_impl
@@ -272,6 +406,12 @@ class CameraOverrideOptions:
     height: int | None=None
     focal: float | None=None
     near: float | None=None
+    k1: float | None=None
+    k2: float | None=None
+    k3: float | None=None
+    k4: float | None=None
+    p1: float | None=None
+    p2: float | None=None
 
     def __post_init__(self):
         if self.width is None and self.height is None:
@@ -283,6 +423,12 @@ class CameraOverrideOptions:
                 height=side,
                 focal=self.focal,
                 near=self.near,
+                k1=self.k1,
+                k2=self.k2,
+                k3=self.k3,
+                k4=self.k4,
+                p1=self.p1,
+                p2=self.p2,
             )
         assert self.width > 0 and self.height > 0
         if self.focal is None:
@@ -291,9 +437,15 @@ class CameraOverrideOptions:
                 height=self.height,
                 focal=min(self.width, self.height),
                 near=self.near,
+                k1=self.k1,
+                k2=self.k2,
+                k3=self.k3,
+                k4=self.k4,
+                p1=self.p1,
+                p2=self.p2,
             )
 
-    def update_camera(self, camera: PinholeCamera | None=None) -> PinholeCamera:
+    def update_camera(self, camera: Camera | None=None) -> Camera:
         return camera.replace(
             W=self.width if self.width is not None else camera.W,
             H=self.height if self.height is not None else camera.H,
@@ -302,6 +454,12 @@ class CameraOverrideOptions:
             cx=self.width / 2 if self.width is not None else camera.cx,
             cy=self.height / 2 if self.height is not None else camera.cy,
             near=self.near if self.near is not None else camera.near,
+            k1=self.k1 if self.k1 is not None else camera.k1,
+            k2=self.k2 if self.k2 is not None else camera.k2,
+            k3=self.k3 if self.k3 is not None else camera.k3,
+            k4=self.k4 if self.k4 is not None else camera.k4,
+            p1=self.p1 if self.p1 is not None else camera.p1,
+            p2=self.p2 if self.p2 is not None else camera.p2,
         )
 
     @property
@@ -494,6 +652,15 @@ class TransformJsonNGP(TransformJsonBase):
     w: int
     h: int
 
+    k1: float=0.
+    k2: float=0.
+    k3: float=0.
+    k4: float=0.
+    p1: float=0.
+    p2: float=0.
+
+    camera_model: CameraModelType="OPENCV"
+
 
 @replace_impl
 @pydantic.dataclasses.dataclass(frozen=True)
@@ -607,7 +774,7 @@ class SceneMeta:
     bg: bool
 
     # the camera model used to render this scene
-    camera: PinholeCamera
+    camera: Camera
 
     n_extra_learnable_dims: int
 
@@ -859,8 +1026,26 @@ class NeRFState(TrainState):
             in_front_of_camera = p_cam[..., -1] < 0
 
             uvz = (p_cam[..., None, :] * self.scene_meta.camera.K).sum(-1)
-            uvz /= uvz[..., -1:]
-            uv = uvz[..., :2] / jnp.asarray([self.scene_meta.camera.W, self.scene_meta.camera.H], dtype=jnp.float32)
+            uv = uvz[..., :2] / uvz[..., -1:]
+
+            # distort
+            u, v = jnp.split(uv, [1], axis=-1)
+            fx, cx, fy, cy = (
+                self.scene_meta.camera.fx,
+                self.scene_meta.camera.cx,
+                self.scene_meta.camera.fy,
+                self.scene_meta.camera.cy,
+            )
+            u, v = self.scene_meta.camera.distort(
+                (u - cx) / fx,
+                (v - cy) / fy,
+            )
+            uv = jnp.concatenate([
+                u * fx + cx,
+                v * fy + cy,
+            ], axis=-1)
+
+            uv = uv / jnp.asarray([self.scene_meta.camera.W, self.scene_meta.camera.H], dtype=jnp.float32)
             within_frame_range = (uv >= 0.) & (uv < 1.)
             within_frame_range = (
                 within_frame_range  # shape is [n_grids, 8, 2]
@@ -898,7 +1083,7 @@ class NeRFState(TrainState):
         )
 
         # rgb = jnp.stack([~marked_occ_mask, jnp.zeros_like(marked_occ_mask, dtype=jnp.float32), marked_occ_mask]).T
-        # xyzrgb = np.asarray(jnp.concatenate([xyzs, rgb], axis=-1))
+        # xyzrgb = np.asarray(jnp.concatenate([grid_xyzs, rgb], axis=-1))
         # np.savetxt("blue_for_trainable.txt", xyzrgb)
         # np.savetxt("trainable.txt", xyzrgb[np.where(marked_occ_mask)])
         # np.savetxt("untrainable.txt", xyzrgb[np.where(~marked_occ_mask)])

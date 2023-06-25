@@ -22,7 +22,7 @@ from .common import jit_jaxfn_with, mkValueError, tqdm
 from .types import (
     ImageMetadata,
     OrbitTrajectoryOptions,
-    PinholeCamera,
+    Camera,
     RGBColor,
     RGBColorU8,
     RigidTransformation,
@@ -155,7 +155,7 @@ def write_transforms_json(
     )
     rel_prefix = images_dir.relative_to(scene_root_dir)
 
-    camera = PinholeCamera.from_colmap_txt(text_model_dir.joinpath("cameras.txt"))
+    camera = Camera.from_colmap_txt(text_model_dir.joinpath("cameras.txt"))
 
     images_txt = text_model_dir.joinpath("images.txt")
     images_lines = list(filter(lambda line: line[0] != "#", open(images_txt).readlines()))[::2]
@@ -648,7 +648,7 @@ def load_scene(
         _img = Image.open(try_image_extensions(transforms.frames[0].file_path))
         fovx = transforms.camera_angle_x
         focal = float(.5 * _img.width / np.tan(fovx / 2))
-        camera = PinholeCamera(
+        camera = Camera(
             W=_img.width,
             H=_img.height,
             fx=focal,
@@ -659,7 +659,7 @@ def load_scene(
         )
 
     elif isinstance(transforms, TransformJsonNGP):
-        camera = PinholeCamera(
+        camera = Camera(
             W=transforms.w,
             H=transforms.h,
             fx=transforms.fl_x,
@@ -667,6 +667,13 @@ def load_scene(
             cx=transforms.cx,
             cy=transforms.cy,
             near=scene_options.camera_near,
+            k1=transforms.k1,
+            k2=transforms.k2,
+            k3=transforms.k3,
+            k4=transforms.k4,
+            p1=transforms.p1,
+            p2=transforms.p2,
+            model=transforms.camera_model,
         )
 
     else:
