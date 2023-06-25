@@ -567,7 +567,7 @@ def load_transform_json_recursive(src: Path | str) -> TransformJsonNGP | Transfo
                     if transforms.get("camera_angle_x") is not None
                     else TransformJsonNGP(**transforms)
                 )
-                transforms = transforms.make_absolute(src.parent).rotate_world_up().scale_camera_positions()
+                transforms = transforms.make_absolute(src.parent).scale_camera_positions()
             except TypeError:
                 # not a valid transform.json
                 return None
@@ -623,6 +623,8 @@ def load_scene(
     srcs = list(map(Path, srcs))
 
     transforms = merge_transforms(map(load_transform_json_recursive, srcs))
+    if scene_options.up is not None:
+        transforms = transforms.replace(up=scene_options.up).rotate_world_up()
     if transforms is None:
         raise FileNotFoundError("could not load transforms from any of {}".format(srcs))
 
@@ -694,7 +696,9 @@ def load_scene(
         ))
 
     scene_meta = SceneMeta(
-        bound=transforms.aabb_scale * scene_options.world_scale,
+        bound=scene_options.bound
+        if scene_options.bound is not None
+        else transforms.aabb_scale * scene_options.world_scale,
         bg=transforms.bg,
         camera=(
             camera

@@ -527,6 +527,12 @@ class SceneOptions:
 
     camera_near: float
 
+    # overrides `aabb_scale` in transforms.json
+    bound: float | None=None
+
+    # overrides `up` in transforms.json
+    up: Tuple[float, float, float] | None=None
+
 
 @dataclass
 class RigidTransformation:
@@ -618,6 +624,7 @@ class TransformJsonBase:
     def rotate_world_up(self) -> "TransformJsonBase":
         return self.replace(
             frames=tuple(map(lambda f: f.rotate_world_up(self.up), self.frames)),
+            up=(0., 0., 1.),  # so that this operation is idempotent
         )
 
     def scale_camera_positions(self) -> "TransformJsonBase":
