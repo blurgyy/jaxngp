@@ -126,13 +126,13 @@ def undistort(
 
 
 def export_text_format_model(
-    undistorted_sparse_reconstruction_dir: Path,
+    sparse_reconstruction_dir: Path,
     text_model_dir: Path,
 ):
-    undistorted_sparse_reconstruction_dir, text_model_dir = (
-        Path(undistorted_sparse_reconstruction_dir),
+    sparse_reconstruction_dir, text_model_dir = (
+        Path(sparse_reconstruction_dir),
         Path(text_model_dir),
     )
     text_model_dir.mkdir(parents=True, exist_ok=True)
-    reconstruction = pycolmap.Reconstruction(undistorted_sparse_reconstruction_dir)
+    reconstruction = pycolmap.Reconstruction(sparse_reconstruction_dir)
     reconstruction.write_text(text_model_dir.as_posix())

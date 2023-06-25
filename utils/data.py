@@ -267,6 +267,16 @@ def create_scene_from_single_camera_image_collection(
     db_path = artifacts_dir.joinpath("colmap.db")
     sparse_reconstructions_dir = artifacts_dir.joinpath("sparse")
     undistorted_images_dir = scene_root_dir.joinpath("images-undistorted")
+    out_model_dir = (
+        undistorted_images_dir.joinpath("sparse")
+        if opts.undistort
+        else sparse_reconstructions_dir.joinpath("0")
+    )
+    out_images_dir = (
+        undistorted_images_dir.joinpath("images")
+        if opts.undistort
+        else raw_images_dir
+    )
     text_model_dir = artifacts_dir.joinpath("text")
 
     sfm.extract_features(images_dir=raw_images_dir, db_path=db_path)
@@ -289,20 +299,21 @@ def create_scene_from_single_camera_image_collection(
 
     sfm.colmap_bundle_adjustment(sparse_reconstruction_dir=sparse_recon_dir, max_num_iterations=200)
 
-    sfm.undistort(
-        images_dir=raw_images_dir,
-        sparse_reconstruction_dir=sparse_recon_dir,
-        undistorted_images_dir=undistorted_images_dir,
-    )
+    if opts.undistort:
+        sfm.undistort(
+            images_dir=raw_images_dir,
+            sparse_reconstruction_dir=sparse_recon_dir,
+            undistorted_images_dir=undistorted_images_dir,
+        )
 
     sfm.export_text_format_model(
-        undistorted_sparse_reconstruction_dir=undistorted_images_dir.joinpath("sparse"),
+        sparse_reconstruction_dir=out_model_dir,
         text_model_dir=text_model_dir,
     )
 
     write_transforms_json(
         scene_root_dir=scene_root_dir,
-        images_dir=undistorted_images_dir.joinpath("images"),
+        images_dir=out_images_dir,
         text_model_dir=text_model_dir,
         opts=opts,
     )

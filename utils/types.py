@@ -4,6 +4,7 @@ import json
 import math
 from pathlib import Path
 from typing import Callable, List, Literal, Tuple, Type
+from typing_extensions import assert_never
 
 from PIL import Image
 import chex
@@ -225,15 +226,46 @@ class Camera:
 
     @classmethod
     def from_colmap_txt(cls, txt_path: str | Path) -> "Camera":
-        """
+        """Initialize a camera from a colmap's TXT format model.
+        References of camera parameters from colmap (search for `InitializeParamsInfo`):
+            <https://github.com/colmap/colmap/blob/fac2fa6217a1f5498830769d64861b54c67009dc/src/colmap/base/camera_models.h#L778>
+
         Example usage:
             cam = PinholeCamera.from_colmap_txt("path/to/txt")
         """
         with open(txt_path, "r") as f:
             lines = f.readlines()
-        # CAMERA_ID, MODEL, WIDTH, HEIGHT, PARAMS[]
-        _, camera_model, width, height, fx, fy, cx, cy = lines[-1].strip().split()
-        assert camera_model == "PINHOLE", "invalid camera model, expected PINHOLE, got {}".format(camera_model)
+        cam_line = lines[-1].strip()
+        cam_desc = cam_line.split()
+        _front = 0
+        def next_descs(cnt: int) -> Tuple[str, ...]:
+            nonlocal _front
+            rear = _front + cnt
+            ret = cam_desc[_front:rear]
+            _front = rear
+            return ret[0] if cnt == 1 else ret
+        assert int(next_descs(1)) == 1, "creating scenes with multiple cameras is not supported"
+        camera_model: CameraModelType = next_descs(1)
+        width, height = next_descs(2)
+        k1, k2, k3, k4, p1, p2 = [0.] * 6
+        if camera_model == "SIMPLE_PINHOLE":
+            f, cx, cy = next_descs(3)
+            fx = fy = f
+        elif camera_model == "SIMPLE_RADIAL":
+            f, cx, cy, k1 = next_descs(4)
+            fx = fy = f
+        else:
+            fx, fy, cx, cy = next_descs(4)
+            if camera_model == "PINHOLE":
+                pass
+            elif camera_model == "RADIAL":
+                k1, k2 = next_descs(2)
+            elif camera_model == "OPENCV":
+                k1, k2, p1, p2 = next_descs(4)
+            elif camera_model == "OPENCV_FISHEYE":
+                k1, k2, k3, k4 = next_descs(4)
+            else:
+                assert_never(camera_model)
         return cls(
             W=int(width),
             H=int(height),
@@ -242,6 +274,12 @@ class Camera:
             cx=float(cx),
             cy=float(cy),
             near=0.,
+            k1=float(k1),
+            k2=float(k2),
+            k3=float(k3),
+            k4=float(k4),
+            p1=float(p1),
+            p2=float(p2),
         )
 
     def scale_resolution(self, scale: int | float) -> "Camera":
@@ -681,6 +719,10 @@ class SceneCreationOptions:
 
     # dimension of NeRF-W-style per-image appearance embeddings, set to 0 to disable
     n_extra_learnable_dims: int=dataclasses.field(default=16)
+
+    # whether undistort the images and write them to disk, so that the camera in transforms.json is
+    # a pinhole camera
+    undistort: bool=dataclasses.field(default=False)
 
 
 @dataclass
