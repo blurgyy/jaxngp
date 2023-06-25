@@ -279,7 +279,7 @@ def create_scene_from_single_camera_image_collection(
     )
     text_model_dir = artifacts_dir.joinpath("text")
 
-    sfm.extract_features(images_dir=raw_images_dir, db_path=db_path)
+    sfm.extract_features(images_dir=raw_images_dir, db_path=db_path, camera_model=opts.camera_model)
 
     sfm.match_features(matcher=opts.matcher, db_path=db_path)
 

@@ -254,12 +254,13 @@ class Camera:
         elif camera_model == "SIMPLE_RADIAL":
             f, cx, cy, k1 = next_descs(4)
             fx = fy = f
+        elif camera_model == "RADIAL":
+            f, cx, cy, k1, k2 = next_descs(5)
+            fx = fy = f
         else:
             fx, fy, cx, cy = next_descs(4)
             if camera_model == "PINHOLE":
                 pass
-            elif camera_model == "RADIAL":
-                k1, k2 = next_descs(2)
             elif camera_model == "OPENCV":
                 k1, k2, p1, p2 = next_descs(4)
             elif camera_model == "OPENCV_FISHEYE":
@@ -709,6 +710,8 @@ class SceneCreationOptions:
 
     # `Sequntial` for continuous frames, `Exhaustive` for all possible pairs
     matcher: ColmapMatcherType
+
+    camera_model: CameraModelType="OPENCV"
 
     # upon loading the created scene during training/inference, scale the camera positions with this
     # factor
