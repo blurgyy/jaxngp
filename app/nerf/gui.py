@@ -15,7 +15,7 @@ import dearpygui.dearpygui as dpg
 import ctypes
 from utils.args import NeRFGUIArgs
 from .train import *
-from utils.types import (RGBColor, SceneData, SceneMeta, PinholeCamera)
+from utils.types import (RGBColor, SceneData, SceneMeta, Camera)
 from models.nerfs import (NeRF, SkySphereBg)
 from PIL import Image
 import time
@@ -134,7 +134,7 @@ class Gui_trainer():
     not_compacted_batch: int = -1
     rays_num: int = -1
     camera_near: float = 0.1
-    camera: PinholeCamera = field(init=False)
+    camera: Camera = field(init=False)
     need_exit: bool = False
 
     loading_ckpt: bool = False
@@ -235,7 +235,7 @@ class Gui_trainer():
                 tx=self.optimizer,
             )
             self.state = self.state.mark_untrained_density_grid()
-        self.camera = PinholeCamera(
+        self.camera = Camera(
             W=self.args.viewport.W,
             H=self.args.viewport.H,
             fx=self.scene_meta.camera.fx,
@@ -245,8 +245,8 @@ class Gui_trainer():
             near=self.camera_near,
         )
 
-    def set_render_camera(self, _scale, _H, _W) -> PinholeCamera:
-        self.camera = PinholeCamera(
+    def set_render_camera(self, _scale, _H, _W) -> Camera:
+        self.camera = Camera(
             W=_W,
             H=_H,
             fx=self.scene_meta.camera.fx,

@@ -5,12 +5,13 @@ from typing_extensions import get_args
 import pycolmap
 
 from .common import mkValueError
-from .types import ColmapMatcherType
+from .types import CameraModelType, ColmapMatcherType
 
 
 def extract_features(
     images_dir: Path,
     db_path: Path,
+    camera_model: CameraModelType,
 ):
     images_dir, db_path = Path(images_dir), Path(db_path)
     pycolmap.extract_features(
@@ -22,7 +23,7 @@ def extract_features(
         camera_mode="SINGLE",
         # REF:
         #   <https://github.com/colmap/pycolmap/blob/bdcdf47e0d40240c6f53dc463d7ceaa2cef923fd/pipeline/extract_features.cc#L64>
-        camera_model="OPENCV",
+        camera_model=camera_model,
         reader_options=pycolmap.ImageReaderOptions(
             # camera_model="OPENCV",  # NOTE: this is obsolete, see camera_model above
             # single_camera=True,  # NOTE: this is obsolete, see camera_mode above
@@ -126,13 +127,13 @@ def undistort(
 
 
 def export_text_format_model(
-    undistorted_sparse_reconstruction_dir: Path,
+    sparse_reconstruction_dir: Path,
     text_model_dir: Path,
 ):
-    undistorted_sparse_reconstruction_dir, text_model_dir = (
-        Path(undistorted_sparse_reconstruction_dir),
+    sparse_reconstruction_dir, text_model_dir = (
+        Path(sparse_reconstruction_dir),
         Path(text_model_dir),
     )
     text_model_dir.mkdir(parents=True, exist_ok=True)
-    reconstruction = pycolmap.Reconstruction(undistorted_sparse_reconstruction_dir)
+    reconstruction = pycolmap.Reconstruction(sparse_reconstruction_dir)
     reconstruction.write_text(text_model_dir.as_posix())

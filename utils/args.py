@@ -163,7 +163,7 @@ class NeRFTrainingArgs(NeRFArgsBase):
 class NeRFTestingArgs(NeRFArgsBase):
     frames: tyro.conf.Positional[Tuple[Path, ...]]
 
-    camera_override: CameraOverrideOptions=None
+    camera_override: CameraOverrideOptions=CameraOverrideOptions()
 
     # use checkpoint from this path (can be a directory) for testing
     ckpt: Path

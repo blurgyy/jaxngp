@@ -91,14 +91,25 @@ def train_step(
     # TODO:
     #   merge this and `models.renderers.make_rays_worldspace` as a single function
     def make_rays_worldspace() -> Tuple[jax.Array, jax.Array]:
-        # [N, 1]
-        d_cam_xs = jnp.mod(perm, scene.meta.camera.W)
-        d_cam_xs = ((d_cam_xs + 0.5) - scene.meta.camera.cx) / scene.meta.camera.fx
-        # [N, 1]
-        d_cam_ys = jnp.mod(jnp.floor_divide(perm, scene.meta.camera.W), scene.meta.camera.H)
-        d_cam_ys = -((d_cam_ys + 0.5) - scene.meta.camera.cy) / scene.meta.camera.fy
-        # [N, 1]
+        # [N], [N]
+        x, y = (
+            jnp.mod(perm, scene.meta.camera.W),
+            jnp.mod(jnp.floor_divide(perm, scene.meta.camera.W), scene.meta.camera.H),
+        )
+        d_cam_xs, d_cam_ys = (
+            ((x + 0.5) - scene.meta.camera.cx) / scene.meta.camera.fx,
+            -((y + 0.5) - scene.meta.camera.cy) / scene.meta.camera.fy,
+        )
+        d_cam_xs, d_cam_ys = scene.meta.camera.undistort(d_cam_xs, d_cam_ys)
+        # [N]
         d_cam_zs = -jnp.ones_like(perm)
+        if "fisheye" in scene.meta.camera.model.lower():
+            theta = jnp.sqrt(d_cam_xs**2 + d_cam_ys**2)
+            theta = jnp.clip(theta, 0., jnp.pi)
+            co, si = jnp.cos(theta), jnp.sin(theta)
+            d_cam_xs = d_cam_xs * si / theta
+            d_cam_ys = d_cam_ys * si / theta
+            d_cam_zs *= co
         # [N, 3]
         d_cam = jnp.stack([d_cam_xs, d_cam_ys, d_cam_zs]).T
 

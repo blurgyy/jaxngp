@@ -15,11 +15,11 @@ from volrendjax import (
 
 from utils.common import jit_jaxfn_with
 from utils.data import f32_to_u8
-from utils.types import NeRFState, PinholeCamera, RigidTransformation
+from utils.types import NeRFState, Camera, RigidTransformation
 
 
 def make_rays_worldspace(
-    camera: PinholeCamera,
+    camera: Camera,
     transform_cw: RigidTransformation,
 ):
     """
@@ -37,14 +37,25 @@ def make_rays_worldspace(
     """
     # [H*W, 1]
     d_cam_idcs = jnp.arange(camera.n_pixels)
-    # [H*W, 1]
-    d_cam_xs = jnp.mod(d_cam_idcs, camera.W)
-    d_cam_xs = ((d_cam_xs + 0.5) - camera.cx) / camera.fx
-    # [H*W, 1]
-    d_cam_ys = jnp.floor_divide(d_cam_idcs, camera.W)
-    d_cam_ys = -((d_cam_ys + 0.5) - camera.cy) / camera.fy  # NOTE: y axis indexes from bottom to top, so negate it
-    # [H*W, 1]
+    x, y = (
+        jnp.mod(d_cam_idcs, camera.W),
+        jnp.floor_divide(d_cam_idcs, camera.W),
+    )
+    # [H*W]
+    d_cam_xs, d_cam_ys = (
+        ((x + 0.5) - camera.cx) / camera.fx,
+        -((y + 0.5) - camera.cy) / camera.fy,  # NOTE: y axis indexes from bottom to top, so negate it
+    )
+    d_cam_xs, d_cam_ys = camera.undistort(d_cam_xs, d_cam_ys)
+    # [H*W]
     d_cam_zs = -jnp.ones_like(d_cam_idcs)
+    if "fisheye" in camera.model.lower():
+        theta = jnp.sqrt(d_cam_xs**2 + d_cam_ys**2)
+        theta = jnp.clip(theta, 0., jnp.pi)
+        co, si = jnp.cos(theta), jnp.sin(theta)
+        d_cam_xs = d_cam_xs * si / theta
+        d_cam_ys = d_cam_ys * si / theta
+        d_cam_zs *= co
     # [H*W, 3]
     d_cam = jnp.stack([d_cam_xs, d_cam_ys, d_cam_zs]).T
 
@@ -242,7 +253,7 @@ def render_image_inference(
     KEY: jran.KeyArray,
     transform_cw: RigidTransformation,
     state: NeRFState,
-    camera_override: None | PinholeCamera=None,
+    camera_override: None | Camera=None,
     render_cost: bool=False,
     appearance_embedding_index: int=0,
 ):
