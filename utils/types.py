@@ -293,9 +293,6 @@ class Camera:
             cy=self.cy * scale,
         )
 
-    def scale_world(self, scale: int | float) -> "Camera":
-        return self.replace(near=self.near * scale)
-
     def distort(self, x: jax.Array, y: jax.Array) -> jax.Array:
         """Computes distorted coords.
         REF:
@@ -517,9 +514,6 @@ class CameraOverrideOptions:
 class SceneOptions:
     # images with sharpness lower than this value will be discarded
     sharpness_threshold: float
-
-    # scale both the scene's camera positions and bounding box with this factor
-    world_scale: float
 
     # scale input images in case they are too large, camera intrinsics are also scaled to match the
     # updated image resolution.

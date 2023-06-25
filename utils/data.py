@@ -698,11 +698,10 @@ def load_scene(
     scene_meta = SceneMeta(
         bound=scene_options.bound
         if scene_options.bound is not None
-        else transforms.aabb_scale * scene_options.world_scale,
+        else transforms.aabb_scale,
         bg=transforms.bg,
         camera=(
             camera
-                .scale_world(scene_options.world_scale)
                 .scale_resolution(scene_options.resolution_scale)
         ),
         n_extra_learnable_dims=transforms.n_extra_learnable_dims,
@@ -745,7 +744,6 @@ def load_scene(
         list(map(lambda view: view.transform.translation.reshape(-1, 3), views)),
         axis=0,
     )
-    all_Ts *= scene_options.world_scale
     # float,[n_views, 3+9+3]
     all_transforms = jnp.concatenate([all_Rs, all_Ts], axis=-1)
 
@@ -776,7 +774,6 @@ def main():
     scene, views = load_scene(
         rootdir="data/nerf/nerf_synthetic/lego",
         split="train",
-        world_scale=.6,
     )
     print(scene.all_xys.shape)
     print(scene.all_rgbas.shape)
