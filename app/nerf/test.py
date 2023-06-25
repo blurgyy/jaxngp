@@ -67,7 +67,10 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     #   which slows down inference.  use jax.device_put() to move them to jax's default device.
     # REF: <https://github.com/google/flax/discussions/1199#discussioncomment-635132>
     state = jax.device_put(state)
-    logger.info("checkpoint loaded from '{}'".format(args.ckpt))
+    if state.step == 0:
+        logger.error("an empty checkpoint was loaded from '{}'".format(args.ckpt))
+        exit(2)
+    logger.info("checkpoint loaded from '{}' (step={})".format(args.ckpt, int(state.step)))
 
     rendered_images: List[RenderedImage] = []
     try:

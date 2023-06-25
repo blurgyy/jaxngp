@@ -221,6 +221,10 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
     )
     if args.ckpt is not None:
         state = checkpoints.restore_checkpoint(args.ckpt, target=state)
+        if state.step == 0:
+            logger.error("an empty checkpoint was loaded from '{}'".format(args.ckpt))
+            exit(3)
+        logger.info("checkpoint loaded from '{}' (step={})".format(args.ckpt, int(state.step)))
     state = state.mark_untrained_density_grid()  # still needs to mark grids even if state is loaded
 
     logger.info("starting training")
