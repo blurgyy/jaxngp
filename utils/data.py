@@ -245,12 +245,7 @@ def write_transforms_json(
         up=[0, 0, 1],
         n_extra_learnable_dims=opts.n_extra_learnable_dims,
     )
-    train_tj = all_transform_json.replace(frames=frames[:len(frames) // 2])
-    val_tj = all_transform_json.replace(frames=frames[len(frames) // 2:len(frames) // 2 + len(frames) // 4])
-    test_tj = all_transform_json.replace(frames=frames[len(frames) // 2 + len(frames) // 4:])
-    train_tj.save(scene_root_dir.joinpath("transforms_train.json"))
-    val_tj.save(scene_root_dir.joinpath("transforms_val.json"))
-    test_tj.save(scene_root_dir.joinpath("transforms_test.json"))
+    all_transform_json.save(scene_root_dir.joinpath("transforms.json"))
     return all_transform_json
 
 
