@@ -237,6 +237,12 @@ def write_transforms_json(
         cy=camera.cy,
         w=camera.W,
         h=camera.H,
+        k1=camera.k1,
+        k2=camera.k2,
+        k3=camera.k3,
+        k4=camera.k4,
+        p1=camera.p1,
+        p2=camera.p2,
         aabb_scale=opts.bound,
     )
     all_transform_json: TransformJsonNGP = all_transform_json.replace(
