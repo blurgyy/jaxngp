@@ -51,6 +51,8 @@ def march_rays(
 
     Returns:
         measured_batch_size_before_compaction `int`: total number of generated samples of all rays
+        n_valid_rays `int`: number of rays that produced samples in the output (some rays would be
+                            discarded due to `total_samples` not beingl arge enough)
         idcs `[total_samples]`: indices indicating which ray the i-th sample comes from.
         rays_n_samples `[n_rays]`: number of samples of each ray, its sum is `total_samples`
                                    referenced below
@@ -68,7 +70,7 @@ def march_rays(
     n_rays, _ = rays_o.shape
     noises = jnp.broadcast_to(noises, (n_rays,))
 
-    measured_batch_size_before_compaction, rays_n_samples, rays_sample_startidx, idcs, xyzs, dirs, dss, z_vals = impl.march_rays_p.bind(
+    measured_batch_size_before_compaction, n_valid_rays, rays_n_samples, rays_sample_startidx, idcs, xyzs, dirs, dss, z_vals = impl.march_rays_p.bind(
         # arrays
         rays_o,
         rays_d,
@@ -86,7 +88,7 @@ def march_rays(
         stepsize_portion=stepsize_portion,
     )
 
-    return measured_batch_size_before_compaction[0], rays_n_samples, rays_sample_startidx, idcs, xyzs, dirs, dss, z_vals
+    return measured_batch_size_before_compaction[0], n_valid_rays[0], rays_n_samples, rays_sample_startidx, idcs, xyzs, dirs, dss, z_vals
 
 
 def march_rays_inference(

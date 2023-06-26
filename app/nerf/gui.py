@@ -402,7 +402,7 @@ class Gui_trainer():
             )
             self.log_step += 1
             cur_steps = cur_steps + 1
-            n_processed_rays += state.batch_config.n_rays
+            n_processed_rays += metrics["n_valid_rays"]
             loss = metrics["loss"]
             if total_loss is None:
                 total_loss = loss
@@ -420,13 +420,14 @@ class Gui_trainer():
 
             pbar.set_description_str(
                 desc=
-                "Training step#{:03d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss:{{rgb={:.2e}({:.2f}dB),tv={:.2e}}}"
+                "Training step#{:03d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={}/{} loss:{{rgb={:.2e}({:.2f}dB),tv={:.2e}}}"
                 .format(
                     cur_steps,
                     metrics["measured_batch_size"],
                     metrics["measured_batch_size_before_compaction"],
                     state.batch_config.running_mean_effective_samples_per_ray,
                     state.batch_config.running_mean_samples_per_ray,
+                    metrics["n_valid_rays"],
                     state.batch_config.n_rays,
                     loss["rgb"],
                     data.linear_to_db(loss["rgb"], maxval=1),
@@ -478,8 +479,12 @@ class Gui_trainer():
                 logger.write_scalar("rendering/↓marched samples per ray",
                                     state.batch_config.mean_samples_per_ray,
                                     state.step)
-                logger.write_scalar("rendering/↑number of rays",
-                                    state.batch_config.n_rays, state.step)
+                logger.write_scalar("rendering/↑number of valid rays",
+                                    metrics["n_valid_rays"],
+                                    state.step)
+                logger.write_scalar("rendering/↑number of marched rays",
+                                    state.batch_config.n_rays,
+                                    state.step)
 
         return state
 

@@ -136,7 +136,7 @@ def render_rays_train(
         noises = jran.uniform(key, shape=t_starts.shape, dtype=t_starts.dtype, minval=0., maxval=1.)
     else:
         noises = 0.
-    measured_batch_size_before_compaction, rays_n_samples, rays_sample_startidx, ray_idcs, xyzs, dirs, dss, z_vals = march_rays(
+    measured_batch_size_before_compaction, n_valid_rays, rays_n_samples, rays_sample_startidx, ray_idcs, xyzs, dirs, dss, z_vals = march_rays(
         total_samples=total_samples,
         diagonal_n_steps=state.raymarch.diagonal_n_steps,
         K=state.scene_meta.cascades,
@@ -169,6 +169,7 @@ def render_rays_train(
     )
 
     batch_metrics = {
+        "n_valid_rays": n_valid_rays,
         "measured_batch_size_before_compaction": measured_batch_size_before_compaction,
         "measured_batch_size": jnp.where(effective_samples > 0, effective_samples, 0).sum(),
     }

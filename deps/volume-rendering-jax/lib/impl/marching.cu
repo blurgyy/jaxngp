@@ -82,6 +82,7 @@ __global__ void march_rays_kernel(
 
     // accumulator for writing a compact output samples array
     , std::uint32_t * const __restrict__ counter
+    , std::uint32_t * const __restrict__ n_valid_rays
 
     // outputs
     , std::uint32_t * const __restrict__ rays_n_samples  // [n_rays]
@@ -177,6 +178,7 @@ __global__ void march_rays_kernel(
     // record the index of the first generated sample on this ray
     std::uint32_t const ray_sample_startidx = atomicAdd(counter, ray_n_samples);
     if (ray_sample_startidx + ray_n_samples > total_samples) { return; }
+    atomicAdd(n_valid_rays, 1u);
     rays_sample_startidx[i] = ray_sample_startidx;
 
     // output arrays
@@ -426,6 +428,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
 
     // helper
     std::uint32_t * const __restrict__ counter = static_cast<std::uint32_t *>(next_buffer());
+    std::uint32_t * const __restrict__ n_valid_rays = static_cast<std::uint32_t *>(next_buffer());
 
     // outputs
     std::uint32_t * const __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
@@ -438,6 +441,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
 
     // reset helper counter and outputs to zeros
     CUDA_CHECK_THROW(cudaMemsetAsync(counter, 0x00, sizeof(std::uint32_t), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(n_valid_rays, 0x00, sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(rays_n_samples, 0x00, n_rays * sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(rays_sample_startidx, 0x00, n_rays * sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(idcs, 0x00, total_samples * sizeof(std::uint32_t), stream));
@@ -468,6 +472,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
         , occupancy_bitfield
 
         , counter
+        , n_valid_rays
 
         // outputs
         , rays_n_samples
