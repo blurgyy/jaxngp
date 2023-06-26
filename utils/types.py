@@ -305,27 +305,23 @@ class Camera:
         Returns:
             x, y `float`: distorted coordinates
         """
-        x2, y2 = jnp.square(x), jnp.square(y)
-        r2 = x2 + y2
-        r4 = r2 * r2
-        r6 = r2 * r4
-        r8 = r4 * r4
+        xx, yy = jnp.square(x), jnp.square(y)
+        rr = xx + yy
         k1, k2, k3, k4, = self.k1, self.k2, self.k3, self.k4
 
-        def radial_distort(val):
-            return val * (1 + k1 * r2 + k2 * r4 + k3 * r6 + k4 * r8)
+        radial = rr * (k1 + rr * (k2 + rr * (k3 + rr * k4)))
+
+        # radial distort
+        dx, dy = x * radial, y * radial
 
         p1, p2 = self.p1, self.p2
 
-        # radial distort
-        xd, yd = radial_distort(x), radial_distort(y)
-
         # tangential distort
-        xdyd = xd * yd
-        xd = xd + (2 * p1 * xdyd + p2 * (r2 + 2 * x2))
-        yd = yd + (p2 * (r2 + 2 * y2) + 2 * p2 * xdyd)
+        xy = x * y
+        dx += 2 * p1 * xy + p2 * (rr + 2 * xx)
+        dx += 2 * p2 * xy + p1 * (rr + 2 * xx)
 
-        return xd, yd
+        return x + dx, y + dy
 
     def undistort(self, x: jax.Array, y: jax.Array, eps: float=1e-3, max_iterations: int=10) -> jax.Array:
         """Computes undistorted coords.
@@ -1071,33 +1067,34 @@ class NeRFState(TrainState):
             # camera looks along the -z axis
             in_front_of_camera = p_cam[..., -1] < 0
 
-            uvz = (p_cam[..., None, :] * self.scene_meta.camera.K).sum(-1)
-            uv = uvz[..., :2] / uvz[..., -1:]
+            u, v = jnp.split(p_cam[..., :2] / (-p_cam[..., -1:]), [1], axis=-1)
 
             # distort
-            u, v = jnp.split(uv, [1], axis=-1)
-            fx, cx, fy, cy = (
-                self.scene_meta.camera.fx,
-                self.scene_meta.camera.cx,
-                self.scene_meta.camera.fy,
-                self.scene_meta.camera.cy,
-            )
-            u, v = self.scene_meta.camera.distort(
-                (u - cx) / fx,
-                (v - cy) / fy,
-            )
-            uv = jnp.concatenate([
-                u * fx + cx,
-                v * fy + cy,
-            ], axis=-1)
+            u, v = self.scene_meta.camera.distort(u, v)
 
+            # Pixel coordinates outside the image plane may produce the same `u, v` as those inside
+            # the image plane, check if the produced `u, v` match the ray we started with.
+            # REF: <https://github.com/NVlabs/instant-ngp/blob/99aed93bbe8c8e074a90ec6c56c616e4fe217a42/src/testbed_nerf.cu#L481-L483>
+            re_u, re_v = self.scene_meta.camera.undistort(u, v)
+            redir = jnp.concatenate([re_u, re_v, -jnp.ones_like(re_u)], axis=-1)
+            redir = redir / jnp.linalg.norm(redir, axis=-1, keepdims=True)
+            ogdir = p_cam / jnp.linalg.norm(p_cam, axis=-1, keepdims=True)
+            same_ray = (redir * ogdir).sum(axis=-1) > 1. - 1e-3
+
+            uv = jnp.concatenate([
+                u * self.scene_meta.camera.fx + self.scene_meta.camera.cx,
+                v * self.scene_meta.camera.fy + self.scene_meta.camera.cy,
+            ], axis=-1)
             uv = uv / jnp.asarray([self.scene_meta.camera.W, self.scene_meta.camera.H], dtype=jnp.float32)
+
             within_frame_range = (uv >= 0.) & (uv < 1.)
             within_frame_range = (
                 within_frame_range  # shape is [n_grids, 8, 2]
                     .all(axis=-1)  # u and v must both be within frame
             )
-            visible_by_camera = (in_front_of_camera & within_frame_range).any(axis=-1)  # grid should be trained if any of its 8 vertices is visible
+
+            visible_by_camera = (in_front_of_camera & within_frame_range & same_ray).any(axis=-1)  # grid should be trained if any of its 8 vertices is visible
+
             return alive_marker | visible_by_camera
 
         # cam_t = np.asarray(list(map(
