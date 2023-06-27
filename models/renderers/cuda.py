@@ -41,29 +41,13 @@ def make_rays_worldspace(
         jnp.mod(d_cam_idcs, camera.W),
         jnp.floor_divide(d_cam_idcs, camera.W),
     )
-    # [H*W]
-    d_cam_xs, d_cam_ys = (
-        ((x + 0.5) - camera.cx) / camera.fx,
-        -((y + 0.5) - camera.cy) / camera.fy,  # NOTE: y axis indexes from bottom to top, so negate it
-    )
-    d_cam_xs, d_cam_ys = camera.undistort(d_cam_xs, d_cam_ys)
-    # [H*W]
-    d_cam_zs = -jnp.ones_like(d_cam_idcs)
-    if "fisheye" in camera.model.lower():
-        theta = jnp.sqrt(d_cam_xs**2 + d_cam_ys**2)
-        theta = jnp.clip(theta, 0., jnp.pi)
-        co, si = jnp.cos(theta), jnp.sin(theta)
-        d_cam_xs = d_cam_xs * si / theta
-        d_cam_ys = d_cam_ys * si / theta
-        d_cam_zs *= co
     # [H*W, 3]
-    d_cam = jnp.stack([d_cam_xs, d_cam_ys, d_cam_zs]).T
+    d_cam = camera.make_ray_directions_from_pixel_coordinates(x, y)
 
     # [H*W, 3]
     o_world = jnp.broadcast_to(transform_cw.translation, d_cam.shape)
     # [H*W, 3]
     d_world = d_cam @ transform_cw.rotation.T
-    d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
 
     o_world += camera.near * d_world
 

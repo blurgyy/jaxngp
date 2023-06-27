@@ -209,6 +209,13 @@ class Camera:
     model: CameraModelType=struct.field(default="OPENCV", pytree_node=False)
 
     @property
+    def _type(self) -> Literal["PERSPECTIVE", "FISHEYE"]:
+        if "fisheye" in self.model.lower():
+            return "FISHEYE"
+        else:
+            return "PERSPECTIVE"
+
+    @property
     def n_pixels(self) -> int:
         return self.H * self.W
 
@@ -309,7 +316,7 @@ class Camera:
         k1, k2, k3, k4, = self.k1, self.k2, self.k3, self.k4
         xx, yy = jnp.square(x), jnp.square(y)
         rr = xx + yy
-        if "fisheye" in self.model.lower():
+        if self._type == "FISHEYE":
             r = jnp.sqrt(rr)
             theta = jnp.arctan(r)
             thth = theta * theta
@@ -415,6 +422,40 @@ class Camera:
             y = y + step_y
 
         return x, y
+
+    def make_ray_directions_from_pixel_coordinates(self, x: jax.Array, y: jax.Array) -> jax.Array:
+        """Given distorted unnormalized pixel coordinates, generate a ray direction for each of them
+
+        Inputs:
+            x, y `uint32` `[N]`: unnormalized pixel coordinates
+
+        Returns:
+            dirs `float` `[N, 3]`: directions that have taken distortion into account
+        """
+        chex.assert_type([x, y], jnp.uint32)
+        chex.assert_rank([x, y], 1)
+        chex.assert_equal_shape([x, y])
+        x, y, z = (  # in CV coordinates, axes are flipped later
+            ((x + 0.5) - self.cx) / self.fx,
+            ((y + 0.5) - self.cy) / self.fy,
+            jnp.ones_like(x),
+        )
+        x, y = self.undistort(x, y)
+        if self._type == "FISHEYE":
+            theta = jnp.sqrt(jnp.square(x) + jnp.square(y))
+            theta = jnp.clip(theta, 0., jnp.pi)
+            co, si = jnp.cos(theta), jnp.sin(theta)
+            x, y, z = (
+                x * si / theta,
+                y * si / theta,
+                z * co,
+            )
+        dirs = jnp.stack([x, y, z], axis=-1)
+
+        # flip axis from CV coordinates to CG coordinates
+        dirs = dirs @ jnp.diag(jnp.asarray([1., -1., -1.]))
+
+        return dirs / jnp.linalg.norm(dirs, axis=-1, keepdims=True)
 
 
 @empty_impl

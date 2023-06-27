@@ -96,35 +96,19 @@ def train_step(
             jnp.mod(perm, scene.meta.camera.W),
             jnp.mod(jnp.floor_divide(perm, scene.meta.camera.W), scene.meta.camera.H),
         )
-        d_cam_xs, d_cam_ys = (
-            ((x + 0.5) - scene.meta.camera.cx) / scene.meta.camera.fx,
-            -((y + 0.5) - scene.meta.camera.cy) / scene.meta.camera.fy,
-        )
-        d_cam_xs, d_cam_ys = scene.meta.camera.undistort(d_cam_xs, d_cam_ys)
-        # [N]
-        d_cam_zs = -jnp.ones_like(perm)
-        if "fisheye" in scene.meta.camera.model.lower():
-            theta = jnp.sqrt(d_cam_xs**2 + d_cam_ys**2)
-            theta = jnp.clip(theta, 0., jnp.pi)
-            co, si = jnp.cos(theta), jnp.sin(theta)
-            d_cam_xs = d_cam_xs * si / theta
-            d_cam_ys = d_cam_ys * si / theta
-            d_cam_zs *= co
         # [N, 3]
-        d_cam = jnp.stack([d_cam_xs, d_cam_ys, d_cam_zs]).T
+        d_cam = scene.meta.camera.make_ray_directions_from_pixel_coordinates(x, y)
 
         # [N, 3]
         o_world = scene.all_transforms[view_idcs, -3:]  # WARN: using `perm` instead of `view_idcs` here
-                                                  # will silently clip the out-of-bounds indices.
-                                                  # REF:
-                                                  #   <https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html#out-of-bounds-indexing>
+                                                        # will silently clip the out-of-bounds indices.
+                                                        # REF:
+                                                        #   <https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html#out-of-bounds-indexing>
         # [N, 3, 3]
         R_cws = scene.all_transforms[view_idcs, :9].reshape(-1, 3, 3)
         # [N, 3]
         # equavalent to performing `d_cam[i] @ R_cws[i].T` for each i in [0, N)
         d_world = (d_cam[:, None, :] * R_cws).sum(-1)
-
-        d_world /= jnp.linalg.norm(d_world, axis=-1, keepdims=True) + 1e-15
 
         o_world += scene.meta.camera.near * d_world
 
