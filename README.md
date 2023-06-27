@@ -254,7 +254,7 @@ $ python3 -m utils train data/gundam --exp-dir=logs/gundam
 [...]
 $
 $ # Render novel views, with a resolution of 1920x1080, save results as images and a video (video shown below in the Demo section)
-$ python3 -m app.nerf test data/gundam --{ckpt,exp-dir}=logs/gundam --trajectory=orbit --camera-override.{width=1920,height=1080} --orbit.high=1 --save-as="video and images"
+$ python3 -m app.nerf test data/gundam --{ckpt,exp-dir}=logs/gundam --trajectory=orbit --camera-override.{width=1920,height=1080,no-distortion} --orbit.high=1 --save-as="video and images"
 ```
 
 ### Demos

@@ -336,8 +336,8 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             concatenate_fn = lambda gt, rendered_image: data.add_border(functools.reduce(
                 functools.partial(
                     data.side_by_side,
-                    H=scene_meta.camera.H,
-                    W=scene_meta.camera.W,
+                    width=scene_meta.camera.width,
+                    height=scene_meta.camera.height,
                 ),
                 [
                     gt,

@@ -185,8 +185,8 @@ class NeRFBatchConfig:
 @dataclass
 class Camera:
     # resolutions
-    W: int
-    H: int
+    width: int
+    height: int
 
     # focal length
     fx: float
@@ -217,7 +217,7 @@ class Camera:
 
     @property
     def n_pixels(self) -> int:
-        return self.H * self.W
+        return self.height * self.width
 
     @property
     def K_numpy(self) -> np.ndarray:
@@ -275,8 +275,8 @@ class Camera:
             else:
                 assert_never(camera_model)
         return cls(
-            W=int(width),
-            H=int(height),
+            width=int(width),
+            height=int(height),
             fx=float(fx),
             fy=float(fy),
             cx=float(cx),
@@ -292,8 +292,8 @@ class Camera:
 
     def scale_resolution(self, scale: int | float) -> "Camera":
         return self.replace(
-            W=int(self.W * scale),
-            H=int(self.H * scale),
+            width=int(self.width * scale),
+            height=int(self.height * scale),
             fx=self.fx * scale,
             fy=self.fy * scale,
             cx=self.cx * scale,
@@ -496,6 +496,21 @@ class CameraOverrideOptions:
     k4: float | None=None
     p1: float | None=None
     p2: float | None=None
+    model: CameraModelType | None=None
+    distortion: bool=True
+
+    @property
+    def fx(self) -> float:
+        return self.focal
+    @property
+    def fy(self) -> float:
+        return self.focal
+    @property
+    def cx(self) -> float:
+        return self.width / 2.
+    @property
+    def cy(self) -> float:
+        return self.height / 2.
 
     def __post_init__(self):
         if self.width is None and self.height is None:
@@ -513,6 +528,8 @@ class CameraOverrideOptions:
                 k4=self.k4,
                 p1=self.p1,
                 p2=self.p2,
+                model=self.model,
+                distortion=self.distortion,
             )
         assert self.width > 0 and self.height > 0
         if self.focal is None:
@@ -527,33 +544,47 @@ class CameraOverrideOptions:
                 k4=self.k4,
                 p1=self.p1,
                 p2=self.p2,
+                model=self.model,
+                distortion=self.distortion,
             )
 
     def update_camera(self, camera: Camera | None=None) -> Camera:
+        def try_override(name: str) -> int | float | CameraModelType:
+            return getattr(self, name) or getattr(camera, name)
+        def try_override_if_has_distortion_else_zero(name: str) -> float:
+            return try_override(name) if self.distortion else 0.
+        width, height, fx, fy, cx, cy, near, model = map(
+            try_override,
+            ["width", "height", "fx", "fy", "cx", "cy", "near", "model"],
+        )
+        k1, k2, k3, k4, p1, p2 = map(
+            try_override_if_has_distortion_else_zero,
+            ["k1", "k2", "k3", "k4", "p1", "p2"],
+        )
         return camera.replace(
-            W=self.width if self.width is not None else camera.W,
-            H=self.height if self.height is not None else camera.H,
-            fx=self.focal if self.focal is not None else camera.fx,
-            fy=self.focal if self.focal is not None else camera.fx,
-            cx=self.width / 2 if self.width is not None else camera.cx,
-            cy=self.height / 2 if self.height is not None else camera.cy,
-            near=self.near if self.near is not None else camera.near,
-            k1=self.k1 if self.k1 is not None else camera.k1,
-            k2=self.k2 if self.k2 is not None else camera.k2,
-            k3=self.k3 if self.k3 is not None else camera.k3,
-            k4=self.k4 if self.k4 is not None else camera.k4,
-            p1=self.p1 if self.p1 is not None else camera.p1,
-            p2=self.p2 if self.p2 is not None else camera.p2,
+            width=width,
+            height=height,
+            fx=fx,
+            fy=fy,
+            cx=cx,
+            cy=cy,
+            near=near,
+            k1=k1,
+            k2=k2,
+            k3=k3,
+            k4=k4,
+            p1=p1,
+            p2=p2,
+            model=model,
         )
 
     @property
     def enabled(self) -> bool:
-        return (
-            self.width is not None
-            or self.height is not None
-            or self.focal is not None
-            or self.near is not None
-        )
+        return any(map(
+            lambda name: getattr(self, name) is not None,
+            ["width", "height", "focal", "near", "model"]
+            + ["k1", "k2", "k3", "k4", "p1", "p2"],
+        ))
 
 
 @empty_impl
@@ -1137,7 +1168,7 @@ class NeRFState(TrainState):
                 u * self.scene_meta.camera.fx + self.scene_meta.camera.cx,
                 v * self.scene_meta.camera.fy + self.scene_meta.camera.cy,
             ], axis=-1)
-            uv = uv / jnp.asarray([self.scene_meta.camera.W, self.scene_meta.camera.H], dtype=jnp.float32)
+            uv = uv / jnp.asarray([self.scene_meta.camera.width, self.scene_meta.camera.height], dtype=jnp.float32)
 
             within_frame_range = (uv >= 0.) & (uv < 1.)
             within_frame_range = (

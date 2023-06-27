@@ -76,7 +76,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     try:
         n_frames = len(scene_meta.frames)
         logger.info("starting testing (totally {} transform(s) to test)".format(n_frames))
-        for test_i in common.tqdm(range(n_frames), desc="testing (resolultion: {}x{})".format(scene_meta.camera.W, scene_meta.camera.H)):
+        for test_i in common.tqdm(range(n_frames), desc="testing (resolultion: {}x{})".format(scene_meta.camera.width, scene_meta.camera.height)):
             logger.debug("testing on frame {}".format(scene_meta.frames[test_i]))
             transform = RigidTransformation(
                 rotation=scene_meta.frames[test_i].transform_matrix_jax_array[:3, :3],

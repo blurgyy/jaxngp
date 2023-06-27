@@ -38,8 +38,8 @@ def make_rays_worldspace(
     # [H*W, 1]
     d_cam_idcs = jnp.arange(camera.n_pixels)
     x, y = (
-        jnp.mod(d_cam_idcs, camera.W),
-        jnp.floor_divide(d_cam_idcs, camera.W),
+        jnp.mod(d_cam_idcs, camera.width),
+        jnp.floor_divide(d_cam_idcs, camera.width),
     )
     # [H*W, 3]
     d_cam = camera.make_ray_directions_from_pixel_coordinates(x, y)
@@ -320,12 +320,12 @@ def render_image_inference(
             )
             n_rendered_rays += terminate_cnt
 
-    bg_array_f32 = rays_bg.reshape((state.scene_meta.camera.H, state.scene_meta.camera.W, 3))
+    bg_array_f32 = rays_bg.reshape((state.scene_meta.camera.height, state.scene_meta.camera.width, 3))
     rays_rgb, rays_depth = jnp.array_split(rays_rgbd, [3], axis=-1)
-    image_array_u8 = f32_to_u8(rays_rgb).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W, 3))
-    disparity_array_u8 = f32_to_u8(1. / (rays_depth + 1e-15)).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W))
+    image_array_u8 = f32_to_u8(rays_rgb).reshape((state.scene_meta.camera.height, state.scene_meta.camera.width, 3))
+    disparity_array_u8 = f32_to_u8(1. / (rays_depth + 1e-15)).reshape((state.scene_meta.camera.height, state.scene_meta.camera.width))
     if render_cost:
-        cost_array_u8 = f32_to_u8(rays_cost.astype(jnp.float32) / (rays_cost.astype(jnp.float32).max() + 1.)).reshape((state.scene_meta.camera.H, state.scene_meta.camera.W))
+        cost_array_u8 = f32_to_u8(rays_cost.astype(jnp.float32) / (rays_cost.astype(jnp.float32).max() + 1.)).reshape((state.scene_meta.camera.height, state.scene_meta.camera.width))
     else:
         cost_array_u8 = None
 

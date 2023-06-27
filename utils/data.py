@@ -235,8 +235,8 @@ def write_transforms_json(
         fl_y=camera.fy,
         cx=camera.cx,
         cy=camera.cy,
-        w=camera.W,
-        h=camera.H,
+        w=camera.width,
+        h=camera.height,
         k1=camera.k1,
         k2=camera.k2,
         k3=camera.k3,
@@ -663,8 +663,8 @@ def load_scene(
         fovx = transforms.camera_angle_x
         focal = float(.5 * _img.width / np.tan(fovx / 2))
         camera = Camera(
-            W=_img.width,
-            H=_img.height,
+            width=_img.width,
+            height=_img.height,
             fx=focal,
             fy=focal,
             cx=_img.width / 2,
@@ -674,8 +674,8 @@ def load_scene(
 
     elif isinstance(transforms, TransformJsonNGP):
         camera = Camera(
-            W=transforms.w,
-            H=transforms.h,
+            width=transforms.w,
+            height=transforms.h,
             fx=transforms.fl_x,
             fy=transforms.fl_y,
             cx=transforms.cx,

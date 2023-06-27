@@ -236,8 +236,8 @@ class Gui_trainer():
             )
             self.state = self.state.mark_untrained_density_grid()
         self.camera = Camera(
-            W=self.args.viewport.W,
-            H=self.args.viewport.H,
+            width=self.args.viewport.W,
+            height=self.args.viewport.H,
             fx=self.scene_meta.camera.fx,
             fy=self.scene_meta.camera.fy,
             cx=self.args.viewport.W / 2,
@@ -247,8 +247,8 @@ class Gui_trainer():
 
     def set_render_camera(self, _scale, _H, _W) -> Camera:
         self.camera = Camera(
-            W=_W,
-            H=_H,
+            width=_W,
+            height=_H,
             fx=self.scene_meta.camera.fx,
             fy=self.scene_meta.camera.fy,
             cx=_W / 2,

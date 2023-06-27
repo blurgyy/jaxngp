@@ -93,8 +93,8 @@ def train_step(
     def make_rays_worldspace() -> Tuple[jax.Array, jax.Array]:
         # [N], [N]
         x, y = (
-            jnp.mod(perm, scene.meta.camera.W),
-            jnp.mod(jnp.floor_divide(perm, scene.meta.camera.W), scene.meta.camera.H),
+            jnp.mod(perm, scene.meta.camera.width),
+            jnp.mod(jnp.floor_divide(perm, scene.meta.camera.width), scene.meta.camera.height),
         )
         # [N, 3]
         d_cam = scene.meta.camera.make_ray_directions_from_pixel_coordinates(x, y)
