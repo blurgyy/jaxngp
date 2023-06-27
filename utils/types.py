@@ -199,12 +199,12 @@ class Camera:
     near: float
 
     # distortion parameters
-    k1: float=0.
-    k2: float=0.
-    k3: float=0.
-    k4: float=0.
-    p1: float=0.
-    p2: float=0.
+    k1: float=struct.field(default=0., pytree_node=False)
+    k2: float=struct.field(default=0., pytree_node=False)
+    k3: float=struct.field(default=0., pytree_node=False)
+    k4: float=struct.field(default=0., pytree_node=False)
+    p1: float=struct.field(default=0., pytree_node=False)
+    p2: float=struct.field(default=0., pytree_node=False)
 
     model: CameraModelType=struct.field(default="OPENCV", pytree_node=False)
 
@@ -298,6 +298,7 @@ class Camera:
         REF:
             * <https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html>
             * <https://en.wikipedia.org/wiki/Distortion_%28optics%29>
+            * <https://docs.opencv.org/3.4/db/d58/group__calib3d__fisheye.html>
 
         Inputs:
             x, y `float`: normalized undistorted coordinates
@@ -305,21 +306,31 @@ class Camera:
         Returns:
             x, y `float`: distorted coordinates
         """
+        k1, k2, k3, k4, = self.k1, self.k2, self.k3, self.k4
         xx, yy = jnp.square(x), jnp.square(y)
         rr = xx + yy
-        k1, k2, k3, k4, = self.k1, self.k2, self.k3, self.k4
+        if "fisheye" in self.model.lower():
+            r = jnp.sqrt(rr)
+            theta = jnp.arctan(r)
+            thth = theta * theta
+            thetad = theta * (1. + thth * (k1 + thth * (k2 + thth * (k3 + thth * k4))))
+            dist = thetad / r - 1.
+            dx, dy = (
+                jnp.where(r < 1e-15, 0., x * dist),
+                jnp.where(r < 1e-15, 0., y * dist),
+            )
+        else:
+            radial = rr * (k1 + rr * (k2 + rr * (k3 + rr * k4)))
 
-        radial = rr * (k1 + rr * (k2 + rr * (k3 + rr * k4)))
+            # radial distort
+            dx, dy = x * radial, y * radial
 
-        # radial distort
-        dx, dy = x * radial, y * radial
+            p1, p2 = self.p1, self.p2
 
-        p1, p2 = self.p1, self.p2
-
-        # tangential distort
-        xy = x * y
-        dx += 2 * p1 * xy + p2 * (rr + 2 * xx)
-        dx += 2 * p2 * xy + p1 * (rr + 2 * xx)
+            # tangential distort
+            xy = x * y
+            dx += 2 * p1 * xy + p2 * (rr + 2 * xx)
+            dx += 2 * p2 * xy + p1 * (rr + 2 * xx)
 
         return x + dx, y + dy
 
