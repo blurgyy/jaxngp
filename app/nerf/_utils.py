@@ -110,8 +110,6 @@ def train_step(
         # equavalent to performing `d_cam[i] @ R_cws[i].T` for each i in [0, N)
         d_world = (d_cam[:, None, :] * R_cws).sum(-1)
 
-        o_world += scene.meta.camera.near * d_world
-
         return o_world, d_world
 
     # CAVEAT: gradient is only calculate w.r.t. the first parameter of this function

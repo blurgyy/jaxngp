@@ -49,8 +49,6 @@ def make_rays_worldspace(
     # [H*W, 3]
     d_world = d_cam @ transform_cw.rotation.T
 
-    o_world += camera.near * d_world
-
     return o_world, d_world
 
 
