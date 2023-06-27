@@ -1,14 +1,30 @@
 /data
 /logs
+*.log
+events.out.tfevents.*
+
+*.yaml
 
 result*
 
+*.jpeg
 *.jpg
 *.JPG
 *.png
 *.PNG
 
+*.mp4
+*.mov
+*.MOV
+
+*.ply
+*.txt
+*.xyz
+*.xyzrgb
+
 *.ckpt
+checkpoint_*
+*.npy
 
 *.bak
 *~
