@@ -135,12 +135,16 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         data.write_video(
             save_dest.joinpath("rgb.mp4"),
             map(lambda img: img.rgb, rendered_images),
+            fps=args.fps,
+            loop=args.loop,
         )
 
         logger.debug("saving predicted disparities as a video at '{}'".format(dest_disparity_video))
         data.write_video(
             save_dest.joinpath("disparity.mp4"),
             map(lambda img: common.compose(data.mono_to_rgb, data.f32_to_u8)(img.disparity), rendered_images),
+            fps=args.fps,
+            loop=args.loop,
         )
 
     if "image" in args.save_as:

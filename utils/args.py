@@ -181,6 +181,12 @@ class NeRFTestingArgs(NeRFArgsBase):
     # `--save-as "video-image"` will save both video and images.
     save_as: str="image and video"
 
+    # specifies frames per second for saved video
+    fps: int=24
+
+    # loop rendered images this many times in saved video
+    loop: int=3
+
     # raymarching/rendering options during testing
     raymarch: RayMarchingOptions=RayMarchingOptions(
         diagonal_n_steps=1<<10,
