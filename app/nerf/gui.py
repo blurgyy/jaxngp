@@ -1430,7 +1430,7 @@ class NeRFGUI():
             self.clear_plot()
             self.ckpt.need_load_ckpt = False
 
-    def render(self):
+    def render(self) -> int:
         while dpg.is_dearpygui_running():
             self.adapt_size()
             if self.train_thread:
@@ -1464,6 +1464,7 @@ class NeRFGUI():
                 self.logger.info("exiting cleanly ...")
                 break
         dpg.destroy_context()
+        return 0
 
 
 def gui_exit():
@@ -1471,6 +1472,6 @@ def gui_exit():
     sys.exit()
 
 
-def GuiWindow(KEY: jran.KeyArray, args: NeRFGUIArgs, logger: logging.Logger):
+def GuiWindow(KEY: jran.KeyArray, args: NeRFGUIArgs, logger: logging.Logger) -> int:
     nerfGui = NeRFGUI(args=args, KEY=KEY, logger=logger)
-    nerfGui.render()
+    return nerfGui.render()

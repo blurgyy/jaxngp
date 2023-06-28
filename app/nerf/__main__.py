@@ -42,17 +42,17 @@ def main(args: MainArgsType):
 
     if isinstance(args, NeRFTrainingArgs) and not isinstance(args, NeRFGUIArgs):
         from app.nerf.train import train
-        train(KEY, args, logger)
+        return train(KEY, args, logger)
     elif isinstance(args, NeRFTestingArgs):
         from app.nerf.test import test
-        test(KEY, args, logger)
-    elif isinstance(args,NeRFGUIArgs):
+        return test(KEY, args, logger)
+    elif isinstance(args, NeRFGUIArgs):
         from app.nerf.gui import GuiWindow
-        GuiWindow(KEY, args, logger)
+        return GuiWindow(KEY, args, logger)
     else:
-        assert_never()
+        assert_never(args)
 
 
 if __name__ == "__main__":
     args = tyro.cli(MainArgsType)
-    main(args)
+    exit(main(args))

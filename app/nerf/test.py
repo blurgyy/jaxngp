@@ -15,7 +15,7 @@ from utils.args import NeRFTestingArgs
 from utils.types import NeRFState, RenderedImage, RigidTransformation
 
 
-def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
+def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> int:
     logs_dir = args.exp_dir.joinpath("logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
     logger = common.setup_logging(
@@ -26,7 +26,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     )
     if not args.ckpt.exists():
         logger.error("specified checkpoint '{}' does not exist".format(args.ckpt))
-        exit(1)
+        return 1
 
     if args.report_metrics:
         logger.info("will not load gt images because either the intrinsics or the extrinsics of the camera have been changed")
@@ -70,7 +70,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
     state = jax.device_put(state)
     if state.step == 0:
         logger.error("an empty checkpoint was loaded from '{}'".format(args.ckpt))
-        exit(2)
+        return 2
     logger.info("checkpoint loaded from '{}' (step={})".format(args.ckpt, int(state.step)))
 
     rendered_images: List[RenderedImage] = []
@@ -167,3 +167,4 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
                 np.asarray,
                 Image.fromarray
             )(img.disparity).save(dest_disparity.joinpath("{:04d}.png".format(save_i)))
+    return 0

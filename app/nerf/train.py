@@ -121,13 +121,13 @@ def train_epoch(
     }
 
 
-def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
+def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> int:
     if args.exp_dir.exists():
         logger.error("specified experiment directory '{}' already exists".format(args.exp_dir))
-        exit(1)
+        return 1
     if args.ckpt is not None and not args.ckpt.exists():
         logger.error("specified checkpoint '{}' does not exist".format(args.ckpt))
-        exit(2)
+        return 2
     logs_dir = args.exp_dir.joinpath("logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
     logger = common.setup_logging(
@@ -225,7 +225,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
         state = checkpoints.restore_checkpoint(args.ckpt, target=state)
         if state.step == 0:
             logger.error("an empty checkpoint was loaded from '{}'".format(args.ckpt))
-            exit(3)
+            return 3
         logger.info("checkpoint loaded from '{}' (step={})".format(args.ckpt, int(state.step)))
     state = state.mark_untrained_density_grid()  # still needs to mark grids even if state is loaded
 
@@ -253,7 +253,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             ckpt_name = checkpoints.save_checkpoint(args.exp_dir, state, step="ep{}aborted".format(ep_log), overwrite=True, keep=2**30)
             logger.info("training state of epoch {} saved to: {}".format(ep_log, ckpt_name))
             logger.info("exiting cleanly ...")
-            exit()
+            return 0
 
         mean_loss = jax.tree_util.tree_map(
             lambda val: val / metrics["n_processed_rays"],
@@ -359,3 +359,4 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger):
             del state_eval
             del gt_rgbs_f32
             del rendered_images
+    return 0
