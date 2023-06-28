@@ -28,15 +28,16 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         logger.error("specified checkpoint '{}' does not exist".format(args.ckpt))
         exit(1)
 
-    if args.trajectory == "orbit":
-        logger.debug("generating {} testing frames".format(args.orbit.n_frames))
+    if args.report_metrics:
+        logger.info("will not load gt images because either the intrinsics or the extrinsics of the camera have been changed")
         scene_meta = data.load_scene(
             srcs=args.frames,
             scene_options=args.scene,
             orbit_options=args.orbit,
         )
-        logger.info("generated {} camera transforms for testing".format(len(scene_meta.frames)))
-    elif args.trajectory == "loaded":
+        if args.trajectory == "orbit":
+            logger.info("generated {} camera transforms for testing".format(len(scene_meta.frames)))
+    else:
         logger.debug("loading testing frames from {}".format(args.frames))
         scene_data, test_views = data.load_scene(
             srcs=args.frames,
@@ -97,7 +98,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger):
         logger.warn("keyboard interrupt, tested {} images".format(len(rendered_images)))
 
     if args.trajectory == "loaded":
-        if args.camera_override.enabled:
+        if not args.report_metrics:
             logger.info("camera is overridden, not calculating psnr")
         elif len(rendered_images) == 0:
             logger.warn("tested 0 image, not calculating psnr")

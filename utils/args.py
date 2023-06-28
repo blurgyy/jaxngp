@@ -203,6 +203,10 @@ class NeRFTestingArgs(NeRFArgsBase):
         camera_near=0.3,
     )
 
+    @property
+    def report_metrics(self) -> bool:
+        return self.camera_override.enabled or self.trajectory != "loaded"
+
 
 @dataclass(frozen=True, kw_only=True)
 class NeRFGUIArgs(NeRFTrainingArgs):
