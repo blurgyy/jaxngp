@@ -134,7 +134,7 @@ def write_sharpness_json(raw_images_dir: str | Path):
     sharpnesses = ThreadPoolExecutor().map(sharpness_of, image_candidates)
     path_sharpness_tuples = zip(map(lambda p: p.absolute().as_posix(), raw_images_dir.iterdir()), sharpnesses)
     path_sharpness_tuples = filter(lambda tup: tup[1] is not None, path_sharpness_tuples)
-    path_sharpness_tuples = sorted(tqdm(path_sharpness_tuples, desc="estimating sharpness of image collection"), key=lambda tup: tup[1], reverse=True)
+    path_sharpness_tuples = sorted(tqdm(path_sharpness_tuples, desc="| estimating sharpness of image collection"), key=lambda tup: tup[1], reverse=True)
     with open(raw_images_dir.joinpath(out_filename), "w") as f:
         json.dump(path_sharpness_tuples, f)
 
@@ -182,7 +182,7 @@ def write_transforms_json(
 
     # estimate sharpness
     sharpnesses = ThreadPoolExecutor().map(lambda f: sharpness_of(scene_root_dir.joinpath(f.file_path)), frames)
-    for i, sharpness in enumerate(tqdm(sharpnesses, total=len(frames), desc="estimating sharpness of image collection")):
+    for i, sharpness in enumerate(tqdm(sharpnesses, total=len(frames), desc="| estimating sharpness of image collection")):
         frames[i] = frames[i].replace(sharpness=sharpness)
 
     # reorient the scene to be easier to work with
@@ -416,7 +416,7 @@ def write_video(dest: Path, images: Sequence, *, fps: int=24, loop: int=3):
     assert len(images) > 0, "cannot write empty video"
     video_writer = imageio.get_writer(dest, mode="I", fps=fps)
     try:
-        for im in tqdm(images, desc="writing video to {}".format(dest.as_posix())):
+        for im in tqdm(images, desc="| writing video to {}".format(dest.as_posix())):
             video_writer.append_data(np.asarray(im))
     except (BrokenPipeError, IOError) as e:  # sometimes ffmpeg encounters io error for no apparent reason
         warnings.warn(

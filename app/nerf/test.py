@@ -151,7 +151,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> in
         dest_disparity.mkdir(parents=True, exist_ok=True)
 
         logger.debug("saving as images")
-        for save_i, img in enumerate(common.tqdm(rendered_images, desc="saving images")):
+        for save_i, img in enumerate(common.tqdm(rendered_images, desc="| saving images")):
             common.compose(
                 np.asarray,
                 Image.fromarray

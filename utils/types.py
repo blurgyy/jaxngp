@@ -1311,7 +1311,7 @@ class NeRFState(TrainState):
         # np.savetxt("cams.xyz", cam_t)
 
         alive_marker = jnp.zeros(n_grids, dtype=jnp.bool_)
-        for frame in (pbar := tqdm(self.scene_meta.frames, desc="marking trainable grids".format(n_grids), bar_format=tqdm_format)):
+        for frame in (pbar := tqdm(self.scene_meta.frames, desc="| marking trainable grids".format(n_grids), bar_format=tqdm_format)):
             new_alive_marker_parts = map(
                 lambda alive_marker_part, grid_vertices_part: mark_untrained_density_grid_single_frame(
                     alive_marker=alive_marker_part,
@@ -1324,7 +1324,7 @@ class NeRFState(TrainState):
             alive_marker = jnp.concatenate(list(new_alive_marker_parts), axis=0)
             n_alive_grids = alive_marker.sum()
             ratio_trainable = n_alive_grids / n_grids
-            pbar.set_description_str("marked {}/{} ({:.2f}%) grids as trainable".format(n_alive_grids, n_grids, ratio_trainable * 100))
+            pbar.set_description_str("| marked {}/{} ({:.2f}%) grids as trainable".format(n_alive_grids, n_grids, ratio_trainable * 100))
 
         marked_density = jnp.where(alive_marker, self.ogrid.density, -1.)
         marked_occ_mask, marked_occupancy = packbits(

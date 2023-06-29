@@ -294,7 +294,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
             state_eval = state\
                 .replace(raymarch=args.raymarch_eval)\
                 .replace(render=args.render_eval)
-            for val_i, val_view in enumerate(common.tqdm(scene_val.all_views, desc="validating")):
+            for val_i, val_view in enumerate(common.tqdm(scene_val.all_views, desc="| validating")):
                 logger.debug("validating on {}".format(val_view.file))
                 val_transform = RigidTransformation(
                     rotation=scene_val.all_transforms[val_i, :9].reshape(3, 3),
