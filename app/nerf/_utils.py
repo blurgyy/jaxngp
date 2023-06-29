@@ -143,11 +143,17 @@ def train_step(
             state=state.replace(params=params_to_optimize),
         )
         pred_rgbs, pred_depths = jnp.array_split(pred_rgbds, [3], axis=-1)
+        def get_valid_rgbs(rgbs):
+            return jnp.where(
+                jnp.arange(rgbs.shape[0])[:, None] < batch_metrics["n_valid_rays"],
+                rgbs,
+                0.
+            )
         gt_rgbs = data.blend_rgba_image_array(imgarr=gt_rgba_f32, bg=bg)
         batch_metrics["loss"] = {
             # Scale huber loss by 2 here to match the loss scale of ~converged model so that the dB
             # number approximates PSNR.
-            "rgb": optax.huber_loss(pred_rgbs, gt_rgbs, delta=0.1).mean() * 2,
+            "rgb": optax.huber_loss(get_valid_rgbs(pred_rgbs), get_valid_rgbs(gt_rgbs), delta=0.1).mean() * 2,
             "total_variation": tv,
         }
         loss = jax.tree_util.tree_reduce(lambda x, y: x + y, batch_metrics["loss"])
