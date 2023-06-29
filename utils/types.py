@@ -210,6 +210,18 @@ class Camera:
     model: CameraModelType=struct.field(default="OPENCV", pytree_node=False)
 
     @property
+    def has_distortion(self) -> bool:
+        return (
+            True
+            or self.k1 != 0.0
+            or self.k2 != 0.0
+            or self.k3 != 0.0
+            or self.k4 != 0.0
+            or self.p1 != 0.0
+            or self.p2 != 0.0
+        )
+
+    @property
     def _type(self) -> Literal["PERSPECTIVE", "FISHEYE"]:
         if "fisheye" in self.model.lower():
             return "FISHEYE"
@@ -447,7 +459,8 @@ class Camera:
             ((y + pixel_offset) - self.cy) / self.fy,
             jnp.ones_like(x),
         )
-        x, y = self.undistort(x, y)
+        if self.has_distortion:
+            x, y = self.undistort(x, y)
         if self._type == "FISHEYE":
             theta = jnp.sqrt(jnp.square(x) + jnp.square(y))
             theta = jnp.clip(theta, 0., jnp.pi)
@@ -1276,17 +1289,20 @@ class NeRFState(TrainState):
 
             u, v = jnp.split(p_cam[..., :2] / (-p_cam[..., -1:]), [1], axis=-1)
 
-            # distort
-            u, v = self.scene_meta.camera.distort(u, v)
+            if self.scene_meta.camera.has_distortion:
+                # distort
+                u, v = self.scene_meta.camera.distort(u, v)
 
-            # Pixel coordinates outside the image plane may produce the same `u, v` as those inside
-            # the image plane, check if the produced `u, v` match the ray we started with.
-            # REF: <https://github.com/NVlabs/instant-ngp/blob/99aed93bbe8c8e074a90ec6c56c616e4fe217a42/src/testbed_nerf.cu#L481-L483>
-            re_u, re_v = self.scene_meta.camera.undistort(u, v)
-            redir = jnp.concatenate([re_u, re_v, -jnp.ones_like(re_u)], axis=-1)
-            redir = redir / jnp.linalg.norm(redir, axis=-1, keepdims=True)
-            ogdir = p_cam / jnp.linalg.norm(p_cam, axis=-1, keepdims=True)
-            same_ray = (redir * ogdir).sum(axis=-1) > 1. - 1e-3
+                # Pixel coordinates outside the image plane may produce the same `u, v` as those inside
+                # the image plane, check if the produced `u, v` match the ray we started with.
+                # REF: <https://github.com/NVlabs/instant-ngp/blob/99aed93bbe8c8e074a90ec6c56c616e4fe217a42/src/testbed_nerf.cu#L481-L483>
+                re_u, re_v = self.scene_meta.camera.undistort(u, v)
+                redir = jnp.concatenate([re_u, re_v, -jnp.ones_like(re_u)], axis=-1)
+                redir = redir / jnp.linalg.norm(redir, axis=-1, keepdims=True)
+                ogdir = p_cam / jnp.linalg.norm(p_cam, axis=-1, keepdims=True)
+                same_ray = (redir * ogdir).sum(axis=-1) > 1. - 1e-3
+            else:
+                same_ray = True
 
             uv = jnp.concatenate([
                 u * self.scene_meta.camera.fx + self.scene_meta.camera.cx,
