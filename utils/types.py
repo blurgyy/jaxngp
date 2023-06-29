@@ -424,7 +424,12 @@ class Camera:
 
         return x, y
 
-    def make_ray_directions_from_pixel_coordinates(self, x: jax.Array, y: jax.Array) -> jax.Array:
+    def make_ray_directions_from_pixel_coordinates(
+        self,
+        x: jax.Array,
+        y: jax.Array,
+        use_pixel_center: bool,
+    ) -> jax.Array:
         """Given distorted unnormalized pixel coordinates, generate a ray direction for each of them
 
         Inputs:
@@ -436,9 +441,10 @@ class Camera:
         chex.assert_type([x, y], jnp.uint32)
         chex.assert_rank([x, y], 1)
         chex.assert_equal_shape([x, y])
+        pixel_offset = 0.5 if use_pixel_center else 0.0
         x, y, z = (  # in CV coordinates, axes are flipped later
-            ((x + 0.5) - self.cx) / self.fx,
-            ((y + 0.5) - self.cy) / self.fy,
+            ((x + pixel_offset) - self.cx) / self.fx,
+            ((y + pixel_offset) - self.cy) / self.fy,
             jnp.ones_like(x),
         )
         x, y = self.undistort(x, y)

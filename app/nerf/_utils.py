@@ -97,7 +97,7 @@ def train_step(
             jnp.floor_divide(pixel_idcs, scene.meta.camera.width),
         )
         # [N, 3]
-        d_cam = scene.meta.camera.make_ray_directions_from_pixel_coordinates(x, y)
+        d_cam = scene.meta.camera.make_ray_directions_from_pixel_coordinates(x, y, use_pixel_center=True)
 
         # [N, 3]
         o_world = scene.transforms[view_idcs, -3:]

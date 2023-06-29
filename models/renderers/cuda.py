@@ -42,7 +42,7 @@ def make_rays_worldspace(
         jnp.floor_divide(d_cam_idcs, camera.width),
     )
     # [H*W, 3]
-    d_cam = camera.make_ray_directions_from_pixel_coordinates(x, y)
+    d_cam = camera.make_ray_directions_from_pixel_coordinates(x, y, use_pixel_center=True)
 
     # [H*W, 3]
     o_world = jnp.broadcast_to(transform_cw.translation, d_cam.shape)
