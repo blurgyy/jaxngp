@@ -25,7 +25,6 @@ from .types import (
     Camera,
     RGBColor,
     RGBColorU8,
-    RigidTransformation,
     SceneCreationOptions,
     SceneData,
     SceneMeta,
@@ -33,7 +32,6 @@ from .types import (
     TransformJsonFrame,
     TransformJsonNGP,
     TransformJsonNeRFSynthetic,
-    ViewMetadata,
 )
 
 
@@ -608,7 +606,7 @@ def load_scene(
     scene_options: SceneOptions,
     sort_frames: bool=False,
     orbit_options: OrbitTrajectoryOptions | None=None,
-) -> SceneMeta | Tuple[SceneData, List[ViewMetadata]]:
+) -> SceneData:
     """
     Inputs:
         srcs: sequence of paths to recursively load transforms.json
@@ -698,63 +696,19 @@ def load_scene(
 
     scene_meta = SceneMeta(
         bound=scene_options.bound
-        if scene_options.bound is not None
-        else transforms.aabb_scale,
+            if scene_options.bound is not None
+            else transforms.aabb_scale,
         bg=transforms.bg,
-        camera=(
-            camera
-                .scale_resolution(scene_options.resolution_scale)
-        ),
+        camera=camera.scale_resolution(scene_options.resolution_scale),
         n_extra_learnable_dims=transforms.n_extra_learnable_dims,
         frames=transforms.frames,
     )
 
     if orbit_options is not None:
         assert isinstance(orbit_options, OrbitTrajectoryOptions)
-        return scene_meta.make_frames_with_orbiting_trajectory(orbit_options)
+        scene_meta = scene_meta.make_frames_with_orbiting_trajectory(orbit_options)
 
-    views = tuple(map(
-        lambda frame: ViewMetadata(
-            scale=scene_options.resolution_scale,
-            transform=RigidTransformation(
-                rotation=frame.transform_matrix_numpy[:3, :3],
-                translation=frame.transform_matrix_numpy[:3, 3],
-            ),
-            file=frame.file_path,
-        ),
-        transforms.frames,
-    ))
-
-    # uint8,[n_pixels, 4]
-    all_rgbas = jnp.concatenate(
-        list(tqdm(
-            ThreadPoolExecutor().map(lambda view: view.rgba_u8, views),
-            total=len(views),
-            desc="pre-loading views"
-        )),
-        axis=0,
-    )
-
-    # float,[n_pixels, 9]
-    all_Rs = jnp.concatenate(
-        list(map(lambda view: view.transform.rotation.reshape(-1, 9), views)),
-        axis=0,
-    )
-    # float,[n_pixels, 3]
-    all_Ts = jnp.concatenate(
-        list(map(lambda view: view.transform.translation.reshape(-1, 3), views)),
-        axis=0,
-    )
-    # float,[n_views, 3+9+3]
-    all_transforms = jnp.concatenate([all_Rs, all_Ts], axis=-1)
-
-    scene_data = SceneData(
-        meta=scene_meta,
-        all_rgbas_u8=all_rgbas,
-        all_transforms=all_transforms,
-    )
-
-    return scene_data, views
+    return SceneData(meta=scene_meta, max_pixels=scene_options.max_pixels)
 
 
 @jit_jaxfn_with(static_argnames=["size", "loop", "shuffle"])

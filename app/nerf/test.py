@@ -28,23 +28,20 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> in
         logger.error("specified checkpoint '{}' does not exist".format(args.ckpt))
         return 1
 
+    scene_data = data.load_scene(
+        srcs=args.frames,
+        scene_options=args.scene,
+        sort_frames=args.sort_frames,
+    )
+
+    scene_meta = scene_data.meta
+
     if args.report_metrics:
-        logger.info("will not load gt images because either the intrinsics or the extrinsics of the camera have been changed")
-        scene_meta = data.load_scene(
-            srcs=args.frames,
-            scene_options=args.scene,
-            orbit_options=args.orbit,
-        )
+        logger.warn("will not load gt images because either the intrinsics or the extrinsics of the camera have been changed")
         if args.trajectory == "orbit":
             logger.info("generated {} camera transforms for testing".format(len(scene_meta.frames)))
     else:
         logger.debug("loading testing frames from {}".format(args.frames))
-        scene_data, test_views = data.load_scene(
-            srcs=args.frames,
-            scene_options=args.scene,
-            sort_frames=args.sort_frames,
-        )
-        scene_meta = scene_data.meta
         logger.info("loaded {} camera transforms for testing".format(len(scene_meta.frames)))
 
     if args.camera_override.enabled:
@@ -98,9 +95,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> in
         logger.warn("keyboard interrupt, tested {} images".format(len(rendered_images)))
 
     if args.trajectory == "loaded":
-        if not args.report_metrics:
-            logger.info("camera is overridden, not calculating psnr")
-        elif len(rendered_images) == 0:
+        if len(rendered_images) == 0:
             logger.warn("tested 0 image, not calculating psnr")
         else:
             gt_rgbs_f32 = map(
@@ -108,7 +103,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> in
                     test_view.image_rgba_u8.astype(jnp.float32) / 255,
                     rendered_image.bg,
                 ),
-                test_views,
+                scene_data.all_views,
                 rendered_images,
             )
             logger.debug("calculating psnr")

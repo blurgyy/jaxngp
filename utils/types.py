@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import dataclasses
 import functools
 import json
@@ -199,12 +200,12 @@ class Camera:
     near: float
 
     # distortion parameters
-    k1: float=struct.field(default=0., pytree_node=False)
-    k2: float=struct.field(default=0., pytree_node=False)
-    k3: float=struct.field(default=0., pytree_node=False)
-    k4: float=struct.field(default=0., pytree_node=False)
-    p1: float=struct.field(default=0., pytree_node=False)
-    p2: float=struct.field(default=0., pytree_node=False)
+    k1: float=struct.field(default=0.0, pytree_node=False)
+    k2: float=struct.field(default=0.0, pytree_node=False)
+    k3: float=struct.field(default=0.0, pytree_node=False)
+    k4: float=struct.field(default=0.0, pytree_node=False)
+    p1: float=struct.field(default=0.0, pytree_node=False)
+    p2: float=struct.field(default=0.0, pytree_node=False)
 
     model: CameraModelType=struct.field(default="OPENCV", pytree_node=False)
 
@@ -600,11 +601,21 @@ class SceneOptions:
 
     camera_near: float
 
+    # maximum number of pixels to train on in each epoch, the pixels are reloaded into GPU memory
+    # before each epoch if the scene has more than this number of pixels, otherwise all pixels are
+    # loaded once
+    max_pixels: int
+
     # overrides `aabb_scale` in transforms.json
     bound: float | None=None
 
     # overrides `up` in transforms.json
     up: Tuple[float, float, float] | None=None
+
+    def __post_init__(self):
+        assert 0 <= self.resolution_scale <= 1, (
+            "resolution_scale must be in range [0, 1], got {}".format(self.resolution_scale)
+        )
 
 
 @dataclass
@@ -818,54 +829,6 @@ class ImageMetadata:
 
 
 @dataclass
-class ViewMetadata:
-    scale: float
-    transform: RigidTransformation
-    file: Path
-
-    def __post_init__(self):
-        assert 0 <= self.scale <= 1, "scale must be in range [0, 1], got {}".format(self.scale)
-
-    @property
-    def image_pil(self) -> Image.Image:
-        image = Image.open(self.file)
-        image = image.resize((int(image.width * self.scale), int(image.height * self.scale)), resample=Image.LANCZOS)
-        return image
-
-    @property
-    def image_rgba_u8(self) -> jax.Array:
-        image = jnp.asarray(self.image_pil)
-        if image.shape[-1] == 1:
-            image = jnp.concatenate([image] * 3 + [255 * jnp.ones_like(image[..., :1])], axis=-1)
-        elif image.shape[-1] == 3:
-            image = jnp.concatenate([image, 255 * jnp.ones_like(image[..., :1])], axis=-1)
-        chex.assert_axis_dimension(image, -1, 4)
-        return image
-
-    @property
-    def H(self) -> int:
-        return self.image_pil.height
-
-    @property
-    def W(self) -> int:
-        return self.image_pil.width
-
-    # int, [H*W, 2]: original integer coordinates in range [0, W] for x and [0, H] for y
-    @property
-    def xys(self) -> jax.Array:
-        x, y = jnp.meshgrid(jnp.arange(self.W), jnp.arange(self.H))
-        x, y = x.reshape(-1, 1), y.reshape(-1, 1)
-        return jnp.concatenate([x, y], axis=-1)
-
-    # float, [H*W, 4]: rgba values of type uint8
-    @property
-    def rgba_u8(self) -> jax.Array:
-        flattened = self.image_rgba_u8.reshape(self.H * self.W, -1)
-        chex.assert_axis_dimension(flattened, -1, 4)
-        return flattened
-
-
-@dataclass
 class OrbitTrajectoryOptions:
     # cameras' distance to the orbiting axis
     radius: float=1.8
@@ -973,13 +936,168 @@ class SceneMeta:
 
 @dataclass
 class SceneData:
+    @dataclass
+    class ViewData:
+        width: int
+        height: int
+        transform: RigidTransformation
+        file: Path=struct.field(pytree_node=False)
+
+        @property
+        def image_pil(self) -> Image.Image:
+            image = Image.open(self.file)
+            image = image.resize((self.width, self.height), resample=Image.LANCZOS)
+            return image
+
+        @property
+        def image_rgba_u8(self) -> jax.Array:
+            image = np.asarray(self.image_pil)
+            if image.shape[-1] == 1:
+                image = np.concatenate([image] * 3 + [255 * np.ones_like(image[..., :1])], axis=-1)
+            elif image.shape[-1] == 3:
+                image = np.concatenate([image, 255 * np.ones_like(image[..., :1])], axis=-1)
+            chex.assert_axis_dimension(image, -1, 4)
+            return image
+
+        # float, [H*W, 4]: rgba values of type uint8
+        @property
+        def rgba_u8(self) -> jax.Array:
+            return self.image_rgba_u8.reshape(-1, 4)
+
     meta: SceneMeta
 
-    # float,[n_pixels, 4], flattened rgb values from loaded images
-    all_rgbas_u8: jax.Array
+    # maximum number of pixels to train on in each epoch, the pixels are reloaded into GPU memory
+    # before each epoch if the scene has more than this number of pixels, otherwise all pixels are
+    # loaded once
+    max_pixels: int
 
-    # float,[n_views, 9+3] each row comprises of R(flattened,9), T(3), from loaded images
-    all_transforms: jax.Array
+    # uint32, [n_pixels]
+    view_indices: jax.Array | None=None
+
+    # uint32, [n_pixels]
+    pixel_indices: jax.Array | None=None
+
+    # uint8, [n_pixels, 4]
+    rgbas_u8: jax.Array | None=None
+
+    # float, [n_views, 9+3]
+    transforms: jax.Array | None=None
+
+    @functools.cached_property
+    def all_views(self) -> Tuple[ViewData, ...]:
+        return tuple(map(
+            lambda frame: self.ViewData(
+                width=self.meta.camera.width,
+                height=self.meta.camera.height,
+                transform=RigidTransformation(
+                    rotation=frame.transform_matrix_numpy[:3, :3],
+                    translation=frame.transform_matrix_numpy[:3, 3],
+                ),
+                file=frame.file_path,
+            ),
+            self.meta.frames,
+        ))
+
+    @property
+    def n_views(self) -> int:
+        return len(self.all_views)
+
+    @property
+    def n_pixels(self) -> int:
+        return min(self.max_pixels, self.meta.n_pixels)
+
+    def resample_pixels(self, /, KEY: jran.KeyArray, new_max_pixels: int | None=None) -> "SceneData":
+        if (self.max_pixels >= self.meta.n_pixels
+            and self.all_views is not None
+            and self.view_indices is not None
+            and self.pixel_indices is not None
+            and self.rgbas_u8 is not None
+            and self.transforms is not None
+        ) and (new_max_pixels is None
+            or new_max_pixels >= self.meta.n_pixels
+        ):
+            # no need to reload data if current object loaded all data deterministically and the new
+            # value of `max_pixels`, if present, would also deterministically load the data
+            return self
+        if new_max_pixels is None:
+            new_max_pixels = self.max_pixels
+
+        # free up GPU memory
+        if self.view_indices is not None: self.view_indices.delete()
+        if self.pixel_indices is not None: self.pixel_indices.delete()
+        if self.rgbas_u8 is not None: self.rgbas_u8.delete()
+        if self.transforms is not None: self.transforms.delete()
+        jax.lib.xla_bridge.get_backend().defragment()
+
+        n_views = len(self.all_views)
+        n_pixels = min(new_max_pixels, self.meta.n_pixels)
+
+        # indices
+        if n_pixels == self.meta.n_pixels:
+            pixel_idcs = n_views * [jnp.arange(self.meta.camera.n_pixels)]
+        else:
+            new_keys = jran.split(KEY, 1 + 1 + n_views)
+            (KEY, key_n), keys_idcs = new_keys[0:2], new_keys[2:]
+            En = n_pixels // n_views
+            ns = jran.randint(
+                key=key_n,
+                shape=(n_views,),
+                minval=max(1, En - 256),
+                maxval=(min(En * 2, En + 256)),
+            ).tolist()
+            pixel_idcs = list(ThreadPoolExecutor().map(
+                lambda n, k: jran.choice(
+                    key=k,
+                    a=self.meta.camera.n_pixels,
+                    shape=(n,),
+                    replace=True,
+                ),
+                ns, keys_idcs,
+            ))
+            n_pixels = sum(map(lambda x: x.shape[0], pixel_idcs))
+
+        rgbas_u8 = ThreadPoolExecutor().map(
+            lambda pidcs, view: view.rgba_u8[pidcs],
+            pixel_idcs,
+            self.all_views,
+        )
+        rgbas_u8 = jnp.concatenate(list(tqdm(
+            rgbas_u8,
+            total=n_views,
+            desc="| {} {} ({:.2f}% of {}) training pixels".format(
+                "loading"
+                if self.view_indices is None
+                else "resampling",
+                n_pixels,
+                n_pixels / self.meta.n_pixels * 100,
+                self.meta.n_pixels,
+            ),
+            bar_format=tqdm_format,
+        )))
+
+        transforms = jnp.stack(list(ThreadPoolExecutor().map(
+            lambda view: jnp.concatenate([
+                view.transform.rotation.ravel(),
+                view.transform.translation,
+            ]),
+            self.all_views,
+        )))
+
+        view_idcs = jnp.concatenate(list(ThreadPoolExecutor().map(
+            lambda i, pidcs: i * jnp.ones(pidcs.shape[0], dtype=jnp.uint32),
+            range(n_views),
+            pixel_idcs,
+        )))
+        pixel_idcs = jnp.concatenate(pixel_idcs)
+
+        return dataclasses.replace(
+            self,
+            max_pixels=new_max_pixels,
+            view_indices=view_idcs,
+            pixel_indices=pixel_idcs,
+            rgbas_u8=rgbas_u8,
+            transforms=transforms,
+        )
 
 
 @dataclass

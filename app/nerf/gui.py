@@ -121,6 +121,7 @@ class Gui_trainer():
     optimizer: Any = field(init=False)
 
     state: NeRFState = field(init=False)
+    last_resample_step: int = -1
     cur_step: int = 0
     log_step: int = 0
     loss_log: str = "--"
@@ -162,7 +163,7 @@ class Gui_trainer():
             self.args.exp_dir.joinpath("config.yaml")))
 
         # load data
-        self.scene_train, _ = data.load_scene(
+        self.scene_train = data.load_scene(
             srcs=self.args.frames_train,
             scene_options=self.args.scene,
         )
@@ -345,9 +346,16 @@ class Gui_trainer():
         gc.collect()
         try:
             if self.istraining:
-                self.KEY, key = jran.split(self.KEY, 2)
+                if self.last_resample_step < 0 or self.state.step - self.last_resample_step >= 1024:
+                    self.KEY, key_resample = jran.split(self.KEY, 2)
+                    self.scene_train = self.scene_train.resample_pixels(
+                        KEY=key_resample,
+                        new_max_pixels=self.args.scene.max_pixels,
+                    )
+                    self.last_resample_step = self.state.step
+                self.KEY, key_train = jran.split(self.KEY, 2)
                 self.state = self.gui_train_epoch(
-                    KEY=key,
+                    KEY=key_train,
                     state=self.state,
                     scene=self.scene_train,
                     n_batches=steps,
@@ -376,7 +384,6 @@ class Gui_trainer():
         cur_steps: int,
         logger: common.Logger,
     ):
-        n_processed_rays = 0
         total_loss = None
         self.log_step = 0
         for _ in (pbar := tqdm(range(n_batches),
@@ -390,7 +397,7 @@ class Gui_trainer():
                 exit()
             KEY, key_perm, key_train_step = jran.split(KEY, 3)
             perm = jran.choice(key_perm,
-                               scene.meta.n_pixels,
+                               scene.n_pixels,
                                shape=(state.batch_config.n_rays, ),
                                replace=True)
             state, metrics = train_step(
@@ -402,7 +409,6 @@ class Gui_trainer():
             )
             self.log_step += 1
             cur_steps = cur_steps + 1
-            n_processed_rays += metrics["n_valid_rays"]
             loss = metrics["loss"]
             if total_loss is None:
                 total_loss = loss

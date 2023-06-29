@@ -85,27 +85,25 @@ def train_step(
     scene: SceneData,
     perm: jax.Array,
 ) -> Tuple[NeRFState, Dict[str, jax.Array | float]]:
-    # indices of views
-    view_idcs = perm // scene.meta.camera.n_pixels
+    # indices of views and pixels
+    view_idcs, pixel_idcs = scene.view_indices[perm], scene.pixel_indices[perm]
 
     # TODO:
     #   merge this and `models.renderers.make_rays_worldspace` as a single function
     def make_rays_worldspace() -> Tuple[jax.Array, jax.Array]:
         # [N], [N]
         x, y = (
-            jnp.mod(perm, scene.meta.camera.width),
-            jnp.mod(jnp.floor_divide(perm, scene.meta.camera.width), scene.meta.camera.height),
+            jnp.mod(pixel_idcs, scene.meta.camera.width),
+            jnp.floor_divide(pixel_idcs, scene.meta.camera.width),
         )
         # [N, 3]
         d_cam = scene.meta.camera.make_ray_directions_from_pixel_coordinates(x, y)
 
         # [N, 3]
-        o_world = scene.all_transforms[view_idcs, -3:]  # WARN: using `perm` instead of `view_idcs` here
-                                                        # will silently clip the out-of-bounds indices.
-                                                        # REF:
-                                                        #   <https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html#out-of-bounds-indexing>
+        o_world = scene.transforms[view_idcs, -3:]
+
         # [N, 3, 3]
-        R_cws = scene.all_transforms[view_idcs, :9].reshape(-1, 3, 3)
+        R_cws = scene.transforms[view_idcs, :9].reshape(-1, 3, 3)
         # [N, 3]
         # equavalent to performing `d_cam[i] @ R_cws[i].T` for each i in [0, N)
         d_world = (d_cam[:, None, :] * R_cws).sum(-1)
@@ -159,7 +157,7 @@ def train_step(
     KEY, key = jran.split(KEY, 2)
     (_, batch_metrics), grads = loss_grad_fn(
         state.params,
-        scene.all_rgbas_u8[perm].astype(jnp.float32) / 255,
+        scene.rgbas_u8[perm].astype(jnp.float32) / 255,
         key,
     )
     state = state.apply_gradients(grads=grads)

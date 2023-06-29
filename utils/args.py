@@ -144,6 +144,7 @@ class NeRFTrainingArgs(NeRFArgsBase):
         sharpness_threshold=-1.,
         resolution_scale=1.0,
         camera_near=0.3,
+        max_pixels=100 * 1920 * 1080,
     )
 
     # raymarching/rendering options for validating during training
@@ -201,6 +202,7 @@ class NeRFTestingArgs(NeRFArgsBase):
         sharpness_threshold=-1.,
         resolution_scale=1.0,
         camera_near=0.3,
+        max_pixels=100 * 1920 * 1080,
     )
 
     @property

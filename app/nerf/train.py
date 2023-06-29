@@ -46,7 +46,7 @@ def train_epoch(
             pbar.update(start)
             for _ in range(start, n_batches):
                 KEY, key_perm, key_train_step = jran.split(KEY, 3)
-                perm = jran.choice(key_perm, scene.meta.n_pixels, shape=(state.batch_config.n_rays,), replace=True)
+                perm = jran.choice(key_perm, scene.n_pixels, shape=(state.batch_config.n_rays,), replace=True)
                 state, metrics = train_step(
                     KEY=key_train_step,
                     state=state,
@@ -143,7 +143,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
 
     # data
     logger.info("loading training frames")
-    scene_train, _ = data.load_scene(
+    scene_train = data.load_scene(
         srcs=args.frames_train,
         scene_options=args.scene,
     )
@@ -151,7 +151,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
 
     if len(args.frames_val) > 0:
         logger.info("loading validation frames")
-        scene_val, val_views = data.load_scene(
+        scene_val = data.load_scene(
             srcs=args.frames_val,
             scene_options=args.scene,
         )
@@ -236,9 +236,13 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
 
         ep_log = ep + 1
 
-        KEY, key = jran.split(KEY, 2)
+        KEY, key_resample, key_train = jran.split(KEY, 3)
+        scene_train = scene_train.resample_pixels(
+            KEY=key_resample,
+            new_max_pixels=args.scene.max_pixels,
+        )
         state, metrics = train_epoch(
-            KEY=key,
+            KEY=key_train,
             state=state,
             scene=scene_train,
             n_batches=args.train.n_batches,
@@ -290,7 +294,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
             state_eval = state\
                 .replace(raymarch=args.raymarch_eval)\
                 .replace(render=args.render_eval)
-            for val_i, val_view in enumerate(common.tqdm(val_views, desc="validating")):
+            for val_i, val_view in enumerate(common.tqdm(scene_val.all_views, desc="validating")):
                 logger.debug("validating on {}".format(val_view.file))
                 val_transform = RigidTransformation(
                     rotation=scene_val.all_transforms[val_i, :9].reshape(3, 3),
@@ -319,7 +323,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
                     val_view.image_rgba_u8.astype(jnp.float32) / 255,
                     rendered_image.bg,
                 ),
-                val_views,
+                scene_val.all_views,
                 rendered_images,
             ))
 
