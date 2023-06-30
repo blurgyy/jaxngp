@@ -605,15 +605,12 @@ def load_scene(
     srcs: Sequence[Path | str],
     scene_options: SceneOptions,
     sort_frames: bool=False,
-    orbit_options: OrbitTrajectoryOptions | None=None,
 ) -> SceneData:
     """
     Inputs:
         srcs: sequence of paths to recursively load transforms.json
         scene_options: see :class:`SceneOptions`
         sort_frames: whether to sort the frames by their filenames, (uses natural sort if enabled)
-        orbit_options: if not `None`, generate a sequence of camera poses and ignore the loaded
-                       camera poses
     """
 
     assert isinstance(srcs, collections.abc.Sequence) and not isinstance(srcs, str), (
@@ -703,10 +700,6 @@ def load_scene(
         n_extra_learnable_dims=transforms.n_extra_learnable_dims,
         frames=transforms.frames,
     )
-
-    if orbit_options is not None:
-        assert isinstance(orbit_options, OrbitTrajectoryOptions)
-        scene_meta = scene_meta.make_frames_with_orbiting_trajectory(orbit_options)
 
     return SceneData(meta=scene_meta, max_pixels=scene_options.max_pixels)
 

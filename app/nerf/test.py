@@ -47,6 +47,9 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> in
     if args.camera_override.enabled:
         scene_meta = scene_meta.replace(camera=args.camera_override.update_camera(scene_meta.camera))
 
+    if args.trajectory == "orbit":
+        scene_meta = scene_meta.make_frames_with_orbiting_trajectory(args.orbit)
+
     # load parameters
     logger.debug("loading checkpoint from '{}'".format(args.ckpt))
     state: NeRFState = checkpoints.restore_checkpoint(
