@@ -185,6 +185,79 @@ inline __device__ int clampi(int val, int lo, int hi) {
 inline __host__ __device__ float signf(const float x) {
     return copysignf(1.0, x);
 }
+
+template<typename T>
+struct vec3 {
+    T x, y, z;
+    T __alignment;
+    inline __device__ T L_inf() const {
+        return fmaxf(fabsf(this->x), fmaxf(fabsf(this->y), fabsf(this->z)));
+    }
+    inline __device__ vec3 operator+() const {
+        return *this;
+    }
+    inline __device__ vec3 operator+(vec3 const & rhs) const {
+        return {
+            this->x + rhs.x,
+            this->y + rhs.y,
+            this->z + rhs.z,
+        };
+    }
+    inline __device__ vec3 operator+(T const & rhs) const {
+        return (*this) + vec3 {rhs, rhs, rhs};
+    }
+    inline __device__ vec3 operator-() const {
+        return {
+            -this->x,
+            -this->y,
+            -this->z,
+        };
+    }
+    inline __device__ vec3 operator-(vec3 const & rhs) const {
+        return (*this) + (-rhs);
+    }
+    inline __device__ vec3 operator-(T const & rhs) const {
+        return (*this) - vec3 {rhs, rhs, rhs};
+    }
+    inline __device__ vec3 operator*(vec3 const & rhs) const {
+        return {
+            this->x * rhs.x,
+            this->y * rhs.y,
+            this->z * rhs.z,
+        };
+    }
+    inline __device__ vec3 operator*(T const & rhs) const {
+        return (*this) * vec3 {rhs, rhs, rhs};
+    }
+    inline __device__ vec3 operator/(vec3 const & rhs) const {
+        return {
+            this->x / rhs.x,
+            this->y / rhs.y,
+            this->z / rhs.z,
+        };
+    }
+    inline __device__ vec3 operator/(T const & rhs) const {
+        return (*this) / vec3 {rhs, rhs, rhs};
+    }
+};
+template<typename T>
+inline __device__ vec3<T> operator+(T const & lhs, vec3<T> const & rhs) {
+    return rhs + lhs;
+}
+template<typename T>
+inline __device__ vec3<T> operator-(T const & lhs, vec3<T> const & rhs) {
+    return -rhs + lhs;
+}
+template<typename T>
+inline __device__ vec3<T> operator*(T const & lhs, vec3<T> const & rhs) {
+    return rhs * lhs;
+}
+template<typename T>
+inline __device__ vec3<T> operator/(T const & lhs, vec3<T> const & rhs) {
+    return vec3<T> {lhs, lhs, lhs} / rhs;
+}
+using vec3f = vec3<float>;
+using vec3u = vec3<std::uint32_t>;
 #endif
 
 }  // namespace volrendjax
