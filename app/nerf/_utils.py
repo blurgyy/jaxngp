@@ -86,7 +86,7 @@ def train_step(
     perm: jax.Array,
 ) -> Tuple[NeRFState, Dict[str, jax.Array | float]]:
     # indices of views and pixels
-    view_idcs, pixel_idcs = scene.view_indices[perm], scene.pixel_indices[perm]
+    view_idcs, pixel_idcs = scene.get_view_indices(perm), scene.get_pixel_indices(perm)
 
     # TODO:
     #   merge this and `models.renderers.make_rays_worldspace` as a single function

@@ -350,7 +350,7 @@ class Gui_trainer():
                     self.KEY, key_resample = jran.split(self.KEY, 2)
                     self.scene_train = self.scene_train.resample_pixels(
                         KEY=key_resample,
-                        new_max_pixels=self.args.scene.max_pixels,
+                        new_max_mem_mbytes=self.args.scene.max_mem_mbytes,
                     )
                     self.last_resample_step = self.state.step
                 self.KEY, key_train = jran.split(self.KEY, 2)

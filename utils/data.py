@@ -701,7 +701,7 @@ def load_scene(
         frames=transforms.frames,
     )
 
-    return SceneData(meta=scene_meta, max_pixels=scene_options.max_pixels)
+    return SceneData(meta=scene_meta, max_mem_mbytes=scene_options.max_mem_mbytes)
 
 
 @jit_jaxfn_with(static_argnames=["size", "loop", "shuffle"])

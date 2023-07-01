@@ -620,10 +620,9 @@ class SceneOptions:
 
     camera_near: float
 
-    # maximum number of pixels to train on in each epoch, the pixels are reloaded into GPU memory
-    # before each epoch if the scene has more than this number of pixels, otherwise all pixels are
-    # loaded once
-    max_pixels: int
+    # maximum GPU memory to consume in MB, the pixels are reloaded into GPU memory before each epoch
+    # if the scene has more than this number of pixels, otherwise all pixels are loaded once
+    max_mem_mbytes: int
 
     # overrides `aabb_scale` in transforms.json
     bound: float | None=None
@@ -985,22 +984,26 @@ class SceneData:
 
     meta: SceneMeta
 
-    # maximum number of pixels to train on in each epoch, the pixels are reloaded into GPU memory
-    # before each epoch if the scene has more than this number of pixels, otherwise all pixels are
-    # loaded once
-    max_pixels: int
+    # maximum GPU memory to consume in MB, the pixels are reloaded into GPU memory before each epoch
+    # if the scene has more than this number of pixels, otherwise all pixels are loaded once
+    max_mem_mbytes: int
 
     # uint32, [n_pixels]
-    view_indices: jax.Array | None=None
+    _view_indices: jax.Array | None=None
 
     # uint32, [n_pixels]
-    pixel_indices: jax.Array | None=None
+    _pixel_indices: jax.Array | None=None
 
     # uint8, [n_pixels, 4]
     rgbas_u8: jax.Array | None=None
 
-    # float, [n_views, 9+3]
-    transforms: jax.Array | None=None
+    def _free(self):
+        backend = jax.lib.xla_bridge.get_backend()
+        if self._view_indices is not None: backend.buffer_from_pyval(self._view_indices).delete()
+        if self._pixel_indices is not None: backend.buffer_from_pyval(self._pixel_indices).delete()
+        if self.rgbas_u8 is not None: backend.buffer_from_pyval(self.rgbas_u8).delete()
+        backend.buffer_from_pyval(self.transforms).delete()
+        jax.lib.xla_bridge.get_backend().defragment()
 
     @functools.cached_property
     def all_views(self) -> Tuple[ViewData, ...]:
@@ -1017,84 +1020,10 @@ class SceneData:
             self.meta.frames,
         ))
 
-    @property
-    def n_views(self) -> int:
-        return len(self.all_views)
-
-    @property
-    def n_pixels(self) -> int:
-        return min(self.max_pixels, self.meta.n_pixels)
-
-    def resample_pixels(self, /, KEY: jran.KeyArray, new_max_pixels: int | None=None) -> "SceneData":
-        if (self.max_pixels >= self.meta.n_pixels
-            and self.all_views is not None
-            and self.view_indices is not None
-            and self.pixel_indices is not None
-            and self.rgbas_u8 is not None
-            and self.transforms is not None
-        ) and (new_max_pixels is None
-            or new_max_pixels >= self.meta.n_pixels
-        ):
-            # no need to reload data if current object loaded all data deterministically and the new
-            # value of `max_pixels`, if present, would also deterministically load the data
-            return self
-        if new_max_pixels is None:
-            new_max_pixels = self.max_pixels
-
-        # free up GPU memory
-        if self.view_indices is not None: self.view_indices.delete()
-        if self.pixel_indices is not None: self.pixel_indices.delete()
-        if self.rgbas_u8 is not None: self.rgbas_u8.delete()
-        if self.transforms is not None: self.transforms.delete()
-        jax.lib.xla_bridge.get_backend().defragment()
-
-        n_views = len(self.all_views)
-        n_pixels = min(new_max_pixels, self.meta.n_pixels)
-
-        # indices
-        if n_pixels == self.meta.n_pixels:
-            pixel_idcs = n_views * [jnp.arange(self.meta.camera.n_pixels)]
-        else:
-            new_keys = jran.split(KEY, 1 + 1 + n_views)
-            (KEY, key_n), keys_idcs = new_keys[0:2], new_keys[2:]
-            En = n_pixels // n_views
-            ns = jran.randint(
-                key=key_n,
-                shape=(n_views,),
-                minval=max(1, En - 256),
-                maxval=(min(En * 2, En + 256)),
-            ).tolist()
-            pixel_idcs = list(ThreadPoolExecutor().map(
-                lambda n, k: jran.choice(
-                    key=k,
-                    a=self.meta.camera.n_pixels,
-                    shape=(n,),
-                    replace=True,
-                ),
-                ns, keys_idcs,
-            ))
-            n_pixels = sum(map(lambda x: x.shape[0], pixel_idcs))
-
-        rgbas_u8 = ThreadPoolExecutor().map(
-            lambda pidcs, view: view.rgba_u8[pidcs],
-            pixel_idcs,
-            self.all_views,
-        )
-        rgbas_u8 = jnp.concatenate(list(tqdm(
-            rgbas_u8,
-            total=n_views,
-            desc="| {} {} ({:.2f}% of {}) training pixels".format(
-                "loading"
-                if self.view_indices is None
-                else "resampling",
-                n_pixels,
-                n_pixels / self.meta.n_pixels * 100,
-                self.meta.n_pixels,
-            ),
-            bar_format=tqdm_format,
-        )))
-
-        transforms = jnp.stack(list(ThreadPoolExecutor().map(
+    # float, [n_views, 9+3]
+    @functools.cached_property
+    def transforms(self) -> jax.Array:
+        return jnp.stack(list(ThreadPoolExecutor().map(
             lambda view: jnp.concatenate([
                 view.transform.rotation.ravel(),
                 view.transform.translation,
@@ -1102,21 +1031,120 @@ class SceneData:
             self.all_views,
         )))
 
-        view_idcs = jnp.concatenate(list(ThreadPoolExecutor().map(
-            lambda i, pidcs: i * jnp.ones(pidcs.shape[0], dtype=jnp.uint32),
-            range(n_views),
-            pixel_idcs,
-        )))
-        pixel_idcs = jnp.concatenate(pixel_idcs)
+    def _should_load_all_pixels(self, /, max_mem_mbytes: int) -> bool:
+        n_bytes = max_mem_mbytes * 1024 * 1024
+        required_total_mem_bytes = 4 * self.meta.n_pixels
+        return n_bytes >= required_total_mem_bytes
 
-        return dataclasses.replace(
-            self,
-            max_pixels=new_max_pixels,
-            view_indices=view_idcs,
-            pixel_indices=pixel_idcs,
-            rgbas_u8=rgbas_u8,
-            transforms=transforms,
+    @property
+    def load_all_pixels(self) -> bool:
+        return self._should_load_all_pixels(max_mem_mbytes=self.max_mem_mbytes)
+
+    @property
+    def n_views(self) -> int:
+        return len(self.all_views)
+
+    def _calculate_num_pixels(self, /, max_mem_mbytes: int) -> int:
+        if self._should_load_all_pixels(max_mem_mbytes=max_mem_mbytes):
+            return self.meta.n_pixels
+        else:
+            # Dividing by 3 because also need to keep track of view indices and pixel indices, each
+            # consuming the same amount of memory as rgba_u8.
+            n_bytes = max_mem_mbytes * 1024 * 1024
+            return int(n_bytes * .33 / 4)
+
+    @property
+    def n_pixels(self) -> int:
+        return self._calculate_num_pixels(max_mem_mbytes=self.max_mem_mbytes)
+
+    def get_view_indices(self, perm: jax.Array) -> jax.Array:
+        if self._view_indices is not None:
+            return self._view_indices[perm]
+        else:
+            return jnp.floor_divide(perm, self.meta.camera.n_pixels)
+
+    def get_pixel_indices(self, perm: jax.Array) -> jax.Array:
+        if self._pixel_indices is not None:
+            return self._pixel_indices[perm]
+        else:
+            return jnp.mod(perm, self.meta.camera.n_pixels)
+
+    def resample_pixels(self, /, KEY: jran.KeyArray, new_max_mem_mbytes: int | None=None) -> "SceneData":
+        load_all_pixels = self._should_load_all_pixels(new_max_mem_mbytes)
+        if (
+            (self.load_all_pixels and self.rgbas_u8 is not None)
+            and (new_max_mem_mbytes is None or load_all_pixels)
+        ):
+            return dataclasses.replace(self, max_mem_mbytes=new_max_mem_mbytes)
+        if new_max_mem_mbytes is None:
+            new_max_mem_mbytes = self.max_mem_mbytes
+
+        # free up GPU memory
+        self._free()
+        n_pixels = self._calculate_num_pixels(max_mem_mbytes=new_max_mem_mbytes)
+        make_progress_bar = functools.partial(
+            tqdm,
+            total=self.n_views,
+            desc="| {} {} ({:.2f}% of {}) training pixels".format(
+                "loading"
+                if self._view_indices is None
+                else "resampling",
+                n_pixels,
+                n_pixels / self.meta.n_pixels * 100,
+                self.meta.n_pixels,
+            ),
+            bar_format=tqdm_format,
         )
+
+        if load_all_pixels:
+            rgbas_u8 = jnp.concatenate(list(make_progress_bar(ThreadPoolExecutor().map(
+                lambda view: view.rgba_u8,
+                self.all_views,
+            ))))
+            return dataclasses.replace(
+                self,
+                max_mem_mbytes=new_max_mem_mbytes,
+                _view_indices=None,
+                _pixel_indices=None,
+                rgbas_u8=rgbas_u8,
+            )
+        else:
+            KEY, key_n, key_view_perm, key_pixel_idcs = jran.split(KEY, 4)
+            ns = jran.uniform(key_n, shape=(self.n_views - 1,), minval=7, maxval=13)
+            ns = ns / ns.sum()
+            ns = (ns * n_pixels / self.n_views * (self.n_views - 1)).astype(jnp.uint32)
+            ns = jnp.concatenate([ns, (n_pixels - ns.sum()) * jnp.ones_like(ns[:1])])
+            assert ns.sum() == n_pixels
+            sections, ns = jnp.cumsum(ns), ns.tolist()
+
+            pixel_idcs = jran.choice(
+                key=key_pixel_idcs,
+                a=self.meta.camera.n_pixels,
+                shape=(n_pixels,),
+                replace=True,
+            )
+            pixel_idcs_per_view = jnp.split(pixel_idcs, sections)
+
+            view_perm = jran.permutation(key=key_view_perm, x=self.n_views)
+            view_idcs = jnp.concatenate(list(ThreadPoolExecutor().map(
+                lambda vi, pidcs: vi * jnp.ones(pidcs.shape[0], dtype=jnp.uint32),
+                view_perm,
+                pixel_idcs_per_view,
+            )))
+
+            rgbas_u8 = jnp.concatenate(list(make_progress_bar(ThreadPoolExecutor().map(
+                lambda vi, pidcs: self.all_views[vi].rgba_u8[pidcs],
+                view_perm,
+                pixel_idcs_per_view,
+            ))))
+
+            return dataclasses.replace(
+                self,
+                max_mem_mbytes=new_max_mem_mbytes,
+                _view_indices=view_idcs,
+                _pixel_indices=pixel_idcs,
+                rgbas_u8=rgbas_u8,
+            )
 
 
 @dataclass

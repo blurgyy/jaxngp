@@ -239,7 +239,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
         KEY, key_resample, key_train = jran.split(KEY, 3)
         scene_train = scene_train.resample_pixels(
             KEY=key_resample,
-            new_max_pixels=args.scene.max_pixels,
+            new_max_mem_mbytes=args.scene.max_mem_mbytes,
         )
         state, metrics = train_epoch(
             KEY=key_train,
