@@ -1369,6 +1369,9 @@ class NeRFState(TrainState):
             n_alive_grids = alive_marker.sum()
             ratio_trainable = n_alive_grids / n_grids
             pbar.set_description_str("| marked {}/{} ({:.2f}%) grids as trainable".format(n_alive_grids, n_grids, ratio_trainable * 100))
+            if n_alive_grids == n_grids:
+                pbar.close()
+                break
 
         marked_density = jnp.where(alive_marker, self.ogrid.density, -1.)
         marked_occ_mask, marked_occupancy = packbits(
