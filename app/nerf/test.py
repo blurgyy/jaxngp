@@ -39,6 +39,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> in
     if args.report_metrics:
         logger.warn("will not load gt images because either the intrinsics or the extrinsics of the camera have been changed")
         if args.trajectory == "orbit":
+            scene_meta = scene_meta.make_frames_with_orbiting_trajectory(args.orbit)
             logger.info("generated {} camera transforms for testing".format(len(scene_meta.frames)))
     else:
         logger.debug("loading testing frames from {}".format(args.frames))
@@ -46,9 +47,6 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> in
 
     if args.camera_override.enabled:
         scene_meta = scene_meta.replace(camera=args.camera_override.update_camera(scene_meta.camera))
-
-    if args.trajectory == "orbit":
-        scene_meta = scene_meta.make_frames_with_orbiting_trajectory(args.orbit)
 
     # load parameters
     logger.debug("loading checkpoint from '{}'".format(args.ckpt))
