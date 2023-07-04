@@ -59,11 +59,9 @@ class NeRF(nn.Module):
         original_aux_shapes = xyz.shape[:-1]
         n_samples = functools.reduce(int.__mul__, original_aux_shapes)
         xyz = xyz.reshape(n_samples, 3)
-        # scale and translate xyz coordinates into unit cube
-        xyz = (xyz + self.bound) / (2 * self.bound)
 
         # [n_samples, D_pos], `float32`
-        pos_enc, tv = self.position_encoder(xyz)
+        pos_enc, tv = self.position_encoder(xyz, self.bound)
 
         x = self.density_mlp(pos_enc)
         # [n_samples, 1], [n_samples, density_MLP_out-1]

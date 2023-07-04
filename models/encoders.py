@@ -81,8 +81,11 @@ class HashGridEncoder(Encoder):
         return math.exp((math.log(self.N_max) - math.log(self.N_min)) / (self.L - 1))
 
     @nn.compact
-    def __call__(self, pos: jax.Array) -> jax.Array:
+    def __call__(self, pos: jax.Array, bound: jax.Array) -> jax.Array:
         chex.assert_axis_dimension(pos, -1, self.dim)
+
+        # CAVEAT: hashgrid encoder is defined only in the unit cube [0, 1)^3
+        pos = (pos + bound) / (2 * bound)
 
         scales, resolutions, first_hash_level, offsets = [], [], 0, [0]
         for i in range(self.L):
@@ -257,8 +260,11 @@ class HashGridEncoder(Encoder):
 @empty_impl
 class TCNNHashGridEncoder(HashGridEncoder):
     @nn.compact
-    def __call__(self, pos: jax.Array) -> jax.Array:
+    def __call__(self, pos: jax.Array, bound: float) -> jax.Array:
         chex.assert_axis_dimension(pos, -1, self.dim)
+
+        # CAVEAT: hashgrid encoder is defined only in the unit cube [0, 1)^3
+        pos = (pos + bound) / (2 * bound)
 
         scales, resolutions, first_hash_level, offsets = [], [], 0, [0]
         for i in range(self.L):
