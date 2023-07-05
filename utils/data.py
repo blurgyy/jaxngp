@@ -344,17 +344,17 @@ def to_unit_cube_2d(xys: jax.Array, W: int, H: int):
     return uvs
 
 
-@jit_jaxfn_with(static_argnames=["H", "W", "vertical", "gap", "gap_color"])
+@jit_jaxfn_with(static_argnames=["height", "width", "vertical", "gap", "gap_color"])
 def side_by_side(
     lhs: jax.Array,
     rhs: jax.Array,
-    H: int=None,
-    W: int=None,
+    height: int=None,
+    width: int=None,
     vertical: bool=False,
     gap: int=5,
     gap_color: RGBColorU8=(0xab, 0xcd, 0xef),
 ) -> jax.Array:
-    chex.assert_not_both_none(H, W)
+    chex.assert_not_both_none(height, width)
     chex.assert_scalar_non_negative(vertical)
     chex.assert_type([lhs, rhs], jnp.uint8)
     if len(lhs.shape) == 2 or lhs.shape[-1] == 1:
@@ -366,35 +366,35 @@ def side_by_side(
     if lhs.shape[-1] == 3:
         lhs = jnp.concatenate([lhs, 255 * jnp.ones_like(lhs[..., -1:], dtype=jnp.uint8)], axis=-1)
     if vertical:
-        chex.assert_axis_dimension(lhs, 1, W)
-        chex.assert_axis_dimension(rhs, 1, W)
+        chex.assert_axis_dimension(lhs, 1, width)
+        chex.assert_axis_dimension(rhs, 1, width)
     else:
-        chex.assert_axis_dimension(lhs, 0, H)
-        chex.assert_axis_dimension(rhs, 0, H)
+        chex.assert_axis_dimension(lhs, 0, height)
+        chex.assert_axis_dimension(rhs, 0, height)
     concat_axis = 0 if vertical else 1
     if gap > 0:
         gap_color = jnp.asarray(gap_color + (0xff,), dtype=jnp.uint8)
-        gap = jnp.broadcast_to(gap_color, (gap, W, 4) if vertical else (H, gap, 4))
+        gap = jnp.broadcast_to(gap_color, (gap, width, 4) if vertical else (height, gap, 4))
         return jnp.concatenate([lhs, gap, rhs], axis=concat_axis)
     else:
         return jnp.concatenate([lhs, rhs], axis=concat_axis)
 
 
-@jit_jaxfn_with(static_argnames=["width", "color"])
+@jit_jaxfn_with(static_argnames=["border_pixels", "color"])
 def add_border(
     img: jax.Array,
-    width: int=5,
+    border_pixels: int=5,
     color: RGBColorU8=(0xfe, 0xdc, 0xba)
 ) -> jax.Array:
     chex.assert_rank(img, 3)
     chex.assert_axis_dimension(img, -1, 4)
-    chex.assert_scalar_non_negative(width)
+    chex.assert_scalar_non_negative(border_pixels)
     chex.assert_type(img, jnp.uint8)
     color = jnp.asarray(color + (0xff,), dtype=jnp.uint8)
-    H, W = img.shape[:2]
-    leftright = jnp.broadcast_to(color, (H, width, 4))
+    height, width = img.shape[:2]
+    leftright = jnp.broadcast_to(color, (height, border_pixels, 4))
     img = jnp.concatenate([leftright, img, leftright], axis=1)
-    topbottom = jnp.broadcast_to(color, (width, W+2*width, 4))
+    topbottom = jnp.broadcast_to(color, (border_pixels, width+2*border_pixels, 4))
     img = jnp.concatenate([topbottom, img, topbottom], axis=0)
     return img
 

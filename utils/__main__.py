@@ -105,18 +105,18 @@ def main(args: Args):
             lambda img: blend_rgba_image_array(img, bg=args.bg) if img.shape[-1] == 4 else img,
             map(np.asarray, map(Image.open, args.image_paths)),
         ))
-        H, W = images[0].shape[:2]
+        height, width = images[0].shape[:2]
         oimg = reduce(
             partial(
                 side_by_side,
-                H=(None if args.vertical else H),
-                W=(W if args.vertical else None),
+                height=(None if args.vertical else height),
+                width=(width if args.vertical else None),
                 vertical=args.vertical,
                 gap=args.gap,
             ),
             images,
         )
-        oimg = add_border(oimg, width=args.border)
+        oimg = add_border(oimg, border_pixels=args.border)
         logger.info("saving image ...")
         Image.fromarray(np.asarray(oimg)).save(args.out)
         logger.info("image ({}x{}) saved to '{}'".format(oimg.shape[1], oimg.shape[0], args.out))

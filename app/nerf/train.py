@@ -296,8 +296,8 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
             for val_i, val_view in enumerate(common.tqdm(scene_val.all_views, desc="| validating")):
                 logger.debug("validating on {}".format(val_view.file))
                 val_transform = RigidTransformation(
-                    rotation=scene_val.all_transforms[val_i, :9].reshape(3, 3),
-                    translation=scene_val.all_transforms[val_i, -3:].reshape(3),
+                    rotation=scene_val.transforms[val_i, :9].reshape(3, 3),
+                    translation=scene_val.transforms[val_i, -3:].reshape(3),
                 )
                 KEY, key = jran.split(KEY, 2)
                 bg, rgb, disparity, _ = data.to_cpu(render_image_inference(
