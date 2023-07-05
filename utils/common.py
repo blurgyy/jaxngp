@@ -139,6 +139,7 @@ def setup_logging(
             }
             back = {
                 "red": Back.RED if rich_color else "[",
+                "yellow": Back.YELLOW if rich_color else "[",
             }
             style = {
                 "bright": Style.BRIGHT if rich_color else "[",
@@ -154,8 +155,8 @@ def setup_logging(
             formats = {
                 logging.DEBUG: fmt.replace("LVL", fore["blue"] + "DEBUG" + style["reset_all"]),
                 logging.INFO: fmt.replace("LVL", " " + fore["green"] + "INFO" + style["reset_all"]),
-                logging.WARN: fmt.replace("LVL", " " + fore["yellow"] + "WARN" + style["reset_all"]),
-                logging.ERROR: fmt.replace("LVL", fore["red"] + "ERROR" + style["reset_all"]),
+                logging.WARN: fmt.replace("LVL", " " + back["yellow"] + fore["black"] + "WARN" + style["reset_all"]),
+                logging.ERROR: fmt.replace("LVL", back["red"] + fore["black"] + "ERROR" + style["reset_all"]),
                 logging.CRITICAL: fmt.replace("LVL", " " + back["red"] + fore["black"] + style["bright"] + "CRIT" + style["reset_all"]),
             }
             self.formatters = {
