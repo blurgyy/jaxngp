@@ -40,13 +40,12 @@ inline __device__ std::uint32_t mip_from_ds(float ds, std::uint32_t G, std::uint
 
 inline __device__ vec3u floor_grid_pos(
     vec3f const & grid_pos,
-    std::uint32_t const & K,
     std::uint32_t const & G
 ) {
     return {
-        static_cast<unsigned int>(clampi(floorf(grid_pos.x), 0, G-1)),
-        static_cast<unsigned int>(clampi(floorf(grid_pos.y), 0, G-1)),
-        static_cast<unsigned int>(clampi(floorf(grid_pos.z), 0, G-1)),
+        static_cast<std::uint32_t>(clampi(floorf(grid_pos.x), 0, G-1)),
+        static_cast<std::uint32_t>(clampi(floorf(grid_pos.y), 0, G-1)),
+        static_cast<std::uint32_t>(clampi(floorf(grid_pos.z), 0, G-1)),
     };
 }
 
@@ -75,6 +74,27 @@ inline __device__ std::uint32_t __morton3D_invert(std::uint32_t x) {
     x = (x | (x >> 8)) & 0xff0000ff;
     x = (x | (x >> 16)) & 0x0000ffff;
     return x;
+}
+
+inline __device__ vec3f get_grid_pos_and_intermediates(
+    vec3f const & pos
+    , float const ds
+    , float const bound
+    , std::uint32_t const K
+    , std::uint32_t const G
+    // write intermediate values
+    , std::uint32_t * const cascade_ptr
+    , float * const mip_bound_ptr
+) {
+    // among the grids covering xyz, the finest one with cell side-length larger than Δ𝑡 is
+    // queried.
+    *cascade_ptr = max(
+        mip_from_xyz(pos, K),
+        mip_from_ds(ds, G, K)
+    );
+    // the bound of this mip is [-mip_bound, mip_bound]
+    *mip_bound_ptr = fminf(scalbnf(1.f, *cascade_ptr), bound);
+    return .5f * (pos / (*mip_bound_ptr) + 1.f) * G;
 }
 
 // kernel, REF: <https://github.com/ashawkey/torch-ngp/blob/b6e080468925f0bb44827b4f8f0ed08291dcf8a9/raymarching/src/raymarching.cu#L312>
@@ -132,49 +152,38 @@ __global__ void march_rays_kernel(
 
     // precompute
     std::uint32_t const G3 = G*G*G;
-    vec3f const id = 1.f / d;
-    float const iG = 1.f / G;
+    vec3f const inv_d = 1.f / d;
+    float const inv_G = 1.f / G;
 
     // actually march rays
     /// but not writing the samples to output!  Writing is done in another marching pass below
     std::uint32_t ray_n_samples = 0;
     float ray_t = ray_t_start;
-    ray_t += calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps) * ray_noise;
+    ray_t += calc_ds(ray_t, stepsize_portion, bound, inv_G, diagonal_n_steps) * ray_noise;
     while (ray_n_samples < diagonal_n_steps * bound && ray_t < ray_t_end) {
         vec3f const pos = o + ray_t * d;
 
-        float const ds = calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps);
+        float const ds = calc_ds(ray_t, stepsize_portion, bound, inv_G, diagonal_n_steps);
 
-        // among the grids covering xyz, the finest one with cell side-length larger than Δ𝑡 is
-        // queried.
-        std::uint32_t const cascade = max(
-            mip_from_xyz(pos, K),
-            mip_from_ds(ds, G, K)
-        );
-
-        // the bound of this mip is [-mip_bound, mip_bound]
-        float const mip_bound = fminf(scalbnf(1.f, cascade), bound);
-        float const imip_bound = 1.f / mip_bound;
-
-        vec3f const grid_posf = .5f * (pos * imip_bound + 1.f) * G;
-        vec3u const grid_pos = floor_grid_pos(grid_posf, K, G);
-
+        std::uint32_t cascade;
+        float mip_bound;
+        vec3f const grid_posf = get_grid_pos_and_intermediates(pos, ds, bound, K, G, &cascade, &mip_bound);
+        vec3u const grid_pos = floor_grid_pos(grid_posf, G);
         std::uint32_t const grid_index = cascade * G3 + __morton3D(grid_pos);
+
         bool const occupied = occupancy_bitfield[grid_index >> 3] & (1 << (grid_index & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
 
         float new_ray_t = ray_t + ds;
         if (occupied) {
             ++ray_n_samples;
         } else {
-            float const tx = ((floorf(grid_posf.x + .5f + .5f * signf(d.x)) * iG * 2 - 1) * mip_bound - pos.x) * id.x;
-            float const ty = ((floorf(grid_posf.y + .5f + .5f * signf(d.y)) * iG * 2 - 1) * mip_bound - pos.y) * id.y;
-            float const tz = ((floorf(grid_posf.z + .5f + .5f * signf(d.z)) * iG * 2 - 1) * mip_bound - pos.z) * id.z;
-
+            vec3f const next_grid = floor_vec3f(grid_posf + .5f + .5f * sign_vec3f(d));
+            vec3f const delta = ((next_grid * inv_G * 2 - 1) * mip_bound - pos) * inv_d;
             // distance to next voxel
-            float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
+            float const next_t = ray_t + fmaxf(0.0f, fminf(delta.x, fminf(delta.y, delta.z)));
             // step until next voxel
-            while (new_ray_t < tt) {
-                new_ray_t += calc_ds(new_ray_t, stepsize_portion, bound, iG, diagonal_n_steps);
+            while (new_ray_t < next_t) {
+                new_ray_t += calc_ds(new_ray_t, stepsize_portion, bound, inv_G, diagonal_n_steps);
             }
         }
         ray_t = new_ray_t;
@@ -203,30 +212,21 @@ __global__ void march_rays_kernel(
     // march rays again, this time write sampled points to output
     std::uint32_t steps = 0;
     ray_t = ray_t_start;
-    ray_t += calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps) * ray_noise;
+    ray_t += calc_ds(ray_t, stepsize_portion, bound, inv_G, diagonal_n_steps) * ray_noise;
     // NOTE:
     //  we still need the condition (ray_t < ray_t_end) because if a ray never hits an occupied grid
     //  cell, its `steps` won't increment, adding this condition avoids infinite loops.
     while (steps < ray_n_samples && ray_t < ray_t_end) {
         vec3f const pos = o + ray_t * d;
 
-        float const ds = calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps);
+        float const ds = calc_ds(ray_t, stepsize_portion, bound, inv_G, diagonal_n_steps);
 
-        // among the grids covering xyz, the finest one with cell side-length larger than Δ𝑡 is
-        // queried.
-        std::uint32_t const cascade = max(
-            mip_from_xyz(pos, K),
-            mip_from_ds(ds, G, K)
-        );
-
-        // the bound of this mip is [-mip_bound, mip_bound]
-        float const mip_bound = fminf(scalbnf(1.f, cascade), bound);
-        float const imip_bound = 1.f / mip_bound;
-
-        vec3f const grid_posf = .5f * (pos * imip_bound + 1.f) * G;
-        vec3u const grid_pos = floor_grid_pos(grid_posf, K, G);
-
+        std::uint32_t cascade;
+        float mip_bound;
+        vec3f const grid_posf = get_grid_pos_and_intermediates(pos, ds, bound, K, G, &cascade, &mip_bound);
+        vec3u const grid_pos = floor_grid_pos(grid_posf, G);
         std::uint32_t const grid_index = cascade * G3 + __morton3D(grid_pos);
+
         bool const occupied = occupancy_bitfield[grid_index >> 3] & (1 << (grid_index & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
 
         float new_ray_t = ray_t + ds;
@@ -243,15 +243,13 @@ __global__ void march_rays_kernel(
 
             ++steps;
         } else {
-            float const tx = ((floorf(grid_posf.x + .5f + .5f * signf(d.x)) * iG * 2 - 1) * mip_bound - pos.x) * id.x;
-            float const ty = ((floorf(grid_posf.y + .5f + .5f * signf(d.y)) * iG * 2 - 1) * mip_bound - pos.y) * id.y;
-            float const tz = ((floorf(grid_posf.z + .5f + .5f * signf(d.z)) * iG * 2 - 1) * mip_bound - pos.z) * id.z;
-
+            vec3f const next_grid = floor_vec3f(grid_posf + .5f + .5f * sign_vec3f(d));
+            vec3f const delta = ((next_grid * inv_G * 2 - 1) * mip_bound - pos) * inv_d;
             // distance to next voxel
-            float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
+            float const next_t = ray_t + fmaxf(0.0f, fminf(delta.x, fminf(delta.y, delta.z)));
             // step until next voxel
-            while (new_ray_t < tt) {
-                new_ray_t += calc_ds(new_ray_t, stepsize_portion, bound, iG, diagonal_n_steps);
+            while (new_ray_t < next_t) {
+                new_ray_t += calc_ds(new_ray_t, stepsize_portion, bound, inv_G, diagonal_n_steps);
             }
         }
         ray_t = new_ray_t;
@@ -312,31 +310,22 @@ __global__ void march_rays_inference_kernel(
     float * const __restrict__ ray_z_vals = z_vals + i * march_steps_cap;
 
     std::uint32_t const G3 = G*G*G;
-    vec3f const id = 1.f / d;
-    float const iG = 1.f / G;
+    vec3f const inv_d = 1.f / d;
+    float const inv_G = 1.f / G;
 
     std::uint32_t steps = 0;
     float ray_t = ray_t_start;
     while (steps < march_steps_cap && ray_t < ray_t_end) {
         vec3f const pos = o + ray_t * d;
 
-        float const ds = calc_ds(ray_t, stepsize_portion, bound, iG, diagonal_n_steps);
+        float const ds = calc_ds(ray_t, stepsize_portion, bound, inv_G, diagonal_n_steps);
 
-        // among the grids covering xyz, the finest one with cell side-length larger than Δ𝑡 is
-        // queried.
-        std::uint32_t const cascade = max(
-            mip_from_xyz(pos, K),
-            mip_from_ds(ds, G, K)
-        );
-
-        // the bound of this mip is [-mip_bound, mip_bound]
-        float const mip_bound = fminf(scalbnf(1.f, cascade), bound);
-        float const imip_bound = 1.f / mip_bound;
-
-        vec3f const grid_posf = .5f * (pos * imip_bound + 1.f) * G;
-        vec3u const grid_pos = floor_grid_pos(grid_posf, K, G);
-
+        std::uint32_t cascade;
+        float mip_bound;
+        vec3f const grid_posf = get_grid_pos_and_intermediates(pos, ds, bound, K, G, &cascade, &mip_bound);
+        vec3u const grid_pos = floor_grid_pos(grid_posf, G);
         std::uint32_t const grid_index = cascade * G3 + __morton3D(grid_pos);
+
         bool const occupied = occupancy_bitfield[grid_index >> 3] & (1 << (grid_index & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
 
         float new_ray_t = ray_t + ds;
@@ -349,15 +338,13 @@ __global__ void march_rays_inference_kernel(
 
             ++steps;
         } else {
-            float const tx = ((floorf(grid_posf.x + .5f + .5f * signf(d.x)) * iG * 2 - 1) * mip_bound - pos.x) * id.x;
-            float const ty = ((floorf(grid_posf.y + .5f + .5f * signf(d.y)) * iG * 2 - 1) * mip_bound - pos.y) * id.y;
-            float const tz = ((floorf(grid_posf.z + .5f + .5f * signf(d.z)) * iG * 2 - 1) * mip_bound - pos.z) * id.z;
-
+            vec3f const next_grid = floor_vec3f(grid_posf + .5f + .5f * sign_vec3f(d));
+            vec3f const delta = ((next_grid * inv_G * 2 - 1) * mip_bound - pos) * inv_d;
             // distance to next voxel
-            float const tt = ray_t + fmaxf(0.0f, fminf(tx, fminf(ty, tz)));
+            float const next_t = ray_t + fmaxf(0.0f, fminf(delta.x, fminf(delta.y, delta.z)));
             // step until next voxel
-            while (new_ray_t < tt) {
-                new_ray_t += calc_ds(new_ray_t, stepsize_portion, bound, iG, diagonal_n_steps);
+            while (new_ray_t < next_t) {
+                new_ray_t += calc_ds(new_ray_t, stepsize_portion, bound, inv_G, diagonal_n_steps);
             }
         }
         ray_t = new_ray_t;

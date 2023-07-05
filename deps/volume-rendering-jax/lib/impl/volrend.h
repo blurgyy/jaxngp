@@ -240,6 +240,20 @@ struct vec3 {
         return (*this) / vec3 {rhs, rhs, rhs};
     }
 };
+inline __device__ vec3<float> sign_vec3f(vec3<float> const & v) {
+    return {
+        signf(v.x),
+        signf(v.y),
+        signf(v.z),
+    };
+}
+inline __device__ vec3<float> floor_vec3f(vec3<float> const & v) {
+    return {
+        floorf(v.x),
+        floorf(v.y),
+        floorf(v.z),
+    };
+}
 template<typename T>
 inline __device__ vec3<T> operator+(T const & lhs, vec3<T> const & rhs) {
     return rhs + lhs;
