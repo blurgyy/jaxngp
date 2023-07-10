@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from typing import List
 from typing_extensions import assert_never
 
@@ -152,7 +153,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> in
         dest_disparity.mkdir(parents=True, exist_ok=True)
 
         logger.debug("saving as images")
-        for save_i, img in enumerate(common.tqdm(rendered_images, desc="| saving images")):
+        def save_rgb_and_disparity(save_i: int, img: RenderedImage):
             common.compose(
                 np.asarray,
                 Image.fromarray
@@ -163,4 +164,14 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> in
                 np.asarray,
                 Image.fromarray
             )(img.disparity).save(dest_disparity.joinpath("{:04d}.png".format(save_i)))
+        for _ in common.tqdm(
+            ThreadPoolExecutor().map(
+                save_rgb_and_disparity,
+                range(len(rendered_images)),
+                rendered_images,
+            ),
+            total=len(rendered_images),
+            desc="| saving images",
+        ):
+            pass
     return 0
