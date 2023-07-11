@@ -54,7 +54,7 @@ def train_epoch(
                     scene=scene,
                     perm=perm,
                 )
-                n_processed_rays += metrics["n_valid_rays"]
+                n_processed_rays += state.batch_config.n_rays
                 loss = metrics["loss"]
                 if total_loss is None:
                     total_loss = loss
