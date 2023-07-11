@@ -122,11 +122,12 @@ def train_epoch(
 
 
 def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> int:
+    if args.exp_dir.exists():
+        logger.error("specified experiment directory '{}' already exists".format(args.exp_dir))
+        return 1
     if args.ckpt is not None and not args.ckpt.exists():
         logger.error("specified checkpoint '{}' does not exist".format(args.ckpt))
-        return 1
-    if args.exp_dir.exists():
-        logger.warn("specified experiment directory '{}' already exists".format(args.exp_dir))
+        return 2
     logs_dir = args.exp_dir.joinpath("logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
     logger = common.setup_logging(
@@ -224,7 +225,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
         state = checkpoints.restore_checkpoint(args.ckpt, target=state)
         if state.step == 0:
             logger.error("an empty checkpoint was loaded from '{}'".format(args.ckpt))
-            return 2
+            return 3
         logger.info("checkpoint loaded from '{}' (step={})".format(args.ckpt, int(state.step)))
     state = state.mark_untrained_density_grid()  # still needs to mark grids even if state is loaded
 
