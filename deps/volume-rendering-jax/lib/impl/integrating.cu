@@ -231,10 +231,11 @@ __global__ void integrate_rays_backward_kernel(
         ray_dL_ddrgbs[sample_idx * 4 + 3] = weight * ray_dL_dfinal_rgbd[2];
     }
 
-    // gradients for background colors
-    ray_dL_dbgs[0] = transmittance * ray_dL_dfinal_rgbd[0];
-    ray_dL_dbgs[1] = transmittance * ray_dL_dfinal_rgbd[1];
-    ray_dL_dbgs[2] = transmittance * ray_dL_dfinal_rgbd[2];
+    if (transmittance > T_THRESHOLD) {  // gradients for background colors
+        ray_dL_dbgs[0] = transmittance * ray_dL_dfinal_rgbd[0];
+        ray_dL_dbgs[1] = transmittance * ray_dL_dfinal_rgbd[1];
+        ray_dL_dbgs[2] = transmittance * ray_dL_dfinal_rgbd[2];
+    }
 }
 
 __global__ void integrate_rays_inference_kernel(
