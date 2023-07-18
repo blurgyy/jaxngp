@@ -130,6 +130,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
         return 2
     logs_dir = args.exp_dir.joinpath("logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
+
     logger = common.setup_logging(
         "nerf.train",
         file=logs_dir.joinpath("train.log"),
@@ -137,9 +138,14 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
         level=args.common.logging.upper(),
         file_level="DEBUG",
     )
-    args.exp_dir.joinpath("config.yaml").write_text(tyro.to_yaml(args))
     logger.write_hparams(dataclasses.asdict(args))
-    logger.info("configurations saved to '{}'".format(args.exp_dir.joinpath("config.yaml")))
+
+    save_dir = common.backup_current_codebase(args.exp_dir)
+    save_dir.joinpath("config.yaml").write_text(tyro.to_yaml(args))
+    logger.info("code saved to '{}', configurations saved at '{}'".format(
+        save_dir,
+        save_dir.joinpath("config.yaml"),
+    ))
 
     # data
     logger.info("loading training frames")

@@ -82,6 +82,7 @@
           ffmpeg-python
           pydantic
           natsort
+          GitPython
 
           pkgs.dearpygui
           pkgs.pycolmap

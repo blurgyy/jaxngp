@@ -2,13 +2,16 @@ from concurrent.futures import Executor, Future, ThreadPoolExecutor
 import functools
 import logging
 import logging
+import os
 from pathlib import Path
 import random
+import shutil
 from typing import Any, Dict, Hashable, Iterable, Sequence, get_args
 
 import colorama
 from colorama import Back, Fore, Style
 from flax.metrics import tensorboard
+import git
 import jax
 from jax._src.lib import xla_client as xc
 import jax.random as jran
@@ -53,6 +56,53 @@ class Logger(logging.Logger):
 
 
 tqdm = functools.partial(tqdm_original, bar_format=tqdm_format)
+
+
+def backup_current_codebase(exp_dir: Path | str) -> int:
+    """Backup current codebase to a directory named 'src' under the specified `exp_dir` directory,
+    creating it if it does not exist.
+    """
+    repo = git.Repo(".", search_parent_directories=True)
+    try:
+        __initial_commit = repo.commit("aa9f8c73c2a2d164e9e117b99a6543893eeed23f")
+    except ValueError:
+        raise ValueError("This is not the jaxngp repository")
+
+    os.chdir(repo.git.working_dir)
+
+    exp_dir = Path(exp_dir)
+    save_root_dir = exp_dir.joinpath("src")
+    save_root_dir.mkdir(parents=False, exist_ok=True)
+    epoch = 0
+    save_dir = save_root_dir.joinpath("#{:03d}".format(epoch))
+    while save_dir.exists():
+        epoch += 1
+        save_dir = save_root_dir.joinpath("#{:03d}".format(epoch))
+
+    save_dir.mkdir(parents=False, exist_ok=False)
+
+    shutil.copyfile("flake.nix", save_dir.joinpath("flake.nix"))
+    shutil.copyfile("flake.lock", save_dir.joinpath("flake.lock"))
+    shutil.copyfile("pyproject.toml", save_dir.joinpath("pyproject.toml"))
+    shutil.copyfile("README.md", save_dir.joinpath("README.md"))
+
+    def ignored_files(dir, files):
+        return [
+            ".clangd",
+            ".clang-format",
+        ]
+
+    shutil.copytree("app", save_dir.joinpath("app"), dirs_exist_ok=False, ignore=ignored_files)
+    shutil.copytree("deps", save_dir.joinpath("deps"), dirs_exist_ok=False, ignore=ignored_files)
+    shutil.copytree("models", save_dir.joinpath("models"), dirs_exist_ok=False, ignore=ignored_files)
+    shutil.copytree("utils", save_dir.joinpath("utils"), dirs_exist_ok=False, ignore=ignored_files)
+
+    with open(save_dir.joinpath("commit-sha"), "w") as f:
+        f.write(repo.head.object.hexsha)
+    with open(save_dir.joinpath("working-directory"), "w") as f:
+        f.write(os.getcwd())
+
+    return save_dir
 
 
 def compose(*fns):
