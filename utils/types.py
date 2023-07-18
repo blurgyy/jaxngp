@@ -635,6 +635,14 @@ class SceneOptions:
             "resolution_scale must be in range [0, 1], got {}".format(self.resolution_scale)
         )
 
+    @property
+    def up_unitvec(self) -> Tuple[float, float, float] | None:
+        if self.up is None:
+            return None
+        up = np.asarray(self.up)
+        up = up / np.linalg.norm(up)
+        return tuple(up.tolist())
+
 
 @dataclass
 class RigidTransformation:

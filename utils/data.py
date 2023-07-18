@@ -619,8 +619,8 @@ def load_scene(
     srcs = list(map(Path, srcs))
 
     transforms = merge_transforms(map(load_transform_json_recursive, srcs))
-    if scene_options.up is not None:
-        transforms = transforms.replace(up=scene_options.up).rotate_world_up()
+    if scene_options.up_unitvec is not None:
+        transforms = transforms.replace(up=scene_options.up_unitvec).rotate_world_up()
     if transforms is None:
         raise FileNotFoundError("could not load transforms from any of {}".format(srcs))
 
