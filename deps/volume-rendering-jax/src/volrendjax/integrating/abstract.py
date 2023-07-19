@@ -29,14 +29,14 @@ def integrate_rays_abstract(
         )
 
     shapes = {
-        "helper.counter": (1,),
+        "helper.measured_batch_size": (1,),
 
         "out.final_rgbds": (n_rays, 4),
         "out.final_opacities": (n_rays,),
     }
 
     return (
-        jax.ShapedArray(shape=shapes["helper.counter"], dtype=jnp.uint32),
+        jax.ShapedArray(shape=shapes["helper.measured_batch_size"], dtype=jnp.uint32),
 
         jax.ShapedArray(shape=shapes["out.final_rgbds"], dtype=jnp.float32),
         jax.ShapedArray(shape=shapes["out.final_opacities"], dtype=jnp.float32),

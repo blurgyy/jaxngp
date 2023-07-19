@@ -176,7 +176,7 @@ def march_and_integrate_inference(
     locked_nerf_params: FrozenVariableDict,
     appearance_embedding: jax.Array,
 
-    counter: jax.Array,
+    next_ray_index: jax.Array,
     rays_o: jax.Array,
     rays_d: jax.Array,
     t_starts: jax.Array,
@@ -190,7 +190,7 @@ def march_and_integrate_inference(
     rays_T: jax.Array,
     rays_cost: jax.Array | None,
 ):
-    counter, indices, n_samples, t_starts, xyzs, dss, z_vals = march_rays_inference(
+    next_ray_index, indices, n_samples, t_starts, xyzs, dss, z_vals = march_rays_inference(
         diagonal_n_steps=payload.diagonal_n_steps,
         K=payload.cascades,
         G=payload.density_grid_res,
@@ -202,7 +202,7 @@ def march_and_integrate_inference(
         t_starts=t_starts,
         t_ends=t_ends,
         occupancy_bitfield=occupancy_bitfield,
-        counter=counter,
+        next_ray_index_in=next_ray_index,
         terminated=terminated,
         indices=indices,
     )
@@ -229,7 +229,7 @@ def march_and_integrate_inference(
         drgbs=drgbs,
     )
 
-    return terminate_cnt, terminated, counter, indices, t_starts, rays_rgbd, rays_T, rays_cost
+    return terminate_cnt, terminated, next_ray_index, indices, t_starts, rays_rgbd, rays_T, rays_cost
 
 
 def render_image_inference(
@@ -281,7 +281,7 @@ def render_image_inference(
     march_steps_cap = max(1, int(march_steps_cap))
     n_rays = min(65536 // march_steps_cap, state.scene_meta.camera.n_pixels)
 
-    counter = jnp.zeros(1, dtype=jnp.uint32)
+    next_ray_index = jnp.zeros(1, dtype=jnp.uint32)
     terminated = jnp.ones(n_rays, dtype=jnp.bool_)  # all rays are terminated at the beginning
     indices = jnp.zeros(n_rays, dtype=jnp.uint32)
     n_rendered_rays = 0
@@ -291,7 +291,7 @@ def render_image_inference(
         iters = 2 ** int(math.log2(iters) + 1)
 
         for _ in range(iters):
-            terminate_cnt, terminated, counter, indices, t_starts, rays_rgbd, rays_T, rays_cost = march_and_integrate_inference(
+            terminate_cnt, terminated, next_ray_index, indices, t_starts, rays_rgbd, rays_T, rays_cost = march_and_integrate_inference(
                 payload=MarchAndIntegrateInferencePayload(
                     march_steps_cap=march_steps_cap,
                     diagonal_n_steps=state.raymarch.diagonal_n_steps,
@@ -304,7 +304,7 @@ def render_image_inference(
                 locked_nerf_params=state.locked_params["nerf"],
                 appearance_embedding=appearance_embedding,
 
-                counter=counter,
+                next_ray_index=next_ray_index,
                 rays_o=o_world,
                 rays_d=d_world,
                 t_starts=t_starts,

@@ -117,7 +117,7 @@ __global__ void march_rays_kernel(
     , std::uint8_t const * const __restrict__ occupancy_bitfield  // [K*G*G*G//8]
 
     // accumulator for writing a compact output samples array
-    , std::uint32_t * const __restrict__ counter
+    , std::uint32_t * const __restrict__ measured_batch_size_before_compaction
     , std::uint32_t * const __restrict__ n_valid_rays
 
     // outputs
@@ -197,7 +197,7 @@ __global__ void march_rays_kernel(
     rays_n_samples[i] = ray_n_samples;
 
     // record the index of the first generated sample on this ray
-    std::uint32_t const ray_sample_startidx = atomicAdd(counter, ray_n_samples);
+    std::uint32_t const ray_sample_startidx = atomicAdd(measured_batch_size_before_compaction, ray_n_samples);
     if (ray_sample_startidx + ray_n_samples > total_samples) { return; }
     atomicAdd(n_valid_rays, 1u);
     rays_sample_startidx[i] = ray_sample_startidx;
@@ -275,7 +275,7 @@ __global__ void march_rays_inference_kernel(
     , bool const * const __restrict__ terminated  // [n_rays]
     , std::uint32_t const * const __restrict__ indices_in  // [n_rays]
 
-    , std::uint32_t * const __restrict__ counter  // [1]
+    , std::uint32_t * const __restrict__ next_ray_index  // [1]
     , std::uint32_t * const __restrict__ indices_out  // [n_rays]
     , std::uint32_t * const __restrict__ n_samples  // [n_rays]
     , float * const __restrict__ t_starts_out  // [n_rays]
@@ -286,7 +286,7 @@ __global__ void march_rays_inference_kernel(
     std::uint32_t const i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_rays) { return; }
 
-    std::uint32_t const ray_idx = terminated[i] ? atomicAdd(counter, 1u) : indices_in[i];
+    std::uint32_t const ray_idx = terminated[i] ? atomicAdd(next_ray_index, 1u) : indices_in[i];
     indices_out[i] = ray_idx;
     if (ray_idx >= n_total_rays) { return; }
 
@@ -414,7 +414,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     std::uint8_t const * const __restrict__ occupancy_bitfield = static_cast<std::uint8_t *>(next_buffer());  // [K*G*G*G//8]
 
     // helper
-    std::uint32_t * const __restrict__ counter = static_cast<std::uint32_t *>(next_buffer());
+    std::uint32_t * const __restrict__ measured_batch_size_before_compaction = static_cast<std::uint32_t *>(next_buffer());
     std::uint32_t * const __restrict__ n_valid_rays = static_cast<std::uint32_t *>(next_buffer());
 
     // outputs
@@ -427,7 +427,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     float * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [total_samples]
 
     // reset helper counter and outputs to zeros
-    CUDA_CHECK_THROW(cudaMemsetAsync(counter, 0x00, sizeof(std::uint32_t), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(measured_batch_size_before_compaction, 0x00, sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(n_valid_rays, 0x00, sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(rays_n_samples, 0x00, n_rays * sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(rays_sample_startidx, 0x00, n_rays * sizeof(std::uint32_t), stream));
@@ -458,7 +458,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
         , noises
         , occupancy_bitfield
 
-        , counter
+        , measured_batch_size_before_compaction
         , n_valid_rays
 
         // outputs
@@ -498,12 +498,12 @@ void march_rays_inference_launcher(cudaStream_t stream, void **buffers, char con
     float const * const __restrict__ t_starts = static_cast<float *>(next_buffer());  // [n_total_rays]
     float const * const __restrict__ t_ends = static_cast<float *>(next_buffer());  // [n_total_rays]
     std::uint8_t const * const __restrict__ occupancy_bitfield = static_cast<std::uint8_t *>(next_buffer());  // [K*G*G*G//8]
-    std::uint32_t const * const __restrict__ counter_in = static_cast<std::uint32_t *>(next_buffer());  // [1]
+    std::uint32_t const * const __restrict__ next_ray_index_in = static_cast<std::uint32_t *>(next_buffer());  // [1]
     bool const * const __restrict__ terminated = static_cast<bool *>(next_buffer());  // [n_rays]
     std::uint32_t const * const __restrict__ indices_in = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
 
     // outputs
-    std::uint32_t * const __restrict__ counter = static_cast<std::uint32_t *>(next_buffer());  // [1]
+    std::uint32_t * const __restrict__ next_ray_index = static_cast<std::uint32_t *>(next_buffer());  // [1]
     std::uint32_t * const __restrict__ indices_out = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     std::uint32_t * const __restrict__ n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
     float * const __restrict__ t_starts_out = static_cast<float *>(next_buffer());  // [n_rays]
@@ -512,7 +512,7 @@ void march_rays_inference_launcher(cudaStream_t stream, void **buffers, char con
     float * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [n_rays, march_steps_cap]
 
     // copy input counter value to output counter
-    CUDA_CHECK_THROW(cudaMemcpyAsync(counter, counter_in, sizeof(std::uint32_t), cudaMemcpyKind::cudaMemcpyDeviceToDevice, stream));
+    CUDA_CHECK_THROW(cudaMemcpyAsync(next_ray_index, next_ray_index_in, sizeof(std::uint32_t), cudaMemcpyKind::cudaMemcpyDeviceToDevice, stream));
     CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
 
     // initialize output arrays to zeros
@@ -544,7 +544,7 @@ void march_rays_inference_launcher(cudaStream_t stream, void **buffers, char con
         , terminated
         , indices_in
 
-        , counter
+        , next_ray_index
         , indices_out
         , n_samples
         , t_starts_out

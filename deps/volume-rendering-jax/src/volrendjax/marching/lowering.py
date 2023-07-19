@@ -55,7 +55,7 @@ def march_rays_lowering_rule(
         "in.noises": (n_rays,),
         "in.occupancy_bitfield": (K*G*G*G//8,),
 
-        "helper.counter": (1,),
+        "helper.measured_batch_size_before_compaction": (1,),
         "helper.n_valid_rays": (1,),
 
         "out.rays_n_samples": (n_rays,),
@@ -70,7 +70,7 @@ def march_rays_lowering_rule(
     return custom_call(
         call_target_name="march_rays",
         out_types=[
-            ir.RankedTensorType.get(shapes["helper.counter"], ir.IntegerType.get_unsigned(32)),
+            ir.RankedTensorType.get(shapes["helper.measured_batch_size_before_compaction"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["helper.n_valid_rays"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.rays_n_samples"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.rays_sample_startidx"], ir.IntegerType.get_unsigned(32)),
@@ -98,7 +98,7 @@ def march_rays_lowering_rule(
             shapes["in.occupancy_bitfield"],
         ),
         result_layouts=default_layouts(
-            shapes["helper.counter"],
+            shapes["helper.measured_batch_size_before_compaction"],
             shapes["helper.n_valid_rays"],
             shapes["out.rays_n_samples"],
             shapes["out.rays_sample_startidx"],
@@ -120,7 +120,7 @@ def march_rays_inference_lowering_rule(
     t_starts: ir.BlockArgument,
     t_ends: ir.BlockArgument,
     occupancy_bitfield: ir.BlockArgument,
-    counter: ir.BlockArgument,
+    next_ray_index_in: ir.BlockArgument,
     terminated: ir.BlockArgument,
     indices_in: ir.BlockArgument,
 
@@ -151,11 +151,11 @@ def march_rays_inference_lowering_rule(
         "in.t_starts": (n_total_rays,),
         "in.t_ends": (n_total_rays,),
         "in.occupancy_bitfield": (K*G*G*G//8,),
-        "in.counter": (1,),
+        "in.next_ray_index_in": (1,),
         "in.terminated": (n_rays,),
         "in.indices_in": (n_rays,),
 
-        "out.counter": (1,),
+        "out.next_ray_index": (1,),
         "out.indices_out": (n_rays,),
         "out.n_samples": (n_rays,),
         "out.t_starts": (n_rays,),
@@ -167,7 +167,7 @@ def march_rays_inference_lowering_rule(
     return custom_call(
         call_target_name="march_rays_inference",
         out_types=[
-            ir.RankedTensorType.get(shapes["out.counter"], ir.IntegerType.get_unsigned(32)),
+            ir.RankedTensorType.get(shapes["out.next_ray_index"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.indices_out"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.n_samples"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.t_starts"], ir.F32Type.get()),
@@ -181,7 +181,7 @@ def march_rays_inference_lowering_rule(
             t_starts,
             t_ends,
             occupancy_bitfield,
-            counter,
+            next_ray_index_in,
             terminated,
             indices_in,
         ],
@@ -192,12 +192,12 @@ def march_rays_inference_lowering_rule(
             shapes["in.t_starts"],
             shapes["in.t_ends"],
             shapes["in.occupancy_bitfield"],
-            shapes["in.counter"],
+            shapes["in.next_ray_index_in"],
             shapes["in.terminated"],
             shapes["in.indices_in"],
         ),
         result_layouts=default_layouts(
-            shapes["out.counter"],
+            shapes["out.next_ray_index"],
             shapes["out.indices_out"],
             shapes["out.n_samples"],
             shapes["out.t_starts"],

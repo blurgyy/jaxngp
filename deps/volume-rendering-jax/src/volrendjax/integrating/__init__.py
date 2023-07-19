@@ -46,7 +46,7 @@ def integrate_rays(
                                    densities and rgbs.
         final_opacities `[n_rays]`: accumulated opacities along each ray
     """
-    counter, final_rgbds, final_opacities = impl.__integrate_rays(
+    measured_batch_size, final_rgbds, final_opacities = impl.__integrate_rays(
         near_distance=near_distance,
         rays_sample_startidx=rays_sample_startidx,
         rays_n_samples=rays_n_samples,
@@ -56,7 +56,7 @@ def integrate_rays(
         drgbs=drgbs,
     )
 
-    return counter[0], final_rgbds, final_opacities
+    return measured_batch_size[0], final_rgbds, final_opacities
 
 
 def integrate_rays_inference(

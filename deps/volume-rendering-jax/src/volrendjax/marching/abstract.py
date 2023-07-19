@@ -45,7 +45,7 @@ def march_rays_abstract(
         )
 
     shapes = {
-        "helper.counter": (1,),
+        "helper.next_sample_write_location": (1,),
         "helper.n_valid_rays": (1,),
 
         "out.rays_n_samples": (n_rays,),
@@ -58,7 +58,7 @@ def march_rays_abstract(
     }
 
     return (
-        jax.ShapedArray(shape=shapes["helper.counter"], dtype=jnp.uint32),
+        jax.ShapedArray(shape=shapes["helper.next_sample_write_location"], dtype=jnp.uint32),
         jax.ShapedArray(shape=shapes["helper.n_valid_rays"], dtype=jnp.uint32),
         jax.ShapedArray(shape=shapes["out.rays_n_samples"], dtype=jnp.uint32),
         jax.ShapedArray(shape=shapes["out.rays_sample_startidx"], dtype=jnp.uint32),
@@ -77,7 +77,7 @@ def march_rays_inference_abstract(
     t_starts: jax.ShapedArray,
     t_ends: jax.ShapedArray,
     occupancy_bitfield: jax.ShapedArray,
-    counter: jax.ShapedArray,
+    next_ray_index: jax.ShapedArray,
     terminated: jax.ShapedArray,
     indices_in: jax.ShapedArray,
 
@@ -95,11 +95,11 @@ def march_rays_inference_abstract(
     chex.assert_shape([t_starts, t_ends], (n_total_rays,))
     chex.assert_shape(occupancy_bitfield, (K*G*G*G//8,))
     chex.assert_type(occupancy_bitfield, jnp.uint8)
-    chex.assert_shape(counter, (1,))
+    chex.assert_shape(next_ray_index, (1,))
     chex.assert_shape([terminated, indices_in], (n_rays,))
 
     out_shapes = {
-        "counter": (1,),
+        "next_ray_index": (1,),
         "indices_out": (n_rays,),
         "n_samples": (n_rays,),
         "t_starts": (n_rays,),
@@ -109,7 +109,7 @@ def march_rays_inference_abstract(
     }
 
     return (
-        jax.ShapedArray(shape=out_shapes["counter"], dtype=jnp.uint32),
+        jax.ShapedArray(shape=out_shapes["next_ray_index"], dtype=jnp.uint32),
         jax.ShapedArray(shape=out_shapes["indices_out"], dtype=jnp.uint32),
         jax.ShapedArray(shape=out_shapes["n_samples"], dtype=jnp.uint32),
         jax.ShapedArray(shape=out_shapes["t_starts"], dtype=jnp.float32),

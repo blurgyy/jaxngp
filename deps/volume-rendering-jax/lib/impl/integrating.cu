@@ -35,7 +35,7 @@ __global__ void integrate_rays_kernel(
     , float const * const __restrict__ drgbs  // [total_samples, 4]
 
     // helper
-    , std::uint32_t * const __restrict__ counter  // [1]
+    , std::uint32_t * const __restrict__ measured_batch_size  // [1]
 
     // output arrays (2)
     , float * const __restrict__ final_rgbds  // [n_rays, 4]
@@ -95,13 +95,12 @@ __global__ void integrate_rays_kernel(
         final_rgbds[i*4+3] = ray_depth;
     }
 
-    // `counter` stores effective batch size (`measured_batch_size` in NGP)
-    __shared__ std::uint32_t kernel_counter;
-    if (threadIdx.x == 0) { kernel_counter = 0; }
+    __shared__ std::uint32_t kernel_measured_batch_size;
+    if (threadIdx.x == 0) { kernel_measured_batch_size = 0; }
     __syncthreads();
-    atomicAdd(&kernel_counter, sample_idx);
+    atomicAdd(&kernel_measured_batch_size, sample_idx);
     __syncthreads();
-    if (threadIdx.x == 0) { atomicAdd(counter, kernel_counter); }
+    if (threadIdx.x == 0) { atomicAdd(measured_batch_size, kernel_measured_batch_size); }
 }
 
 __global__ void integrate_rays_backward_kernel(
@@ -340,14 +339,14 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
     float const * const __restrict__ drgbs = static_cast<float *>(next_buffer());  // [total_samples, 4]
 
     // helper counter for measured_batch_size
-    std::uint32_t * const __restrict__ counter = static_cast<std::uint32_t *>(next_buffer());  // [1]
+    std::uint32_t * const __restrict__ measured_batch_size = static_cast<std::uint32_t *>(next_buffer());  // [1]
 
     // outputs
     float * const __restrict__ final_rgbds = static_cast<float *>(next_buffer());  // [n_rays, 4]
     float * const __restrict__ final_opacities = static_cast<float *>(next_buffer());  // [n_rays]
 
     // reset all outputs to zero
-    CUDA_CHECK_THROW(cudaMemsetAsync(counter, 0x00, sizeof(std::uint32_t), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(measured_batch_size, 0x00, sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(final_rgbds, 0x00, n_rays * 4 * sizeof(float), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(final_opacities, 0x00, n_rays * sizeof(float), stream));
 
@@ -365,7 +364,7 @@ void integrate_rays_launcher(cudaStream_t stream, void **buffers, char const *op
         , z_vals
         , drgbs
         // helper counter
-        , counter
+        , measured_batch_size
         // output arrays (2)
         , final_rgbds
         , final_opacities

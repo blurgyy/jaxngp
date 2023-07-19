@@ -106,7 +106,7 @@ def march_rays_inference(
     t_starts: jax.Array,
     t_ends: jax.Array,
     occupancy_bitfield: jax.Array,
-    counter: jax.Array,
+    next_ray_index_in: jax.Array,
     terminated: jax.Array,
     indices: jax.Array,
 ):
@@ -120,13 +120,13 @@ def march_rays_inference(
         t_starts `float` `n_total_rays`: distance of each ray's starting point to its origin
         t_ends `float` `n_total_rays`: distance of each ray's ending point to its origin
         occupancy_bitfield `uint8` `[K*(G**3)//8]`: the occupancy grid represented as a bit array
-        counter `uint32`: helper variable to keep record of the latest ray that got rendered
+        next_ray_index_in `uint32`: helper variable to keep record of the latest ray that got rendered
         terminated `bool` `[n_rays]`: output of `integrate_rays_inference`, a binary mask indicating
                                       each ray's termination status
         indices `[n_rays]`: each ray's location in the global arrays
 
     Returns:
-        counter `uint32` `[1]`: for use in next iteration
+        next_ray_index `uint32` `[1]`: for use in next iteration
         indices `uint32` `[n_rays]`: for use in the integrate_rays_inference immediately after
         n_samples `uint32` `[n_rays]`: number of generated samples of each ray in question
         t_starts `float` `[n_rays]`: advanced values of `t` for use in next iteration
@@ -134,13 +134,13 @@ def march_rays_inference(
         dss `float` `[n_rays, march_steps_cap]`: `ds` of each sample
         z_vals `float` `[n_rays, march_steps_cap]`: distance of each sample to their ray origins
     """
-    counter, indices, n_samples, t_starts_out, xyzs, dss, z_vals = impl.march_rays_inference_p.bind(
+    next_ray_index, indices, n_samples, t_starts_out, xyzs, dss, z_vals = impl.march_rays_inference_p.bind(
         rays_o,
         rays_d,
         t_starts,
         t_ends,
         occupancy_bitfield,
-        counter,
+        next_ray_index_in,
         terminated,
         indices,
 
@@ -152,4 +152,4 @@ def march_rays_inference(
         stepsize_portion=stepsize_portion,
     )
     t_starts = t_starts.at[indices].set(t_starts_out)
-    return counter, indices, n_samples, t_starts, xyzs, dss, z_vals
+    return next_ray_index, indices, n_samples, t_starts, xyzs, dss, z_vals

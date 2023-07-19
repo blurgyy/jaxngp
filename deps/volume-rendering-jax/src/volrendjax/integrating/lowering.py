@@ -41,7 +41,7 @@ def integrate_rays_lowering_rule(
         "in.z_vals": (total_samples,),
         "in.drgbs": (total_samples, 4),
 
-        "helper.counter": (1,),
+        "helper.measured_batch_size": (1,),
 
         "out.final_rgbds": (n_rays, 4),
         "out.final_opacities": (n_rays,),
@@ -50,7 +50,7 @@ def integrate_rays_lowering_rule(
     return custom_call(
         call_target_name="integrate_rays",
         out_types=[
-            ir.RankedTensorType.get(shapes["helper.counter"], ir.IntegerType.get_unsigned(32)),
+            ir.RankedTensorType.get(shapes["helper.measured_batch_size"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.final_rgbds"], ir.F32Type.get()),
             ir.RankedTensorType.get(shapes["out.final_opacities"], ir.F32Type.get()),
         ],
@@ -72,7 +72,7 @@ def integrate_rays_lowering_rule(
             shapes["in.drgbs"],
         ),
         result_layouts=default_layouts(
-            shapes["helper.counter"],
+            shapes["helper.measured_batch_size"],
             shapes["out.final_rgbds"],
             shapes["out.final_opacities"],
         ),
