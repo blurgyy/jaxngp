@@ -56,7 +56,6 @@ class Encoder(nn.Module): ...
 # TODO: enforce types used in arrays
 @empty_impl
 class HashGridEncoder(Encoder):
-    dim: int
     # Let's use the same notations as in the paper
 
     # Number of levels (16).
@@ -82,7 +81,7 @@ class HashGridEncoder(Encoder):
 
     @nn.compact
     def __call__(self, pos: jax.Array, bound: jax.Array) -> jax.Array:
-        chex.assert_axis_dimension(pos, -1, self.dim)
+        dim = pos.shape[-1]
 
         # CAVEAT: hashgrid encoder is defined only in the unit cube [0, 1)^3
         pos = (pos + bound) / (2 * bound)
@@ -94,7 +93,7 @@ class HashGridEncoder(Encoder):
             res = math.ceil(scale) + 1
             resolutions.append(res)
 
-            n_entries = res ** self.dim
+            n_entries = res ** dim
 
             if n_entries <= self.T:
                 first_hash_level += 1
@@ -120,7 +119,7 @@ class HashGridEncoder(Encoder):
             # [dim]
             pos_floored = jnp.floor(pos_scaled)
             # [2**dim, dim]
-            vert_pos = pos_floored[None, :] + cell_vert_offsets[self.dim]
+            vert_pos = pos_floored[None, :] + cell_vert_offsets[dim]
             return vert_pos.astype(jnp.uint32)
 
         @jax.vmap
@@ -129,7 +128,7 @@ class HashGridEncoder(Encoder):
             # [dim]
             pos_floored = jnp.floor(pos_scaled)
             # [dim * 2, dim]
-            adjacent_pos = pos_floored[None, :] + adjacent_offsets[self.dim]
+            adjacent_pos = pos_floored[None, :] + adjacent_offsets[dim]
             return adjacent_pos.astype(jnp.uint32)
 
         @vmap_jaxfn_with(in_axes=(0, 0))
@@ -145,9 +144,9 @@ class HashGridEncoder(Encoder):
                 indices `uint32` `[L, n_points, B]`: grid cell indices of the vertices
             """
             # [dim]
-            if self.dim == 2:
+            if dim == 2:
                 strides = jnp.stack([jnp.ones_like(res), res]).T
-            elif self.dim == 3:
+            elif dim == 3:
                 strides = jnp.stack([jnp.ones_like(res), res, res ** 2]).T
             else:
                 raise NotImplementedError("{} is only implemented for 2D and 3D data".format(__class__.__name__))
@@ -169,9 +168,9 @@ class HashGridEncoder(Encoder):
             # use primes as reported in the paper
             primes = jnp.asarray([1, 2_654_435_761, 805_459_861], dtype=jnp.uint32)
             # [2**dim]
-            if self.dim == 2:
+            if dim == 2:
                 indices = vert_pos[:, 0] ^ (vert_pos[:, 1] * primes[1])
-            elif self.dim == 3:
+            elif dim == 3:
                 indices = vert_pos[:, 0] ^ (vert_pos[:, 1] * primes[1]) ^ (vert_pos[:, 2] * primes[2])
             else:
                 raise NotImplementedError("{} is only implemented for 2D and 3D data".format(__class__.__name__))
@@ -206,7 +205,7 @@ class HashGridEncoder(Encoder):
             # [2**dim, dim]
             widths = jnp.clip(
                 # cell_vert_offsets: [2**dim, dim]
-                (1 - cell_vert_offsets[self.dim]) + (2 * cell_vert_offsets[self.dim] - 1) * pos_offset[None, :],
+                (1 - cell_vert_offsets[dim]) + (2 * cell_vert_offsets[dim] - 1) * pos_offset[None, :],
                 0,
                 1,
             )
@@ -261,7 +260,7 @@ class HashGridEncoder(Encoder):
 class TCNNHashGridEncoder(HashGridEncoder):
     @nn.compact
     def __call__(self, pos: jax.Array, bound: float) -> jax.Array:
-        chex.assert_axis_dimension(pos, -1, self.dim)
+        dim = pos.shape[-1]
 
         # CAVEAT: hashgrid encoder is defined only in the unit cube [0, 1)^3
         pos = (pos + bound) / (2 * bound)
@@ -273,7 +272,7 @@ class TCNNHashGridEncoder(HashGridEncoder):
             res = math.ceil(scale) + 1
             resolutions.append(res)
 
-            n_entries = res ** self.dim
+            n_entries = res ** dim
 
             if n_entries <= self.T:
                 first_hash_level += 1
@@ -313,8 +312,6 @@ class FrequencyEncoder(Encoder):
     different.
     """
 
-    # input dimension
-    dim: int
     # number of frequencies
     L: int
 
@@ -334,13 +331,13 @@ class FrequencyEncoder(Encoder):
         Returns:
             encodings [..., 2*dim*L]: frequency-encoded coordinates
         """
-        chex.assert_axis_dimension(pos, -1, self.dim)
+        dim = pos.shape[-1]
         # [..., dim, L]: 2^{l} * pi * p
         A = jnp.exp2(jnp.arange(self.L)) * jnp.pi * pos[..., None]
         # [..., dim, L], [..., dim, L]
         senc, cenc = jnp.sin(A), jnp.cos(A)
         # [..., dim*L], [..., dim*L]
-        senc, cenc = senc.reshape(*A.shape[:-2], self.dim*self.L), cenc.reshape(*A.shape[:-2], self.dim*self.L)
+        senc, cenc = senc.reshape(*A.shape[:-2], dim*self.L), cenc.reshape(*A.shape[:-2], dim*self.L)
         # [..., 2*dim*L]
         encodings = jnp.concatenate([senc, cenc], axis=-1)
         return encodings

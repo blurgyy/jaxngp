@@ -307,11 +307,10 @@ def make_nerf(
         position_encoder = lambda x: x
     elif pos_enc == "frequency":
         raise NotImplementedError("Frequency encoding for NeRF is not tuned")
-        position_encoder = FrequencyEncoder(dim=3, L=10)
+        position_encoder = FrequencyEncoder(L=10)
     elif "hashgrid" in pos_enc:
         HGEncoder = TCNNHashGridEncoder if "tcnn" in pos_enc else HashGridEncoder
         position_encoder = HGEncoder(
-            dim=3,
             L=pos_levels,
             T=2**19,
             F=2,
