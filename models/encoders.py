@@ -80,7 +80,7 @@ class HashGridEncoder(Encoder):
         return math.exp((math.log(self.N_max) - math.log(self.N_min)) / (self.L - 1))
 
     @nn.compact
-    def __call__(self, pos: jax.Array, bound: jax.Array) -> jax.Array:
+    def __call__(self, pos: jax.Array, bound: float) -> jax.Array:
         dim = pos.shape[-1]
 
         # CAVEAT: hashgrid encoder is defined only in the unit cube [0, 1)^3
@@ -323,7 +323,7 @@ class FrequencyEncoder(Encoder):
     # TODO:
     #   using a function for this (vmap, then jit the vmapped function) seems to be faster (~47ms vs
     #   ~57ms)
-    def __call__(self, pos: jax.Array) -> jax.Array:
+    def __call__(self, pos: jax.Array, bound: float) -> jax.Array:
         """
         Inuts:
             pos [..., dim]: `dim`-d coordinates to be frequency-encoded
@@ -332,6 +332,7 @@ class FrequencyEncoder(Encoder):
             encodings [..., 2*dim*L]: frequency-encoded coordinates
         """
         dim = pos.shape[-1]
+        pos = (pos + bound) / (2 * bound)
         # [..., dim, L]: 2^{l} * pi * p
         A = jnp.exp2(jnp.arange(self.L)) * jnp.pi * pos[..., None]
         # [..., dim, L], [..., dim, L]
@@ -339,8 +340,11 @@ class FrequencyEncoder(Encoder):
         # [..., dim*L], [..., dim*L]
         senc, cenc = senc.reshape(*A.shape[:-2], dim*self.L), cenc.reshape(*A.shape[:-2], dim*self.L)
         # [..., 2*dim*L]
-        encodings = jnp.concatenate([senc, cenc], axis=-1)
-        return encodings
+        encodings = jnp.stack([senc, cenc], axis=-1).reshape(*A.shape[:-2], 2*dim*self.L)
+        return (
+            encodings,
+            0.,  # placeholder for the total variation loss
+        )
 
 
 @empty_impl
