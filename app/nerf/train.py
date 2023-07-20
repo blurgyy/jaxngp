@@ -123,8 +123,12 @@ def train_epoch(
 
 def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> int:
     if args.exp_dir.exists():
-        logger.error("specified experiment directory '{}' already exists".format(args.exp_dir))
-        return 1
+        msg = "specified experiment directory '{}' already exists".format(args.exp_dir)
+        if args.ckpt is not None:
+            logger.warn(msg)
+        else:
+            logger.error(msg)
+            return 1
     if args.ckpt is not None and not args.ckpt.exists():
         logger.error("specified checkpoint '{}' does not exist".format(args.ckpt))
         return 2
