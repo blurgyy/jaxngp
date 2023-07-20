@@ -1406,8 +1406,8 @@ class NeRFState(TrainState):
             ),
         )
 
-    def epoch(self, n_batches: int) -> int:
-        return self.step // n_batches
+    def epoch(self, iters: int) -> int:
+        return self.step // iters
 
     @property
     def density_threshold_from_min_step_size(self) -> float:

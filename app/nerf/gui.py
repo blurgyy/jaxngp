@@ -357,7 +357,7 @@ class Gui_trainer():
                     KEY=key_train,
                     state=self.state,
                     scene=self.scene_train,
-                    n_batches=steps,
+                    iters=steps,
                     total_samples=self.args.train.bs,
                     #total_samples=self.args.train.bs,
                     cur_steps=self.cur_step,
@@ -378,14 +378,14 @@ class Gui_trainer():
         KEY: jran.KeyArray,
         state: NeRFState,
         scene: SceneData,
-        n_batches: int,
+        iters: int,
         total_samples: int,
         cur_steps: int,
         logger: common.Logger,
     ):
         total_loss = None
         self.log_step = 0
-        for _ in (pbar := common.tqdm(range(n_batches),
+        for _ in (pbar := common.tqdm(range(iters),
                                       desc="Training step#{:03d}".format(cur_steps),
                                       leave=False)):
             if self.need_exit:
@@ -892,7 +892,7 @@ class NeRFGUI():
             self.mouse_pressed = False
             self.cameraPose = self.cameraPoseNext
             if self.train_thread:
-                self.train_thread.setStep(self.args.train.n_batches)
+                self.train_thread.setStep(self.args.train.iters)
 
         def callback_mouseWheel(_, app_data):
             if not dpg.is_item_hovered("_primary_window"):
@@ -924,7 +924,7 @@ class NeRFGUI():
                         args=self.args,
                         logger=self.logger,
                         camera_pose=self.cameraPose.pose,
-                        step=self.args.train.n_batches,
+                        step=self.args.train.iters,
                         back_color=self.back_color,
                         ckpt=self.ckpt)
                     self.train_thread.setDaemon(True)

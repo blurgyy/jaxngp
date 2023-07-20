@@ -39,11 +39,11 @@ class TrainingArgs:
     # batch size
     bs: int
 
-    # training epochs
-    n_epochs: int
+    # number of epochs to train
+    epochs: int
 
     # batches per epoch
-    n_batches: int
+    iters: int
 
     # loop within training data for this number of iterations, this helps reduce the effective
     # dataloader overhead.
@@ -64,7 +64,7 @@ class TrainingArgs:
         if self.keep_every is None:
             return None
         else:
-            return self.keep_every * self.n_batches
+            return self.keep_every * self.iters
 
 @dataclass(frozen=True, kw_only=True)
 class ImageFitArgs:
@@ -86,8 +86,8 @@ class ImageFitArgs:
         # some rate which results in lower throughput. setting bs to 2^{10} achieves a satisfying
         # tradeoff here.
         bs=2**10,
-        n_epochs=32,
-        n_batches=2**30,
+        epochs=32,
+        iters=2**30,
         data_loop=1,
         validate_every=1,
     )
@@ -124,8 +124,8 @@ class NeRFTrainingArgs(NeRFArgsBase):
         lr=1e-2,
         tv_scale=0.,
         bs=1024 * (1<<10),
-        n_epochs=50,
-        n_batches=2**10,
+        epochs=50,
+        iters=2**10,
         data_loop=1,
         validate_every=10,
     )
@@ -231,8 +231,8 @@ class NeRFGUIArgs(NeRFTrainingArgs):
         lr=1e-2,
         tv_scale=0.,
         bs=1<<18,
-        n_batches=5,  # render a frame every 5 steps
-        n_epochs=50,  # ignored
+        iters=5,  # render a frame every 5 steps
+        epochs=50,  # ignored
         data_loop=1,  # ignored
         validate_every=10,  # ignored
     )

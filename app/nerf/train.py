@@ -30,7 +30,7 @@ def train_epoch(
     KEY: jran.KeyArray,
     state: NeRFState,
     scene: SceneData,
-    n_batches: int,
+    iters: int,
     total_samples: int,
     ep_log: int,
     total_epochs: int,
@@ -41,10 +41,10 @@ def train_epoch(
     interrupted = False
 
     try:
-        with common.tqdm(range(n_batches), desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs)) as pbar:
-            start = int(state.step) % n_batches
+        with common.tqdm(range(iters), desc="Training epoch#{:03d}/{:d}".format(ep_log, total_epochs)) as pbar:
+            start = int(state.step) % iters
             pbar.update(start)
-            for _ in range(start, n_batches):
+            for _ in range(start, iters):
                 KEY, key_perm, key_train_step = jran.split(KEY, 3)
                 perm = jran.choice(key_perm, scene.n_pixels, shape=(state.batch_config.n_rays,), replace=True)
                 state, metrics = train_step(
@@ -241,7 +241,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
 
     logger.info("starting training")
     # training loop
-    for ep in range(state.epoch(args.train.n_batches), args.train.n_epochs):
+    for ep in range(state.epoch(args.train.iters), args.train.epochs):
         gc.collect()
 
         ep_log = ep + 1
@@ -255,10 +255,10 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
             KEY=key_train,
             state=state,
             scene=scene_train,
-            n_batches=args.train.n_batches,
+            iters=args.train.iters,
             total_samples=args.train.bs,
             ep_log=ep_log,
-            total_epochs=args.train.n_epochs,
+            total_epochs=args.train.epochs,
             logger=logger,
         )
         if metrics["interrupted"]:
@@ -287,7 +287,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
         ckpt_name = checkpoints.save_checkpoint(
             args.exp_dir,
             state,
-            step=ep_log * args.train.n_batches,
+            step=ep_log * args.train.iters,
             overwrite=True,
             keep=args.train.keep,
             keep_every_n_steps=args.train.keep_every_n_steps,
