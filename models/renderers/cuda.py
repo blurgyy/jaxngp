@@ -18,6 +18,7 @@ from utils.data import f32_to_u8
 from utils.types import NeRFState, Camera, RigidTransformation
 
 
+@jax.jit
 def make_rays_worldspace(
     camera: Camera,
     transform_cw: RigidTransformation,
@@ -52,6 +53,7 @@ def make_rays_worldspace(
     return o_world, d_world
 
 
+@jax.jit
 def make_near_far_from_bound(
     bound: float,
     o: jax.Array,  # [n_rays, 3]

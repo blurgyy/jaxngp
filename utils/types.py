@@ -186,18 +186,18 @@ class NeRFBatchConfig:
 @dataclass
 class Camera:
     # resolutions
-    width: int
-    height: int
+    width: int=struct.field(pytree_node=False)
+    height: int=struct.field(pytree_node=False)
 
     # focal length
-    fx: float
-    fy: float
+    fx: float=struct.field(pytree_node=False)
+    fy: float=struct.field(pytree_node=False)
 
     # principal point
-    cx: float
-    cy: float
+    cx: float=struct.field(pytree_node=False)
+    cy: float=struct.field(pytree_node=False)
 
-    near: float
+    near: float=struct.field(pytree_node=False)
 
     # distortion parameters
     k1: float=struct.field(default=0.0, pytree_node=False)
