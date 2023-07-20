@@ -15,7 +15,6 @@ from models.renderers import render_image_inference
 from utils import common, data
 from utils.args import NeRFTrainingArgs
 from utils.types import (
-    NeRFBatchConfig,
     NeRFState,
     OccupancyDensityGrid,
     RenderedImage,
@@ -46,7 +45,7 @@ def train_epoch(
             pbar.update(start)
             for _ in range(start, iters):
                 KEY, key_perm, key_train_step = jran.split(KEY, 3)
-                perm = jran.choice(key_perm, scene.n_pixels, shape=(state.batch_config.n_rays,), replace=True)
+                perm = jran.choice(key_perm, scene.n_pixels, shape=(total_samples,), replace=True)
                 state, metrics = train_step(
                     KEY=key_train_step,
                     state=state,
@@ -54,27 +53,29 @@ def train_epoch(
                     scene=scene,
                     perm=perm,
                 )
-                n_processed_rays += state.batch_config.n_rays
+                n_processed_rays += metrics["n_valid_rays"]
                 loss = metrics["loss"]
                 if total_loss is None:
                     total_loss = loss
                 else:
                     total_loss = jax.tree_util.tree_map(
-                        lambda total, new: total + new * state.batch_config.n_rays,
+                        lambda total, new: total + new * metrics["n_valid_rays"],
                         total_loss,
                         loss,
                     )
 
+                mean_effective_samples_per_ray = metrics["measured_batch_size"] / metrics["n_valid_rays"]
+                mean_samples_per_ray = metrics["measured_batch_size_before_compaction"] / metrics["n_valid_rays"]
+
                 pbar.set_description_str(
-                    desc="Training epoch#{:03d}/{:d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={}/{} loss:{{rgb={:.2e}({:.2f}dB),tv={:.2e}}}".format(
+                    desc="Training epoch#{:03d}/{:d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss:{{rgb={:.2e}({:.2f}dB),tv={:.2e}}}".format(
                         ep_log,
                         total_epochs,
                         metrics["measured_batch_size"],
                         metrics["measured_batch_size_before_compaction"],
-                        state.batch_config.running_mean_effective_samples_per_ray,
-                        state.batch_config.running_mean_samples_per_ray,
+                        mean_effective_samples_per_ray,
+                        mean_samples_per_ray,
                         metrics["n_valid_rays"],
-                        state.batch_config.n_rays,
                         loss["rgb"],
                         data.linear_to_db(loss["rgb"], maxval=1),
                         loss["total_variation"],
@@ -94,23 +95,15 @@ def train_epoch(
                         )
                     state = state.threshold_ogrid()
 
-                state = state.update_batch_config(
-                    new_measured_batch_size=metrics["measured_batch_size"],
-                    new_measured_batch_size_before_compaction=metrics["measured_batch_size_before_compaction"],
-                )
-                if state.should_commit_batch_config:
-                    state = state.replace(batch_config=state.batch_config.commit(total_samples))
-
                 if state.should_write_batch_metrics:
                     logger.write_scalar("batch/↓loss (rgb)", loss["rgb"], state.step)
                     logger.write_scalar("batch/↑estimated PSNR (db)", data.linear_to_db(loss["rgb"], maxval=1), state.step)
                     logger.write_scalar("batch/↓loss (total variation)", loss["total_variation"], state.step)
                     logger.write_scalar("batch/effective batch size (not compacted)", metrics["measured_batch_size_before_compaction"], state.step)
                     logger.write_scalar("batch/↑effective batch size (compacted)", metrics["measured_batch_size"], state.step)
-                    logger.write_scalar("rendering/↓effective samples per ray", state.batch_config.mean_effective_samples_per_ray, state.step)
-                    logger.write_scalar("rendering/↓marched samples per ray", state.batch_config.mean_samples_per_ray, state.step)
-                    logger.write_scalar("rendering/↑number of valid rays", metrics["n_valid_rays"], state.step)
-                    logger.write_scalar("rendering/↑number of marched rays", state.batch_config.n_rays, state.step)
+                    logger.write_scalar("rendering/↓effective samples per ray", mean_effective_samples_per_ray, state.step)
+                    logger.write_scalar("rendering/↓marched samples per ray", mean_samples_per_ray, state.step)
+                    logger.write_scalar("rendering/↑number of marched rays", metrics["n_valid_rays"], state.step)
     except (InterruptedError, KeyboardInterrupt):
         interrupted = True
 
@@ -203,11 +196,6 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
         ogrid=OccupancyDensityGrid.create(
             cascades=scene_meta.cascades,
             grid_resolution=args.raymarch.density_grid_res,
-        ),
-        batch_config=NeRFBatchConfig.create(
-            mean_effective_samples_per_ray=args.raymarch.diagonal_n_steps,
-            mean_samples_per_ray=args.raymarch.diagonal_n_steps,
-            n_rays=args.train.bs // args.raymarch.diagonal_n_steps,
         ),
         raymarch=args.raymarch,
         render=args.render,

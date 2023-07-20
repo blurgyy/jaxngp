@@ -133,6 +133,8 @@ class Gui_trainer():
     compacted_batch: int = -1
     not_compacted_batch: int = -1
     rays_num: int = -1
+    mean_effective_samples_per_ray: int = -1
+    mean_samples_per_ray: int = -1
     camera_near: float = 0.1
     camera: Camera = field(init=False)
     need_exit: bool = False
@@ -201,13 +203,6 @@ class Gui_trainer():
                 ogrid=OccupancyDensityGrid.create(
                     cascades=self.scene_meta.cascades,
                     grid_resolution=self.args.raymarch.density_grid_res,
-                ),
-                batch_config=NeRFBatchConfig.create(
-                    mean_effective_samples_per_ray=self.args.raymarch.
-                    diagonal_n_steps,
-                    mean_samples_per_ray=self.args.raymarch.diagonal_n_steps,
-                    n_rays=self.args.train.bs //
-                    self.args.raymarch.diagonal_n_steps,
                 ),
                 raymarch=self.args.raymarch,
                 render=self.args.render,
@@ -383,7 +378,6 @@ class Gui_trainer():
         cur_steps: int,
         logger: common.Logger,
     ):
-        total_loss = None
         self.log_step = 0
         for _ in (pbar := common.tqdm(range(iters),
                                       desc="Training step#{:03d}".format(cur_steps),
@@ -397,7 +391,7 @@ class Gui_trainer():
             KEY, key_perm, key_train_step = jran.split(KEY, 3)
             perm = jran.choice(key_perm,
                                scene.n_pixels,
-                               shape=(state.batch_config.n_rays, ),
+                               shape=(total_samples, ),
                                replace=True)
             state, metrics = train_step(
                 KEY=key_train_step,
@@ -409,31 +403,25 @@ class Gui_trainer():
             self.log_step += 1
             cur_steps = cur_steps + 1
             loss = metrics["loss"]
-            if total_loss is None:
-                total_loss = loss
-            else:
-                total_loss = jax.tree_util.tree_map(
-                    lambda total, new: total + new * state.batch_config.n_rays,
-                    total_loss,
-                    loss,
-                )
 
             self.data_step, self.data_pixel_quality = (  # the 2 lists are ploted so should be updated simultaneously
                 self.data_step + [self.log_step + self.cur_step],
                 self.data_pixel_quality +
                 [data.linear_to_db(loss["rgb"], maxval=1)])
 
+            self.mean_effective_samples_per_ray = metrics["measured_batch_size"] / metrics["n_valid_rays"]
+            self.mean_samples_per_ray = metrics["measured_batch_size_before_compaction"] / metrics["n_valid_rays"]
+
             pbar.set_description_str(
                 desc=
-                "Training step#{:03d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={}/{} loss:{{rgb={:.2e}({:.2f}dB),tv={:.2e}}}"
+                "Training step#{:03d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss:{{rgb={:.2e}({:.2f}dB),tv={:.2e}}}"
                 .format(
                     cur_steps,
                     metrics["measured_batch_size"],
                     metrics["measured_batch_size_before_compaction"],
-                    state.batch_config.running_mean_effective_samples_per_ray,
-                    state.batch_config.running_mean_samples_per_ray,
+                    self.mean_effective_samples_per_ray,
+                    self.mean_samples_per_ray,
                     metrics["n_valid_rays"],
-                    state.batch_config.n_rays,
                     loss["rgb"],
                     data.linear_to_db(loss["rgb"], maxval=1),
                     loss["total_variation"],
@@ -451,18 +439,10 @@ class Gui_trainer():
                     )
                 state = state.threshold_ogrid()
 
-            state = state.update_batch_config(
-                new_measured_batch_size=metrics["measured_batch_size"],
-                new_measured_batch_size_before_compaction=metrics[
-                    "measured_batch_size_before_compaction"],
-            )
-            if state.should_commit_batch_config:
-                state = state.replace(
-                    batch_config=state.batch_config.commit(total_samples))
             self.compacted_batch = metrics["measured_batch_size"]
             self.not_compacted_batch = metrics[
                 "measured_batch_size_before_compaction"]
-            self.rays_num = state.batch_config.n_rays
+            self.rays_num = metrics["n_valid_rays"]
             if state.should_write_batch_metrics:
                 logger.write_scalar("batch/↓loss (rgb)", loss["rgb"],
                                     state.step)
@@ -479,16 +459,13 @@ class Gui_trainer():
                                     metrics["measured_batch_size"], state.step)
                 logger.write_scalar(
                     "rendering/↓effective samples per ray",
-                    state.batch_config.mean_effective_samples_per_ray,
+                    metrics["measured_batch_size"] / metrics["n_valid_rays"],
                     state.step)
                 logger.write_scalar("rendering/↓marched samples per ray",
-                                    state.batch_config.mean_samples_per_ray,
-                                    state.step)
-                logger.write_scalar("rendering/↑number of valid rays",
-                                    metrics["n_valid_rays"],
+                                    metrics["measured_batch_size_before_compaction"] / metrics["n_valid_rays"],
                                     state.step)
                 logger.write_scalar("rendering/↑number of marched rays",
-                                    state.batch_config.n_rays,
+                                    metrics["n_valid_rays"],
                                     state.step)
 
         return state
@@ -512,11 +489,10 @@ class Gui_trainer():
         return (self.data_step, self.data_pixel_quality)
 
     def get_effective_samples_nums(self):
-        return self.get_state(
-        ).batch_config.running_mean_effective_samples_per_ray
+        return self.mean_effective_samples_per_ray
 
     def get_samples_nums(self):
-        return self.get_state().batch_config.running_mean_samples_per_ray
+        return self.mean_samples_per_ray
 
     def get_compactedBatch(self):
         return self.compacted_batch
@@ -739,15 +715,14 @@ class TrainThread(threading.Thread):
 
     def get_effective_samples_nums(self):
         if self.trainer:
-            return "{:.3f}".format(self.get_state().batch_config.
-                                   running_mean_effective_samples_per_ray)
+            return "{:.3f}".format(self.trainer.mean_effective_samples_per_ray)
         else:
             return "no data"
 
     def get_samples_nums(self):
         if self.trainer:
             return "{:.3f}".format(
-                self.get_state().batch_config.running_mean_samples_per_ray)
+                self.trainer.mean_samples_per_ray)
         else:
             return "no data"
 

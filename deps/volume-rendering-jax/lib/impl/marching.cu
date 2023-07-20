@@ -131,6 +131,7 @@ __global__ void march_rays_kernel(
 ) {
     std::uint32_t const i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_rays) { return; }
+    if (*measured_batch_size_before_compaction >= total_samples) { return; }
 
     // inputs
     vec3f const o = {
@@ -193,12 +194,18 @@ __global__ void march_rays_kernel(
     // array to zeros
     if (ray_n_samples == 0) { return; }
 
-    // record how many samples are generated along this ray
-    rays_n_samples[i] = ray_n_samples;
-
+    // cannot check `(*measured_batch_size_before_compaction) + ray_n_samples >= total_samples`
+    // because even if the check did not return true, it might not hold in a later `atomicAdd` call
+    // on the measured_batch_size_before_compaction (TOCTOU race condition).
     // record the index of the first generated sample on this ray
     std::uint32_t const ray_sample_startidx = atomicAdd(measured_batch_size_before_compaction, ray_n_samples);
-    if (ray_sample_startidx + ray_n_samples > total_samples) { return; }
+    if (ray_sample_startidx + ray_n_samples > total_samples) {
+        atomicSub(measured_batch_size_before_compaction, ray_n_samples);
+        return;
+    }
+
+    // record how many samples are generated along this ray
+    rays_n_samples[i] = ray_n_samples;
     atomicAdd(n_valid_rays, 1u);
     rays_sample_startidx[i] = ray_sample_startidx;
 

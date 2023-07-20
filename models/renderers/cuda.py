@@ -154,6 +154,7 @@ def render_rays_train(
 
     batch_metrics = {
         "n_valid_rays": n_valid_rays,
+        "ray_is_valid": rays_n_samples > 0,
         "measured_batch_size_before_compaction": measured_batch_size_before_compaction,
         "measured_batch_size": jnp.where(effective_samples > 0, effective_samples, 0).sum(),
     }
@@ -276,12 +277,8 @@ def render_image_inference(
         o_world, d_world, t_starts, t_ends, rays_bg, rays_rgbd, rays_T
     ))
 
-    if state.batch_config.mean_effective_samples_per_ray > 7:
-        march_steps_cap = max(4, min(state.batch_config.mean_effective_samples_per_ray // 2 + 1, 8))
-    else:
-        march_steps_cap = min(4, state.batch_config.mean_effective_samples_per_ray)
-    march_steps_cap = max(1, int(march_steps_cap))
-    n_rays = min(65536 // march_steps_cap, state.scene_meta.camera.n_pixels)
+    march_steps_cap = 8
+    n_rays = min(8192, state.scene_meta.camera.n_pixels)
 
     next_ray_index = jnp.zeros(1, dtype=jnp.uint32)
     terminated = jnp.ones(n_rays, dtype=jnp.bool_)  # all rays are terminated at the beginning

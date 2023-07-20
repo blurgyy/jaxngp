@@ -144,45 +144,6 @@ class OccupancyDensityGrid:
         return self.density[self.alive_indices[:self.alive_indices_offset[cas]]].mean()
 
 
-@empty_impl
-@dataclass
-class NeRFBatchConfig:
-    mean_samples_per_ray: int
-
-    running_mean_effective_samples_per_ray: float
-    running_mean_samples_per_ray: float
-
-    n_rays: int
-
-    @property
-    def mean_effective_samples_per_ray(self) -> int:
-        return int(self.running_mean_effective_samples_per_ray + 0.5)
-
-    @classmethod
-    def create(cls, /, mean_effective_samples_per_ray: int, mean_samples_per_ray: int, n_rays: int) -> "NeRFBatchConfig":
-        return cls(
-            mean_samples_per_ray=mean_samples_per_ray,
-            running_mean_effective_samples_per_ray=mean_effective_samples_per_ray,
-            running_mean_samples_per_ray=mean_samples_per_ray,
-            n_rays=n_rays,
-        )
-
-    def update(self, /, new_measured_batch_size: int, new_measured_batch_size_before_compaction: int) -> "NeRFBatchConfig":
-        decay = .6  # so that an old value decays to ~<1% after 10 steps
-        return self.replace(
-            running_mean_effective_samples_per_ray=self.running_mean_effective_samples_per_ray * decay + (1 - decay) * new_measured_batch_size / self.n_rays,
-            running_mean_samples_per_ray=self.running_mean_samples_per_ray * decay + (1 - decay) * new_measured_batch_size_before_compaction / self.n_rays,
-        )
-
-    def commit(self, total_samples: int) -> "NeRFBatchConfig":
-        new_mean_samples_per_ray=int(self.running_mean_samples_per_ray + 1.5)
-        new_n_rays=int(total_samples // new_mean_samples_per_ray)
-        return self.replace(
-            mean_samples_per_ray=new_mean_samples_per_ray,
-            n_rays=new_n_rays,
-        )
-
-
 @dataclass
 class Camera:
     # resolutions
@@ -1170,12 +1131,6 @@ class NeRFState(TrainState):
     #   while calling a jitted function with no helpful traceback.
     ogrid: OccupancyDensityGrid
 
-    # WARN:
-    #   annotating batch_config with flax.struct.field(pytree_node=False) halves GPU utilization by
-    #   2x, consequently halving training speed by 2x as well.
-    #   ... why?
-    batch_config: NeRFBatchConfig
-
     raymarch: RayMarchingOptions=struct.field(pytree_node=False)
     render: RenderingOptions=struct.field(pytree_node=False)
     scene_options: SceneOptions=struct.field(pytree_node=False)
@@ -1447,21 +1402,6 @@ class NeRFState(TrainState):
     @property
     def should_update_all_ogrid_cells(self) -> bool:
         return self.step < 256
-
-    @property
-    def should_commit_batch_config(self) -> bool:
-        return (
-            self.step > 0
-            and self.step % 16 == 0
-        )
-
-    def update_batch_config(self, /, new_measured_batch_size: int, new_measured_batch_size_before_compaction: int) -> "NeRFState":
-        return self.replace(
-            batch_config=self.batch_config.update(
-                new_measured_batch_size=new_measured_batch_size,
-                new_measured_batch_size_before_compaction=new_measured_batch_size_before_compaction,
-            )
-        )
 
     @property
     def should_write_batch_metrics(self) -> bool:
