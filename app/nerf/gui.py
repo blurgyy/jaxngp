@@ -9,7 +9,6 @@ import jax.random as jran
 import jax.numpy as jnp
 from flax.training import checkpoints
 from dataclasses import dataclass, field
-from tqdm import tqdm
 import threading
 import dearpygui.dearpygui as dpg
 import ctypes
@@ -386,9 +385,9 @@ class Gui_trainer():
     ):
         total_loss = None
         self.log_step = 0
-        for _ in (pbar := tqdm(range(n_batches),
-                               desc="Training step#{:03d}".format(cur_steps),
-                               bar_format=common.tqdm_format)):
+        for _ in (pbar := common.tqdm(range(n_batches),
+                                      desc="Training step#{:03d}".format(cur_steps),
+                                      leave=False)):
             if self.need_exit:
                 raise KeyboardInterrupt
             if not self.istraining:
