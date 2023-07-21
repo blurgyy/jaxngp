@@ -106,7 +106,9 @@
       '';
     in rec {
       default = cudaDevShell;
-      cudaDevShell = cudaPkgs.mkShell {  # impure
+      cudaDevShell = let  # impure
+        isWsl = builtins.pathExists /usr/lib/wsl/lib;
+      in cudaPkgs.mkShell {
         name = "cuda";
         buildInputs = [
           cudaPkgs.colmap-locked
@@ -127,12 +129,14 @@
             head (match ".*Module  ([0-9\\.]+)  .*" (readFile /proc/driver/nvidia/version));
           nvidiaDriverVersionMajor = lib.toInt (head (splitVersion nvidiaDriverVersion));
         in lib.optionalString
-          (nvidiaDriverVersionMajor <= 470)
+          (!isWsl && nvidiaDriverVersionMajor <= 470)
           "--xla_gpu_force_compilation_parallelism=1";
         shellHook = ''
           source <(sed -Ee '/\$@/d' ${lib.getExe cudaPkgs.nixgl.nixGLIntel})
-          source <(sed -Ee '/\$@/d' ${lib.getExe cudaPkgs.nixgl.auto.nixGLNvidia}*)
-        '' + commonShellHook;
+        '' + (if isWsl
+          then ''export LD_LIBRARY_PATH=/usr/lib/wsl/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}''
+          else ''source <(sed -Ee '/\$@/d' ${lib.getExe cudaPkgs.nixgl.auto.nixGLNvidia}*)''
+        ) + "\n" + commonShellHook;
       };
 
       cpuDevShell = cpuPkgs.mkShell {
