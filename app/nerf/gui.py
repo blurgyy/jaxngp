@@ -1459,7 +1459,7 @@ class NeRFGUI():
             else:
                 dpg.set_value("_texture", self.framebuff)
             dpg.render_dearpygui_frame()
-            time.sleep(0.01)
+            time.sleep(.01 if self.train_thread and self.train_thread.istraining else .1)
             if self.exit_flag:
                 if self.train_thread:
                     self.train_thread.stop()
