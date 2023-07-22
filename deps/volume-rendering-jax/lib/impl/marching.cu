@@ -178,7 +178,7 @@ __global__ void march_rays_kernel(
             ++ray_n_samples;
         } else {
             vec3f const next_grid = floor_vec3f(grid_posf + .5f + .5f * sign_vec3f(d));
-            vec3f const delta = ((next_grid * inv_G * 2 - 1) * mip_bound - pos) * inv_d;
+            vec3f const delta = ((next_grid * inv_G - .5f) * 2.f * mip_bound - pos) * inv_d;
             // distance to next voxel
             float const next_t = ray_t + fmaxf(0.0f, fminf(delta.x, fminf(delta.y, delta.z)));
             // step until next voxel
@@ -244,7 +244,7 @@ __global__ void march_rays_kernel(
             ++steps;
         } else {
             vec3f const next_grid = floor_vec3f(grid_posf + .5f + .5f * sign_vec3f(d));
-            vec3f const delta = ((next_grid * inv_G * 2 - 1) * mip_bound - pos) * inv_d;
+            vec3f const delta = ((next_grid * inv_G - .5f) * 2.f * mip_bound - pos) * inv_d;
             // distance to next voxel
             float const next_t = ray_t + fmaxf(0.0f, fminf(delta.x, fminf(delta.y, delta.z)));
             // step until next voxel
@@ -339,7 +339,7 @@ __global__ void march_rays_inference_kernel(
             ++steps;
         } else {
             vec3f const next_grid = floor_vec3f(grid_posf + .5f + .5f * sign_vec3f(d));
-            vec3f const delta = ((next_grid * inv_G * 2 - 1) * mip_bound - pos) * inv_d;
+            vec3f const delta = ((next_grid * inv_G - .5f) * 2.f * mip_bound - pos) * inv_d;
             // distance to next voxel
             float const next_t = ray_t + fmaxf(0.0f, fminf(delta.x, fminf(delta.y, delta.z)));
             // step until next voxel
