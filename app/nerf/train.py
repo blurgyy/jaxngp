@@ -22,7 +22,7 @@ from utils.types import (
     SceneData,
 )
 
-from ._utils import make_optimizer, train_step
+from ._utils import make_optimizer, train_step, format_metrics
 
 
 def train_epoch(
@@ -64,22 +64,11 @@ def train_epoch(
                         loss,
                     )
 
-                mean_effective_samples_per_ray = metrics["measured_batch_size"] / metrics["n_valid_rays"]
-                mean_samples_per_ray = metrics["measured_batch_size_before_compaction"] / metrics["n_valid_rays"]
-
                 pbar.set_description_str(
-                    desc="Training epoch#{:03d}/{:d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss:{{rgb={:.2e}({:.2f}dB),tv={:.2e}}}".format(
+                    desc="Training epoch#{:03d}/{:d} ".format(
                         ep_log,
                         total_epochs,
-                        metrics["measured_batch_size"],
-                        metrics["measured_batch_size_before_compaction"],
-                        mean_effective_samples_per_ray,
-                        mean_samples_per_ray,
-                        metrics["n_valid_rays"],
-                        loss["rgb"],
-                        data.linear_to_db(loss["rgb"], maxval=1),
-                        loss["total_variation"],
-                    )
+                    ) + format_metrics(metrics),
                 )
                 pbar.update(1)
 
@@ -96,14 +85,7 @@ def train_epoch(
                     state = state.threshold_ogrid()
 
                 if state.should_write_batch_metrics:
-                    logger.write_scalar("batch/↓loss (rgb)", loss["rgb"], state.step)
-                    logger.write_scalar("batch/↑estimated PSNR (db)", data.linear_to_db(loss["rgb"], maxval=1), state.step)
-                    logger.write_scalar("batch/↓loss (total variation)", loss["total_variation"], state.step)
-                    logger.write_scalar("batch/effective batch size (not compacted)", metrics["measured_batch_size_before_compaction"], state.step)
-                    logger.write_scalar("batch/↑effective batch size (compacted)", metrics["measured_batch_size"], state.step)
-                    logger.write_scalar("rendering/↓effective samples per ray", mean_effective_samples_per_ray, state.step)
-                    logger.write_scalar("rendering/↓marched samples per ray", mean_samples_per_ray, state.step)
-                    logger.write_scalar("rendering/↑number of marched rays", metrics["n_valid_rays"], state.step)
+                    logger.write_metrics_to_tensorboard(metrics, state.step)
     except (InterruptedError, KeyboardInterrupt):
         interrupted = True
 

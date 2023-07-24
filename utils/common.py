@@ -54,6 +54,54 @@ class Logger(logging.Logger):
             self.wait_last_job()
             self._last_job = self._executor.submit(self._tb.hparams, hparams)
 
+    def write_metrics_to_tensorboard(
+        self,
+        metrics: Dict[str, jax.Array | float],
+        step: jax.Array | int,
+    ) -> None:
+        def linear_to_db(val: float, maxval: float):
+            return 20 * np.log10(np.sqrt(maxval / val))
+        self.write_scalar(
+            "batch/↓loss (rgb)",
+            metrics["loss"]["rgb"],
+            step,
+        )
+        self.write_scalar(
+            "batch/↑estimated PSNR (db)",
+            linear_to_db(metrics["loss"]["rgb"], maxval=1.),
+            step,
+        )
+        self.write_scalar(
+            "batch/↓loss (total variation)",
+            metrics["loss"]["total_variation"],
+            step,
+        )
+        self.write_scalar(
+            "batch/effective batch size (not compacted)",
+            metrics["measured_batch_size_before_compaction"],
+            step,
+        )
+        self.write_scalar(
+            "batch/↑effective batch size (compacted)",
+            metrics["measured_batch_size"],
+            step,
+        )
+        self.write_scalar(
+            "rendering/↓effective samples per ray",
+            metrics["measured_batch_size"] / metrics["n_valid_rays"],
+            step,
+        )
+        self.write_scalar(
+            "rendering/↓marched samples per ray",
+            metrics["measured_batch_size_before_compaction"] / metrics["n_valid_rays"],
+            step,
+        )
+        self.write_scalar(
+            "rendering/↑number of marched rays",
+            metrics["n_valid_rays"],
+            step,
+        )
+
 
 tqdm = functools.partial(tqdm_original, bar_format=tqdm_format)
 

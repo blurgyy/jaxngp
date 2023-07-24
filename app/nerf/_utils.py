@@ -164,3 +164,17 @@ def train_step(
     )
     state = state.apply_gradients(grads=grads)
     return state, batch_metrics
+
+
+def format_metrics(metrics: Dict[str, jax.Array | float]) -> str:
+    loss = metrics["loss"]
+    return "batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss:{{rgb={:.2e}({:.2f}dB),tv={:.2e}}}".format(
+        metrics["measured_batch_size"],
+        metrics["measured_batch_size_before_compaction"],
+        metrics["measured_batch_size"] / metrics["n_valid_rays"],
+        metrics["measured_batch_size_before_compaction"] / metrics["n_valid_rays"],
+        metrics["n_valid_rays"],
+        loss["rgb"],
+        data.linear_to_db(loss["rgb"], maxval=1.),
+        loss["total_variation"],
+    )

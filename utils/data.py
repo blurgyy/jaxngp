@@ -21,7 +21,6 @@ from . import sfm
 from .common import jit_jaxfn_with, mkValueError, tqdm
 from .types import (
     ImageMetadata,
-    OrbitTrajectoryOptions,
     Camera,
     RGBColor,
     RGBColorU8,

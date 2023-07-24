@@ -413,19 +413,7 @@ class Gui_trainer():
             self.mean_samples_per_ray = metrics["measured_batch_size_before_compaction"] / metrics["n_valid_rays"]
 
             pbar.set_description_str(
-                desc=
-                "Training step#{:03d} batch_size={}/{} samp./ray={:.1f}/{:.1f} n_rays={} loss:{{rgb={:.2e}({:.2f}dB),tv={:.2e}}}"
-                .format(
-                    cur_steps,
-                    metrics["measured_batch_size"],
-                    metrics["measured_batch_size_before_compaction"],
-                    self.mean_effective_samples_per_ray,
-                    self.mean_samples_per_ray,
-                    metrics["n_valid_rays"],
-                    loss["rgb"],
-                    data.linear_to_db(loss["rgb"], maxval=1),
-                    loss["total_variation"],
-                ))
+                desc="Training step#{:03d} ".format(cur_steps) + format_metrics(metrics))
 
             if state.should_call_update_ogrid:
                 # update occupancy grid
@@ -444,29 +432,7 @@ class Gui_trainer():
                 "measured_batch_size_before_compaction"]
             self.rays_num = metrics["n_valid_rays"]
             if state.should_write_batch_metrics:
-                logger.write_scalar("batch/↓loss (rgb)", loss["rgb"],
-                                    state.step)
-                logger.write_scalar("batch/↑estimated PSNR (db)",
-                                    data.linear_to_db(loss["rgb"], maxval=1),
-                                    state.step)
-                logger.write_scalar("batch/↓loss (total variation)",
-                                    loss["total_variation"], state.step)
-                logger.write_scalar(
-                    "batch/effective batch size (not compacted)",
-                    metrics["measured_batch_size_before_compaction"],
-                    state.step)
-                logger.write_scalar("batch/↑effective batch size (compacted)",
-                                    metrics["measured_batch_size"], state.step)
-                logger.write_scalar(
-                    "rendering/↓effective samples per ray",
-                    metrics["measured_batch_size"] / metrics["n_valid_rays"],
-                    state.step)
-                logger.write_scalar("rendering/↓marched samples per ray",
-                                    metrics["measured_batch_size_before_compaction"] / metrics["n_valid_rays"],
-                                    state.step)
-                logger.write_scalar("rendering/↑number of marched rays",
-                                    metrics["n_valid_rays"],
-                                    state.step)
+                logger.write_metrics_to_tensorboard(metrics, state.step)
 
         return state
 
