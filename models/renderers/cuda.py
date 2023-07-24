@@ -15,7 +15,7 @@ from volrendjax import (
 
 from utils.common import jit_jaxfn_with
 from utils.data import f32_to_u8
-from utils.types import NeRFState, Camera, RigidTransformation
+from utils.types import Camera, CameraOverrideOptions, NeRFState, RigidTransformation
 
 
 @jax.jit
@@ -239,12 +239,26 @@ def render_image_inference(
     KEY: jran.KeyArray,
     transform_cw: RigidTransformation,
     state: NeRFState,
-    camera_override: None | Camera=None,
+    camera_override: None | CameraOverrideOptions=None,
     render_cost: bool=False,
     appearance_embedding_index: int=0,
 ):
-    if camera_override is not None:
+    if isinstance(camera_override, Camera):
         state = state.replace(scene_meta=state.scene_meta.replace(camera=camera_override))
+    elif isinstance(camera_override, CameraOverrideOptions):
+        state = state.replace(
+            scene_meta=state.scene_meta.replace(
+                camera=camera_override.update_camera(state.scene_meta.camera),
+            ),
+        )
+    elif camera_override is None:
+        pass
+    else:
+        raise RuntimeError(
+            "expected `camera_override` to be of type `Camera` or `CameraOverrideOptions`, got {}".format(
+                type(camera_override)
+            )
+        )
 
     o_world, d_world = make_rays_worldspace(camera=state.scene_meta.camera, transform_cw=transform_cw)
     appearance_embedding = (
