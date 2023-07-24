@@ -106,7 +106,7 @@ class NeRFArgsBase:
 
 
 @dataclass(frozen=True, kw_only=True)
-class NeRFTrainingArgs(NeRFArgsBase):
+class _SharedNeRFTrainingArgs(NeRFArgsBase):
     # directories or transform.json files containing data for training
     frames_train: tyro.conf.Positional[Tuple[Path, ...]]
 
@@ -157,6 +157,10 @@ class NeRFTrainingArgs(NeRFArgsBase):
         bg=(0.0, 0.0, 0.0),  # black
         random_bg=False,
     )
+
+
+@dataclass(frozen=True, kw_only=True)
+class NeRFTrainingArgs(_SharedNeRFTrainingArgs): ...
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -211,7 +215,7 @@ class NeRFTestingArgs(NeRFArgsBase):
 
 
 @dataclass(frozen=True, kw_only=True)
-class NeRFGUIArgs(NeRFTrainingArgs):
+class NeRFGUIArgs(_SharedNeRFTrainingArgs):
 
     @dataclass(frozen=True, kw_only=True)
     class ViewportOptions:

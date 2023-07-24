@@ -40,7 +40,7 @@ def main(args: MainArgsType):
     logger = common.setup_logging("nerf")
     KEY = common.set_deterministic(args.common.seed)
 
-    if isinstance(args, NeRFTrainingArgs) and not isinstance(args, NeRFGUIArgs):
+    if isinstance(args, NeRFTrainingArgs):
         from app.nerf.train import train
         return train(KEY, args, logger)
     elif isinstance(args, NeRFTestingArgs):
