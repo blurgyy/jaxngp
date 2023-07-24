@@ -892,8 +892,8 @@ class SceneMeta:
         assert isinstance(opts, OrbitTrajectoryOptions)
 
         thetas = np.linspace(0, opts.n_orbit * 2 * np.pi, opts.n_frames + 1)[:-1]
-        xs = np.asarray(tuple(map(np.cos, thetas))) * opts.radius
-        ys = np.asarray(tuple(map(np.sin, thetas))) * opts.radius
+        xs = np.cos(thetas) * opts.radius
+        ys = np.sin(thetas) * opts.radius
         elevation_range = opts.high - opts.low
         mid_elevation = opts.low + .5 * elevation_range
         zs = mid_elevation + .5 * elevation_range * np.sin(np.linspace(0, 2 * np.pi, opts.n_frames + 1)[:-1])
