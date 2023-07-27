@@ -1120,7 +1120,7 @@ class SceneData:
 class RenderedImage:
     bg: jax.Array
     rgb: jax.Array
-    disparity: jax.Array
+    depth: jax.Array
 
 
 @empty_impl

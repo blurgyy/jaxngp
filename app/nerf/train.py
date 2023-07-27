@@ -281,7 +281,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
                     translation=scene_val.transforms[val_i, -3:].reshape(3),
                 )
                 KEY, key = jran.split(KEY, 2)
-                bg, rgb, disparity, _ = data.to_cpu(render_image_inference(
+                bg, rgb, depth, _ = data.to_cpu(render_image_inference(
                     KEY=key,
                     transform_cw=val_transform,
                     state=state_eval,
@@ -289,7 +289,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
                 rendered_images.append(RenderedImage(
                     bg=bg,
                     rgb=rgb,
-                    disparity=disparity,  # call to data.mono_to_rgb is deferred below so as to minimize impact on rendering speed
+                    depth=depth,  # call to data.mono_to_rgb is deferred below so as to minimize impact on rendering speed
                 ))
             val_end_time = time.time()
             logger.write_scalar(
@@ -326,11 +326,11 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
                 [
                     gt,
                     rendered_image.rgb,
-                    common.compose(data.mono_to_rgb, data.f32_to_u8)(rendered_image.disparity),
+                    common.compose(data.mono_to_rgb, data.f32_to_u8)(rendered_image.depth),
                 ],
             ))
             logger.write_image(
-                tag="validation/[gt|rendered|disparity]",
+                tag="validation/[gt|rendered|depth]",
                 image=list(map(
                     concatenate_fn,
                     map(data.f32_to_u8, gt_rgbs_f32),

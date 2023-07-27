@@ -83,7 +83,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> in
                 translation=scene_meta.frames[test_i].transform_matrix_jax_array[:3, 3],
             )
             KEY, key = jran.split(KEY, 2)
-            bg, rgb, disparity, _ = data.to_cpu(render_image_inference(
+            bg, rgb, depth, _ = data.to_cpu(render_image_inference(
                 KEY=key,
                 transform_cw=transform,
                 state=state,
@@ -91,7 +91,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> in
             rendered_images.append(RenderedImage(
                 bg=bg,
                 rgb=rgb,
-                disparity=disparity,  # call to data.mono_to_rgb is deferred below so as to minimize impact on rendering speed
+                depth=depth,  # call to data.mono_to_rgb is deferred below so as to minimize impact on rendering speed
             ))
     except KeyboardInterrupt:
         logger.warn("keyboard interrupt, tested {} images".format(len(rendered_images)))
@@ -127,7 +127,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> in
 
     if "video" in args.save_as:
         dest_rgb_video = save_dest.joinpath("rgb.mp4")
-        dest_disparity_video = save_dest.joinpath("disparity.mp4")
+        dest_depth_video = save_dest.joinpath("depth.mp4")
 
         logger.debug("saving predicted color images as a video at '{}'".format(dest_rgb_video))
         data.write_video(
@@ -137,23 +137,23 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> in
             loop=args.loop,
         )
 
-        logger.debug("saving predicted disparities as a video at '{}'".format(dest_disparity_video))
+        logger.debug("saving predicted disparities as a video at '{}'".format(dest_depth_video))
         data.write_video(
-            save_dest.joinpath("disparity.mp4"),
-            map(lambda img: common.compose(data.mono_to_rgb, data.f32_to_u8)(img.disparity), rendered_images),
+            save_dest.joinpath("depth.mp4"),
+            map(lambda img: common.compose(data.mono_to_rgb, data.f32_to_u8)(img.depth), rendered_images),
             fps=args.fps,
             loop=args.loop,
         )
 
     if "image" in args.save_as:
         dest_rgb = save_dest.joinpath("rgb")
-        dest_disparity = save_dest.joinpath("disparity")
+        dest_depth = save_dest.joinpath("depth")
 
         dest_rgb.mkdir(parents=True, exist_ok=True)
-        dest_disparity.mkdir(parents=True, exist_ok=True)
+        dest_depth.mkdir(parents=True, exist_ok=True)
 
         logger.debug("saving as images")
-        def save_rgb_and_disparity(save_i: int, img: RenderedImage):
+        def save_rgb_and_depth(save_i: int, img: RenderedImage):
             common.compose(
                 np.asarray,
                 Image.fromarray
@@ -163,10 +163,10 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> in
                 data.f32_to_u8,
                 np.asarray,
                 Image.fromarray
-            )(img.disparity).save(dest_disparity.joinpath("{:04d}.png".format(save_i)))
+            )(img.depth).save(dest_depth.joinpath("{:04d}.png".format(save_i)))
         for _ in common.tqdm(
             ThreadPoolExecutor().map(
-                save_rgb_and_disparity,
+                save_rgb_and_depth,
                 range(len(rendered_images)),
                 rendered_images,
             ),
