@@ -119,15 +119,28 @@ def backup_current_codebase(exp_dir: Path | str) -> int:
     os.chdir(repo.git.working_dir)
 
     exp_dir = Path(exp_dir)
-    save_root_dir = exp_dir.joinpath("src")
+    save_root_dir = exp_dir.joinpath("runs")
     save_root_dir.mkdir(parents=False, exist_ok=True)
     epoch = 0
-    save_dir = save_root_dir.joinpath("#{:03d}".format(epoch))
+    save_dir = save_root_dir.joinpath("{:04d}".format(epoch))
     while save_dir.exists():
         epoch += 1
-        save_dir = save_root_dir.joinpath("#{:03d}".format(epoch))
+        save_dir = save_root_dir.joinpath("{:04d}".format(epoch))
+
+    latest_run_lnk = exp_dir.joinpath("latest-run")
+    if latest_run_lnk.exists():
+        if (
+            latest_run_lnk.is_symlink()
+            and latest_run_lnk.readlink().parent.absolute() == save_dir.parent.absolute()
+        ):
+            latest_run_lnk.unlink()
+        else:
+            raise RuntimeError(
+                "the path '{}' exists but is not a symlink to a previous run".format(latest_run_lnk)
+            )
 
     save_dir.mkdir(parents=False, exist_ok=False)
+    latest_run_lnk.symlink_to(save_dir.absolute())
 
     shutil.copyfile("flake.nix", save_dir.joinpath("flake.nix"))
     shutil.copyfile("flake.lock", save_dir.joinpath("flake.lock"))

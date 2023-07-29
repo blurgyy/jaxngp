@@ -95,9 +95,6 @@ class ImageFitArgs:
 
 @dataclass(frozen=True, kw_only=True)
 class NeRFArgsBase:
-    # experiment artifacts are saved under this directory
-    exp_dir: Path
-
     raymarch: RayMarchingOptions
     render: RenderingOptions
     scene: SceneOptions
@@ -107,6 +104,10 @@ class NeRFArgsBase:
 
 @dataclass(frozen=True, kw_only=True)
 class _SharedNeRFTrainingArgs(NeRFArgsBase):
+    # each experiment run will save its own code, config, training logs, and checkpoints into a
+    # separate subdirectory of this path
+    exp_dir: Path
+
     # directories or transform.json files containing data for training
     frames_train: tyro.conf.Positional[Tuple[Path, ...]]
 
@@ -165,6 +166,9 @@ class NeRFTrainingArgs(_SharedNeRFTrainingArgs): ...
 
 @dataclass(frozen=True, kw_only=True)
 class NeRFTestingArgs(NeRFArgsBase):
+    # testing logs and results are saved to this directory, overwriting its content if any
+    logs_dir: Path
+
     frames: tyro.conf.Positional[Tuple[Path, ...]]
 
     camera_override: CameraOverrideOptions=CameraOverrideOptions()

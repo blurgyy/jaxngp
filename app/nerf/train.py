@@ -97,19 +97,16 @@ def train_epoch(
 
 
 def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> int:
-    if args.exp_dir.exists():
-        msg = "specified experiment directory '{}' already exists".format(args.exp_dir)
-        if args.ckpt is not None:
-            logger.warn(msg)
-        else:
-            logger.error(msg)
-            return 1
     if args.ckpt is not None and not args.ckpt.exists():
         logger.error("specified checkpoint '{}' does not exist".format(args.ckpt))
         return 2
-    logs_dir = args.exp_dir.joinpath("logs")
-    logs_dir.mkdir(parents=True, exist_ok=True)
 
+    args.exp_dir.mkdir(parents=True, exist_ok=True)
+    save_dir = common.backup_current_codebase(args.exp_dir)
+    save_dir.joinpath("config.yaml").write_text(tyro.to_yaml(args))
+
+    logs_dir = save_dir.joinpath("logs")
+    logs_dir.mkdir(parents=True, exist_ok=True)
     logger = common.setup_logging(
         "nerf.train",
         file=logs_dir.joinpath("train.log"),
@@ -119,8 +116,6 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
     )
     logger.write_hparams(dataclasses.asdict(args))
 
-    save_dir = common.backup_current_codebase(args.exp_dir)
-    save_dir.joinpath("config.yaml").write_text(tyro.to_yaml(args))
     logger.info("code saved to '{}', configurations saved at '{}'".format(
         save_dir,
         save_dir.joinpath("config.yaml"),
@@ -234,7 +229,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
         if metrics["interrupted"]:
             logger.warn("aborted at epoch {}".format(ep_log))
             logger.info("saving training state ... ")
-            ckpt_name = checkpoints.save_checkpoint(args.exp_dir, state, step="ep{}aborted".format(ep_log), overwrite=True, keep=2**30)
+            ckpt_name = checkpoints.save_checkpoint(logs_dir, state, step="ep{}aborted".format(ep_log), overwrite=True, keep=2**30)
             logger.info("training state of epoch {} saved to: {}".format(ep_log, ckpt_name))
             logger.info("exiting cleanly ...")
             return 0
@@ -255,7 +250,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
 
         logger.info("saving training state ... ")
         ckpt_name = checkpoints.save_checkpoint(
-            args.exp_dir,
+            logs_dir,
             state,
             step=ep_log * args.train.iters,
             overwrite=True,

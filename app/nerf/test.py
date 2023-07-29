@@ -17,11 +17,10 @@ from utils.types import NeRFState, RenderedImage, RigidTransformation
 
 
 def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> int:
-    logs_dir = args.exp_dir.joinpath("logs")
-    logs_dir.mkdir(parents=True, exist_ok=True)
+    args.logs_dir.mkdir(parents=True, exist_ok=True)
     logger = common.setup_logging(
         "nerf.test",
-        file=logs_dir.joinpath("test.log"),
+        file=args.logs_dir.joinpath("test.log"),
         level=args.common.logging.upper(),
         file_level="DEBUG",
     )
@@ -122,7 +121,7 @@ def test(KEY: jran.KeyArray, args: NeRFTestingArgs, logger: common.Logger) -> in
     else:
         assert_never("")
 
-    save_dest = args.exp_dir.joinpath("test")
+    save_dest = args.logs_dir.joinpath("test")
     save_dest.mkdir(parents=True, exist_ok=True)
 
     if "video" in args.save_as:
