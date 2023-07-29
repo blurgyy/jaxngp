@@ -287,8 +287,26 @@ def render_image_inference(
         bg = state.render.bg
     rays_bg = jnp.broadcast_to(jnp.asarray(bg), (state.scene_meta.camera.n_pixels, 3))
 
-    o_world, d_world, t_starts, t_ends, rays_bg, rays_rgbd, rays_T = jax.lax.stop_gradient((
-        o_world, d_world, t_starts, t_ends, rays_bg, rays_rgbd, rays_T
+    (
+        o_world,
+        d_world,
+        appearance_embedding,
+        t_starts,
+        t_ends,
+        rays_bg,
+        rays_rgbd,
+        rays_cost,
+        rays_T,
+    ) = jax.lax.stop_gradient((
+        o_world,
+        d_world,
+        appearance_embedding,
+        t_starts,
+        t_ends,
+        rays_bg,
+        rays_rgbd,
+        rays_cost,
+        rays_T,
     ))
 
     march_steps_cap = 8
