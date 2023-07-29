@@ -111,6 +111,9 @@ class _SharedNeRFTrainingArgs(NeRFArgsBase):
     # directories or transform.json files containing data for training
     frames_train: tyro.conf.Positional[Tuple[Path, ...]]
 
+    # an optional description of this run
+    note: str | None=None
+
     # directories or transform.json files containing data for validation
     frames_val: Tuple[Path, ...]=()
 

@@ -110,6 +110,7 @@ def backup_current_codebase(
     exp_dir: Path | str,
     /,
     name_prefix: str,
+    note: str | None,
 ) -> int:
     """Backup current codebase to a directory named 'src' under the specified `exp_dir` directory,
     creating it if it does not exist.
@@ -126,10 +127,15 @@ def backup_current_codebase(
     save_root_dir = exp_dir.joinpath("runs")
     save_root_dir.mkdir(parents=False, exist_ok=True)
     epoch = 0
-    save_dir = save_root_dir.joinpath("{}{:04d}".format(name_prefix, epoch))
-    while save_dir.exists():
+    def save_dir_name(note: str | None) -> str:
+        ret = "{}{:04d}".format(name_prefix, epoch)
+        if note is not None:
+            ret += "#" + note
+        return ret
+    save_dir = save_root_dir.joinpath(save_dir_name(note=note))
+    while len(tuple(save_root_dir.glob(save_dir_name(note=None) + "*"))) > 0:
         epoch += 1
-        save_dir = save_root_dir.joinpath("{}{:04d}".format(name_prefix, epoch))
+        save_dir = save_root_dir.joinpath(save_dir_name(note=note))
 
     latest_run_lnk = exp_dir.joinpath("{}latest-run".format(name_prefix))
     if latest_run_lnk.exists():

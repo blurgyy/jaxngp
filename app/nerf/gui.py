@@ -150,7 +150,8 @@ class Gui_trainer():
         self.istraining = True
 
         self.args.exp_dir.mkdir(parents=True, exist_ok=True)
-        save_dir = common.backup_current_codebase(self.args.exp_dir, name_prefix="gui-")
+        save_dir = common.backup_current_codebase(self.args.exp_dir, name_prefix="gui-",
+                                                  note=self.args.note)
         config_save_path = save_dir.joinpath("config.yaml")
         config_save_path.write_text(tyro.to_yaml(self.args))
 
