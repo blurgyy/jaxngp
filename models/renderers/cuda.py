@@ -173,25 +173,31 @@ class MarchAndIntegrateInferencePayload:
     nerf_fn: Callable
 
 
-@jit_jaxfn_with(static_argnames=["payload"])
+@jit_jaxfn_with(
+    static_argnames=["payload"],
+    donate_argnums=tuple(range(7)),  # NOTE: this only works for positional arguments, see <https://jax.readthedocs.io/en/latest/faq.html#buffer-donation>
+)
 def march_and_integrate_inference(
-    payload: MarchAndIntegrateInferencePayload,
-    locked_nerf_params: FrozenVariableDict,
-    appearance_embedding: jax.Array,
-
+    # rw (donated) fields (7)
     next_ray_index: jax.Array,
-    rays_o: jax.Array,
-    rays_d: jax.Array,
-    t_starts: jax.Array,
-    t_ends: jax.Array,
-    occupancy_bitfield: jax.Array,
     terminated: jax.Array,
     indices: jax.Array,
-
-    rays_bg: jax.Array,
     rays_rgbd: jax.Array,
     rays_T: jax.Array,
     rays_cost: jax.Array | None,
+    t_starts: jax.Array,
+
+    # static
+    payload: MarchAndIntegrateInferencePayload,
+
+    # ro fields
+    locked_nerf_params: FrozenVariableDict,
+    appearance_embedding: jax.Array,
+    rays_o: jax.Array,
+    rays_d: jax.Array,
+    t_ends: jax.Array,
+    rays_bg: jax.Array,
+    occupancy_bitfield: jax.Array,
 ):
     next_ray_index, indices, n_samples, t_starts, xyzs, dss, z_vals = march_rays_inference(
         diagonal_n_steps=payload.diagonal_n_steps,
@@ -232,7 +238,7 @@ def march_and_integrate_inference(
         drgbs=drgbs,
     )
 
-    return terminate_cnt, terminated, next_ray_index, indices, t_starts, rays_rgbd, rays_T, rays_cost
+    return terminate_cnt, next_ray_index, terminated, indices, rays_rgbd, rays_T, rays_cost, t_starts
 
 
 def render_image_inference(
@@ -322,7 +328,17 @@ def render_image_inference(
         iters = 2 ** int(math.log2(iters) + 1)
 
         for _ in range(iters):
-            terminate_cnt, terminated, next_ray_index, indices, t_starts, rays_rgbd, rays_T, rays_cost = march_and_integrate_inference(
+            terminate_cnt, next_ray_index, terminated, indices, rays_rgbd, rays_T, rays_cost, t_starts = march_and_integrate_inference(
+                # rw (donated) fields
+                next_ray_index,
+                terminated,
+                indices,
+                rays_rgbd,
+                rays_T,
+                rays_cost,
+                t_starts,
+
+                # static
                 payload=MarchAndIntegrateInferencePayload(
                     march_steps_cap=march_steps_cap,
                     diagonal_n_steps=state.raymarch.diagonal_n_steps,
@@ -332,22 +348,15 @@ def render_image_inference(
                     stepsize_portion=state.scene_meta.stepsize_portion,
                     nerf_fn=state.nerf_fn,
                 ),
+
+                # ro fields
                 locked_nerf_params=state.locked_params["nerf"],
                 appearance_embedding=appearance_embedding,
-
-                next_ray_index=next_ray_index,
                 rays_o=o_world,
                 rays_d=d_world,
-                t_starts=t_starts,
                 t_ends=t_ends,
-                occupancy_bitfield=state.ogrid.occupancy,
-                terminated=terminated,
-                indices=indices,
-
                 rays_bg=rays_bg,
-                rays_rgbd=rays_rgbd,
-                rays_T=rays_T,
-                rays_cost=rays_cost,
+                occupancy_bitfield=state.ogrid.occupancy,
             )
             n_rendered_rays += terminate_cnt
 

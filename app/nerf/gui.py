@@ -402,8 +402,8 @@ class Gui_trainer():
                                shape=(total_samples, ),
                                replace=True)
             state, metrics = train_step(
+                state,
                 KEY=key_train_step,
-                state=state,
                 total_samples=total_samples,
                 scene=scene,
                 perm=perm,

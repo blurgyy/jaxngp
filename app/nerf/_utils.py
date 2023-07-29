@@ -77,10 +77,14 @@ def make_optimizer(lr: float) -> optax.GradientTransformation:
     )
 
 
-@common.jit_jaxfn_with(static_argnames=["total_samples"])
+@common.jit_jaxfn_with(
+    static_argnames=["total_samples"],
+    donate_argnums=(0,),  # NOTE: this only works for positional arguments, see <https://jax.readthedocs.io/en/latest/faq.html#buffer-donation>
+)
 def train_step(
-    KEY: jran.KeyArray,
     state: NeRFState,
+    /,
+    KEY: jran.KeyArray,
     total_samples: int,
     scene: SceneData,
     perm: jax.Array,

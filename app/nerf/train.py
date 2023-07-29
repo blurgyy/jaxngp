@@ -47,8 +47,8 @@ def train_epoch(
                 KEY, key_perm, key_train_step = jran.split(KEY, 3)
                 perm = jran.choice(key_perm, scene.n_pixels, shape=(total_samples,), replace=True)
                 state, metrics = train_step(
+                    state,
                     KEY=key_train_step,
-                    state=state,
                     total_samples=total_samples,
                     scene=scene,
                     perm=perm,
