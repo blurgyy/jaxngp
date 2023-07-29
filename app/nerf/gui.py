@@ -148,20 +148,27 @@ class Gui_trainer():
         self.cur_step = 0
 
         self.istraining = True
-        logs_dir = self.args.exp_dir.joinpath("logs")
+
+        self.args.exp_dir.mkdir(parents=True, exist_ok=True)
+        save_dir = common.backup_current_codebase(self.args.exp_dir, name_prefix="gui-")
+        config_save_path = save_dir.joinpath("config.yaml")
+        config_save_path.write_text(tyro.to_yaml(self.args))
+
+        logs_dir = save_dir.joinpath("logs")
         logs_dir.mkdir(parents=True, exist_ok=True)
         self.logger = common.setup_logging(
-            "nerf.train",
-            file=logs_dir.joinpath("train.log"),
+            "nerf.gui",
+            file=logs_dir.joinpath("gui.log"),
             with_tensorboard=True,
             level=self.args.common.logging.upper(),
             file_level="DEBUG",
         )
-        self.args.exp_dir.joinpath("config.yaml").write_text(
-            tyro.to_yaml(self.args))
         self.logger.write_hparams(dataclasses.asdict(self.args))
-        self.logger.info("configurations saved to '{}'".format(
-            self.args.exp_dir.joinpath("config.yaml")))
+
+        self.logger.info("code saved to '{}', configurations saved at '{}'".format(
+            save_dir,
+            config_save_path,
+        ))
 
         # load data
         self.scene_train = data.load_scene(

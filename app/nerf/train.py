@@ -102,8 +102,9 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
         return 2
 
     args.exp_dir.mkdir(parents=True, exist_ok=True)
-    save_dir = common.backup_current_codebase(args.exp_dir)
-    save_dir.joinpath("config.yaml").write_text(tyro.to_yaml(args))
+    save_dir = common.backup_current_codebase(args.exp_dir, name_prefix="train-")
+    config_save_path = save_dir.joinpath("config.yaml")
+    config_save_path.write_text(tyro.to_yaml(args))
 
     logs_dir = save_dir.joinpath("logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -118,7 +119,7 @@ def train(KEY: jran.KeyArray, args: NeRFTrainingArgs, logger: common.Logger) -> 
 
     logger.info("code saved to '{}', configurations saved at '{}'".format(
         save_dir,
-        save_dir.joinpath("config.yaml"),
+        config_save_path,
     ))
 
     # data

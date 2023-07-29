@@ -106,7 +106,11 @@ class Logger(logging.Logger):
 tqdm = functools.partial(tqdm_original, bar_format=tqdm_format)
 
 
-def backup_current_codebase(exp_dir: Path | str) -> int:
+def backup_current_codebase(
+    exp_dir: Path | str,
+    /,
+    name_prefix: str,
+) -> int:
     """Backup current codebase to a directory named 'src' under the specified `exp_dir` directory,
     creating it if it does not exist.
     """
@@ -122,12 +126,12 @@ def backup_current_codebase(exp_dir: Path | str) -> int:
     save_root_dir = exp_dir.joinpath("runs")
     save_root_dir.mkdir(parents=False, exist_ok=True)
     epoch = 0
-    save_dir = save_root_dir.joinpath("{:04d}".format(epoch))
+    save_dir = save_root_dir.joinpath("{}{:04d}".format(name_prefix, epoch))
     while save_dir.exists():
         epoch += 1
-        save_dir = save_root_dir.joinpath("{:04d}".format(epoch))
+        save_dir = save_root_dir.joinpath("{}{:04d}".format(name_prefix, epoch))
 
-    latest_run_lnk = exp_dir.joinpath("latest-run")
+    latest_run_lnk = exp_dir.joinpath("{}latest-run".format(name_prefix))
     if latest_run_lnk.exists():
         if (
             latest_run_lnk.is_symlink()
@@ -138,6 +142,8 @@ def backup_current_codebase(exp_dir: Path | str) -> int:
             raise RuntimeError(
                 "the path '{}' exists but is not a symlink to a previous run".format(latest_run_lnk)
             )
+    elif latest_run_lnk.is_symlink():  # the link does not exist, but it is a symlink, that makes it a broken symlink
+        latest_run_lnk.unlink()
 
     save_dir.mkdir(parents=False, exist_ok=False)
     latest_run_lnk.symlink_to(save_dir.absolute())
