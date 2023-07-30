@@ -17,8 +17,9 @@ namespace jaxtcnn {
 
 namespace {
 
-template <std::uint32_t DIM, std::uint32_t N_FEATURES_PER_LEVEL>
 void hashgrid_forward_launcher(cudaStream_t stream, void **buffers, char const *opaque, std::size_t opaque_len) {
+    std::uint32_t static constexpr DIM = 3u;
+
     // buffer indexing helper
     std::uint32_t __buffer_idx = 0;
     auto const next_buffer = [&]() { return buffers[__buffer_idx++]; };
@@ -49,36 +50,43 @@ void hashgrid_forward_launcher(cudaStream_t stream, void **buffers, char const *
     tcnn::MatrixView<float const> positions_in(coords_rm, n_coords, 1);  // row major
 
     // kernel launch
-    static std::uint32_t constexpr n_threads = 512;
+    std::uint32_t static constexpr n_threads = 512;
     dim3 const blocks = { tcnn::div_round_up(n_coords, n_threads), L, 1 };
-    if (F == N_FEATURES_PER_LEVEL) {
-        tcnn::kernel_grid<float, DIM, N_FEATURES_PER_LEVEL, tcnn::HashType::CoherentPrime><<<blocks, n_threads, 0, stream>>>(
-            n_coords  // n_elements
-            , L * F  // num_grid_features
-            , offset_table  // offset_table
-            , N_min  // base_resolution
-            , log2f(per_level_scale)  // log2_per_level_scale
-            , 0.f  // quantize_threshold
-            , 1e3f  // max_level
-            , nullptr  // max_level_gpu
-            , tcnn::InterpolationType::Linear  // interpolation_type
-            , tcnn::GridType::Hash  // grid_type
+#define PARAMS \
+    n_coords \
+    , L * F \
+    , offset_table \
+    , N_min \
+    , log2f(per_level_scale) \
+    , 0.f \
+    , 1e3f \
+    , nullptr \
+    , tcnn::InterpolationType::Linear \
+    , tcnn::GridType::Hash \
+    , params \
+    , positions_in \
+    , encoded_positions_rm \
+    , dy_dcoords_rm
 
-            , params  // grid
-            , positions_in
-            , encoded_positions_rm
-            , dy_dcoords_rm
+    if (F == 2) {
+        std::uint32_t static constexpr N_FEATURES_PER_LEVEL = 2;
+        tcnn::kernel_grid<float, 3, N_FEATURES_PER_LEVEL, tcnn::HashType::CoherentPrime><<<blocks, n_threads, 0, stream>>>(
+            PARAMS
+        );
+    } else if (F == 4) {
+        std::uint32_t static constexpr N_FEATURES_PER_LEVEL = 4;
+        tcnn::kernel_grid<float, 3, N_FEATURES_PER_LEVEL, tcnn::HashType::CoherentPrime><<<blocks, n_threads, 0, stream>>>(
+            PARAMS
         );
     } else {
         throw std::runtime_error{
-            fmt::format("the only supported value of F (n_features_per_level) is {}, got {}", N_FEATURES_PER_LEVEL, F)
+            fmt::format("supported values of F (n_features_per_level) are [2, 4], got {}", F)
         };
     }
 
     CUDA_CHECK_THROW(cudaGetLastError());
 }
 
-template <std::uint32_t DIM, std::uint32_t N_FEATURES_PER_LEVEL>
 void hashgrid_backward_launcher(cudaStream_t stream, void **buffers, char const *opaque, std::size_t opaque_len) {
     // buffer indexing helper
     std::uint32_t __buffer_idx = 0;
@@ -110,33 +118,45 @@ void hashgrid_backward_launcher(cudaStream_t stream, void **buffers, char const 
     tcnn::MatrixView<float const> positions_in(coords_rm, n_coords, 1);  // row major
 
     // kernel launch
-    uint32_t static constexpr n_threads = 256;
-    uint32_t static constexpr n_features_per_thread = std::min(2u, N_FEATURES_PER_LEVEL);
-    const dim3 blocks = { tcnn::div_round_up(n_coords * F / n_features_per_thread, n_threads), L, 1 };
+    std::uint32_t static constexpr n_threads = 256;
 
-    if (F == N_FEATURES_PER_LEVEL) {
+#define PARAMS \
+    n_coords \
+    , L * F \
+    , offset_table \
+    , N_min \
+    , log2f(per_level_scale) \
+    , 1e3f \
+    , nullptr \
+    , false \
+    , tcnn::InterpolationType::Linear \
+    , tcnn::GridType::Hash \
+    , dL_dparams \
+    , positions_in \
+    , dL_dy_rm
+
+    std::uint32_t static constexpr DIM = 3u;
+    if (F == 2u) {
+        std::uint32_t static constexpr N_FEATURES_PER_LEVEL = 2u;
+        std::uint32_t static constexpr n_features_per_thread = std::min(2u, N_FEATURES_PER_LEVEL);
+        const dim3 blocks = { tcnn::div_round_up(n_coords * F / n_features_per_thread, n_threads), L, 1 };
         tcnn::kernel_grid_backward<float, float, DIM, N_FEATURES_PER_LEVEL, n_features_per_thread, tcnn::HashType::CoherentPrime><<<blocks, n_threads, 0, stream>>>(
-            n_coords  // num_elements
-            , L * F  // num_grid_features
-            , offset_table  // offset_table
-            , N_min  // base_resolution
-            , log2f(per_level_scale)  // log2_per_level_scale
-            , 1e3f  // max_level
-            , nullptr  // max_level_gpu
-            , false  // stochastic_interpolation
-            , tcnn::InterpolationType::Linear  // interpolation_type
-            , tcnn::GridType::Hash  // grid_type
-
-            , dL_dparams  // grid_gradient
-            , positions_in  // positions_in
-            , dL_dy_rm   // dL_dy // gradients SoA
+            PARAMS
         );
-        CUDA_CHECK_THROW(cudaGetLastError());
+    } else if (F == 4) {
+        std::uint32_t static constexpr N_FEATURES_PER_LEVEL = 4u;
+        std::uint32_t static constexpr n_features_per_thread = std::min(2u, N_FEATURES_PER_LEVEL);
+        const dim3 blocks = { tcnn::div_round_up(n_coords * F / n_features_per_thread, n_threads), L, 1 };
+        tcnn::kernel_grid_backward<float, float, DIM, N_FEATURES_PER_LEVEL, n_features_per_thread, tcnn::HashType::CoherentPrime><<<blocks, n_threads, 0, stream>>>(
+            PARAMS
+        );
     } else {
         throw std::runtime_error{
-            fmt::format("the only supported value of F (n_features_per_level) is {}, got {}", N_FEATURES_PER_LEVEL, F)
+            fmt::format("supported values of F (n_features_per_level) are 2, 4, got {}", F)
         };
     }
+
+    CUDA_CHECK_THROW(cudaGetLastError());
 
     // gradients w.r.t. input coordinates
     // prepare input data for tcnn::kernel_grid_backward_input
@@ -161,7 +181,7 @@ void hashgrid_encode(
     char const *opaque,
     std::size_t opaque_len
 ) {
-    hashgrid_forward_launcher<3, 2>(stream, buffers, opaque, opaque_len);
+    hashgrid_forward_launcher(stream, buffers, opaque, opaque_len);
 }
 
 void hashgrid_encode_backward(
@@ -170,7 +190,7 @@ void hashgrid_encode_backward(
     char const *opaque,
     std::size_t opaque_len
 ) {
-    hashgrid_backward_launcher<3, 2>(stream, buffers, opaque, opaque_len);
+    hashgrid_backward_launcher(stream, buffers, opaque, opaque_len);
 }
 
 }  // namespace jaxtcnn
