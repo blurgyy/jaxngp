@@ -111,7 +111,7 @@ def backup_current_codebase(
     /,
     name_prefix: str,
     note: str | None,
-) -> int:
+) -> Path:
     """Backup current codebase to a directory named 'src' under the specified `exp_dir` directory,
     creating it if it does not exist.
     """
