@@ -363,7 +363,7 @@ def render_image_inference(
     bg_array_f32 = rays_bg.reshape((state.scene_meta.camera.height, state.scene_meta.camera.width, 3))
     rays_rgb, rays_depth = jnp.array_split(rays_rgbd, [3], axis=-1)
     image_array_u8 = f32_to_u8(rays_rgb).reshape((state.scene_meta.camera.height, state.scene_meta.camera.width, 3))
-    distance_array_u8 = f32_to_u8((rays_depth - rays_depth.min()) / (rays_depth.max() - rays_depth.min()))
+    distance_array_u8 = f32_to_u8((rays_depth - rays_depth.min()) / (rays_depth.max() - rays_depth.min() + 1e-15))
     distance_array_u8 = distance_array_u8.reshape((state.scene_meta.camera.height, state.scene_meta.camera.width))
     if render_cost:
         cost_array_u8 = f32_to_u8(rays_cost.astype(jnp.float32) / (rays_cost.astype(jnp.float32).max() + 1.)).reshape((state.scene_meta.camera.height, state.scene_meta.camera.width))
