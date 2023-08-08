@@ -161,6 +161,7 @@ def backup_current_codebase(
 
     def ignored_files(dir, files):
         return [
+            "result",
             ".clangd",
             ".clang-format",
         ]
