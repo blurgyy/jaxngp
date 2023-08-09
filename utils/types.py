@@ -1378,19 +1378,7 @@ class NeRFState(TrainState):
 
     @property
     def update_ogrid_interval(self) -> int:
-        s = int(self.step)
-        if s < 16:
-            return 1
-        elif s < 256:
-            return s // 16
-        elif s < 1024:
-            return 16
-        elif s < 4096:
-            return 32
-        elif s < 8192:
-            return 64
-        else:
-            return 128
+        return min(16, self.step // 16 + 1)
 
     @property
     def should_call_update_ogrid(self) -> bool:
