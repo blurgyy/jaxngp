@@ -70,7 +70,7 @@ def march_rays(
     n_rays, _ = rays_o.shape
     noises = jnp.broadcast_to(noises, (n_rays,))
 
-    measured_batch_size_before_compaction, n_valid_rays, rays_n_samples, rays_sample_startidx, idcs, xyzs, dirs, dss, z_vals = impl.march_rays_p.bind(
+    next_sample_write_location, number_of_exceeded_samples, n_valid_rays, rays_n_samples, rays_sample_startidx, idcs, xyzs, dirs, dss, z_vals = impl.march_rays_p.bind(
         # arrays
         rays_o,
         rays_d,
@@ -88,7 +88,9 @@ def march_rays(
         stepsize_portion=stepsize_portion,
     )
 
-    return measured_batch_size_before_compaction[0], n_valid_rays[0], rays_n_samples, rays_sample_startidx, idcs, xyzs, dirs, dss, z_vals
+    measured_batch_size_before_compaction = next_sample_write_location[0] - number_of_exceeded_samples[0]
+
+    return measured_batch_size_before_compaction, n_valid_rays[0], rays_n_samples, rays_sample_startidx, idcs, xyzs, dirs, dss, z_vals
 
 
 def march_rays_inference(

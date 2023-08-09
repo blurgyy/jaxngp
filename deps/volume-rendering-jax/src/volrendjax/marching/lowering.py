@@ -55,7 +55,8 @@ def march_rays_lowering_rule(
         "in.noises": (n_rays,),
         "in.occupancy_bitfield": (K*G*G*G//8,),
 
-        "helper.measured_batch_size_before_compaction": (1,),
+        "helper.next_sample_write_location": (1,),
+        "helper.number_of_exceeded_samples": (1,),
         "helper.n_valid_rays": (1,),
 
         "out.rays_n_samples": (n_rays,),
@@ -70,7 +71,8 @@ def march_rays_lowering_rule(
     return custom_call(
         call_target_name="march_rays",
         out_types=[
-            ir.RankedTensorType.get(shapes["helper.measured_batch_size_before_compaction"], ir.IntegerType.get_unsigned(32)),
+            ir.RankedTensorType.get(shapes["helper.next_sample_write_location"], ir.IntegerType.get_unsigned(32)),
+            ir.RankedTensorType.get(shapes["helper.number_of_exceeded_samples"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["helper.n_valid_rays"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.rays_n_samples"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.rays_sample_startidx"], ir.IntegerType.get_unsigned(32)),
@@ -98,7 +100,8 @@ def march_rays_lowering_rule(
             shapes["in.occupancy_bitfield"],
         ),
         result_layouts=default_layouts(
-            shapes["helper.measured_batch_size_before_compaction"],
+            shapes["helper.next_sample_write_location"],
+            shapes["helper.number_of_exceeded_samples"],
             shapes["helper.n_valid_rays"],
             shapes["out.rays_n_samples"],
             shapes["out.rays_sample_startidx"],

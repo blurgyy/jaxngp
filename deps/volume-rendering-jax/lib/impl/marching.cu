@@ -117,7 +117,8 @@ __global__ void march_rays_kernel(
     , std::uint8_t const * const __restrict__ occupancy_bitfield  // [K*G*G*G//8]
 
     // accumulator for writing a compact output samples array
-    , std::uint32_t * const __restrict__ measured_batch_size_before_compaction
+    , std::uint32_t * const __restrict__ next_sample_write_location
+    , std::uint32_t * const __restrict__ number_of_exceeded_samples
     , std::uint32_t * const __restrict__ n_valid_rays
 
     // outputs
@@ -131,7 +132,7 @@ __global__ void march_rays_kernel(
 ) {
     std::uint32_t const i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_rays) { return; }
-    if (*measured_batch_size_before_compaction >= total_samples) { return; }
+    if (*next_sample_write_location >= total_samples) { return; }
 
     // inputs
     vec3f const o = {
@@ -194,13 +195,13 @@ __global__ void march_rays_kernel(
     // array to zeros
     if (ray_n_samples == 0) { return; }
 
-    // cannot check `(*measured_batch_size_before_compaction) + ray_n_samples >= total_samples`
-    // because even if the check did not return true, it might not hold in a later `atomicAdd` call
-    // on the measured_batch_size_before_compaction (TOCTOU race condition).
+    // cannot check `(*next_sample_write_location) + ray_n_samples >= total_samples`, a later
+    // `atomicAdd` call on the `next_sample_write_location` might flip the result of this
+    // conditional (TOCTOU race condition).
     // record the index of the first generated sample on this ray
-    std::uint32_t const ray_sample_startidx = atomicAdd(measured_batch_size_before_compaction, ray_n_samples);
+    std::uint32_t const ray_sample_startidx = atomicAdd(next_sample_write_location, ray_n_samples);
     if (ray_sample_startidx + ray_n_samples > total_samples) {
-        atomicSub(measured_batch_size_before_compaction, ray_n_samples);
+        atomicAdd(number_of_exceeded_samples, ray_n_samples);
         return;
     }
 
@@ -421,7 +422,8 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     std::uint8_t const * const __restrict__ occupancy_bitfield = static_cast<std::uint8_t *>(next_buffer());  // [K*G*G*G//8]
 
     // helper
-    std::uint32_t * const __restrict__ measured_batch_size_before_compaction = static_cast<std::uint32_t *>(next_buffer());
+    std::uint32_t * const __restrict__ next_sample_write_location = static_cast<std::uint32_t *>(next_buffer());
+    std::uint32_t * const __restrict__ number_of_exceeded_samples = static_cast<std::uint32_t *>(next_buffer());
     std::uint32_t * const __restrict__ n_valid_rays = static_cast<std::uint32_t *>(next_buffer());
 
     // outputs
@@ -434,7 +436,8 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     float * const __restrict__ z_vals = static_cast<float *>(next_buffer());  // [total_samples]
 
     // reset helper counter and outputs to zeros
-    CUDA_CHECK_THROW(cudaMemsetAsync(measured_batch_size_before_compaction, 0x00, sizeof(std::uint32_t), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(next_sample_write_location, 0x00, sizeof(std::uint32_t), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(number_of_exceeded_samples, 0x00, sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(n_valid_rays, 0x00, sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(rays_n_samples, 0x00, n_rays * sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(rays_sample_startidx, 0x00, n_rays * sizeof(std::uint32_t), stream));
@@ -465,7 +468,8 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
         , noises
         , occupancy_bitfield
 
-        , measured_batch_size_before_compaction
+        , next_sample_write_location
+        , number_of_exceeded_samples
         , n_valid_rays
 
         // outputs
