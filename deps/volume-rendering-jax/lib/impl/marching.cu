@@ -119,7 +119,7 @@ __global__ void march_rays_kernel(
     // accumulator for writing a compact output samples array
     , std::uint32_t * const __restrict__ next_sample_write_location
     , std::uint32_t * const __restrict__ number_of_exceeded_samples
-    , std::uint32_t * const __restrict__ n_valid_rays
+    , bool * const __restrict__ ray_is_valid
 
     // outputs
     , std::uint32_t * const __restrict__ rays_n_samples  // [n_rays]
@@ -193,7 +193,10 @@ __global__ void march_rays_kernel(
 
     // can safely return here because before launching the kernel we have `memset`ed every output
     // array to zeros
-    if (ray_n_samples == 0) { return; }
+    if (ray_n_samples == 0) {
+        ray_is_valid[i] = true;
+        return;
+    }
 
     // cannot check `(*next_sample_write_location) + ray_n_samples >= total_samples`, a later
     // `atomicAdd` call on the `next_sample_write_location` might flip the result of this
@@ -207,7 +210,7 @@ __global__ void march_rays_kernel(
 
     // record how many samples are generated along this ray
     rays_n_samples[i] = ray_n_samples;
-    atomicAdd(n_valid_rays, 1u);
+    ray_is_valid[i] = true;
     rays_sample_startidx[i] = ray_sample_startidx;
 
     // output arrays
@@ -424,7 +427,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     // helper
     std::uint32_t * const __restrict__ next_sample_write_location = static_cast<std::uint32_t *>(next_buffer());
     std::uint32_t * const __restrict__ number_of_exceeded_samples = static_cast<std::uint32_t *>(next_buffer());
-    std::uint32_t * const __restrict__ n_valid_rays = static_cast<std::uint32_t *>(next_buffer());
+    bool * const __restrict__ ray_is_valid = static_cast<bool *>(next_buffer());
 
     // outputs
     std::uint32_t * const __restrict__ rays_n_samples = static_cast<std::uint32_t *>(next_buffer());  // [n_rays]
@@ -438,7 +441,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
     // reset helper counter and outputs to zeros
     CUDA_CHECK_THROW(cudaMemsetAsync(next_sample_write_location, 0x00, sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(number_of_exceeded_samples, 0x00, sizeof(std::uint32_t), stream));
-    CUDA_CHECK_THROW(cudaMemsetAsync(n_valid_rays, 0x00, sizeof(std::uint32_t), stream));
+    CUDA_CHECK_THROW(cudaMemsetAsync(ray_is_valid, false, n_rays * sizeof(bool), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(rays_n_samples, 0x00, n_rays * sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(rays_sample_startidx, 0x00, n_rays * sizeof(std::uint32_t), stream));
     CUDA_CHECK_THROW(cudaMemsetAsync(idcs, 0x00, total_samples * sizeof(std::uint32_t), stream));
@@ -470,7 +473,7 @@ void march_rays_launcher(cudaStream_t stream, void **buffers, char const *opaque
 
         , next_sample_write_location
         , number_of_exceeded_samples
-        , n_valid_rays
+        , ray_is_valid
 
         // outputs
         , rays_n_samples

@@ -47,7 +47,7 @@ def march_rays_abstract(
     shapes = {
         "helper.next_sample_write_location": (1,),
         "helper.number_of_exceeded_samples": (1,),
-        "helper.n_valid_rays": (1,),
+        "helper.ray_is_valid": (n_rays,),
 
         "out.rays_n_samples": (n_rays,),
         "out.rays_sample_startidx": (n_rays,),
@@ -61,7 +61,7 @@ def march_rays_abstract(
     return (
         jax.ShapedArray(shape=shapes["helper.next_sample_write_location"], dtype=jnp.uint32),
         jax.ShapedArray(shape=shapes["helper.number_of_exceeded_samples"], dtype=jnp.uint32),
-        jax.ShapedArray(shape=shapes["helper.n_valid_rays"], dtype=jnp.uint32),
+        jax.ShapedArray(shape=shapes["helper.ray_is_valid"], dtype=jnp.bool_),
         jax.ShapedArray(shape=shapes["out.rays_n_samples"], dtype=jnp.uint32),
         jax.ShapedArray(shape=shapes["out.rays_sample_startidx"], dtype=jnp.uint32),
         jax.ShapedArray(shape=shapes["out.idcs"], dtype=jnp.uint32),

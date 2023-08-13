@@ -57,7 +57,7 @@ def march_rays_lowering_rule(
 
         "helper.next_sample_write_location": (1,),
         "helper.number_of_exceeded_samples": (1,),
-        "helper.n_valid_rays": (1,),
+        "helper.ray_is_valid": (n_rays,),
 
         "out.rays_n_samples": (n_rays,),
         "out.rays_sample_startidx": (n_rays,),
@@ -73,7 +73,7 @@ def march_rays_lowering_rule(
         out_types=[
             ir.RankedTensorType.get(shapes["helper.next_sample_write_location"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["helper.number_of_exceeded_samples"], ir.IntegerType.get_unsigned(32)),
-            ir.RankedTensorType.get(shapes["helper.n_valid_rays"], ir.IntegerType.get_unsigned(32)),
+            ir.RankedTensorType.get(shapes["helper.ray_is_valid"], ir.IntegerType.get_signless(1)),
             ir.RankedTensorType.get(shapes["out.rays_n_samples"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.rays_sample_startidx"], ir.IntegerType.get_unsigned(32)),
             ir.RankedTensorType.get(shapes["out.idcs"], ir.IntegerType.get_unsigned(32)),
@@ -102,7 +102,7 @@ def march_rays_lowering_rule(
         result_layouts=default_layouts(
             shapes["helper.next_sample_write_location"],
             shapes["helper.number_of_exceeded_samples"],
-            shapes["helper.n_valid_rays"],
+            shapes["helper.ray_is_valid"],
             shapes["out.rays_n_samples"],
             shapes["out.rays_sample_startidx"],
             shapes["out.idcs"],
