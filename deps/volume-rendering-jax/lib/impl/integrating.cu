@@ -155,6 +155,8 @@ __global__ void integrate_rays_backward_kernel(
     };
     float const ray_final_opacity = final_opacities[i];
 
+    bool ray_terminated = ray_final_opacity >= 1.f - T_THRESHOLD;
+
     /// gradient inputs
     float const ray_dL_dfinal_rgbd[4] = {
         dL_dfinal_rgbds[i * 4 + 0],
@@ -198,15 +200,15 @@ __global__ void integrate_rays_backward_kernel(
             //// gradients from final_rgbs
             + ray_dL_dfinal_rgbd[0] * (
                 transmittance * ray_drgbs[sample_idx * 4 + 1] - (ray_final_rgbd[0] - cur_rgb[0])
-                - ray_bgs[0] * (1.f - ray_final_opacity)
+                - ray_bgs[0] * (ray_terminated ? 0.f : 1.f - ray_final_opacity)
             )
             + ray_dL_dfinal_rgbd[1] * (
                 transmittance * ray_drgbs[sample_idx * 4 + 2] - (ray_final_rgbd[1] - cur_rgb[1])
-                - ray_bgs[1] * (1.f - ray_final_opacity)
+                - ray_bgs[1] * (ray_terminated ? 0.f : 1.f - ray_final_opacity)
             )
             + ray_dL_dfinal_rgbd[2] * (
                 transmittance * ray_drgbs[sample_idx * 4 + 3] - (ray_final_rgbd[2] - cur_rgb[2])
-                - ray_bgs[2] * (1.f - ray_final_opacity)
+                - ray_bgs[2] * (ray_terminated ? 0.f : 1.f - ray_final_opacity)
             )
             //// gradients from depth
             + ray_dL_dfinal_rgbd[3] * (transmittance * z_val - (ray_final_rgbd[3] - cur_depth))
