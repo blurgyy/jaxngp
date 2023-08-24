@@ -314,7 +314,7 @@ __global__ void march_rays_inference_kernel(
     float const ray_t_start = t_starts[ray_idx];
     float const ray_t_end = t_ends[ray_idx];
 
-    if (ray_t_end <= ray_t_start) { return; }
+    if (ray_t_end < ray_t_start) { return; }
 
     float * const __restrict__ ray_xyzs = xyzs + i * march_steps_cap * 3;
     float * const __restrict__ ray_dss = dss + i * march_steps_cap;
@@ -359,6 +359,38 @@ __global__ void march_rays_inference_kernel(
             }
         }
         ray_t = new_ray_t;
+    }
+    // Write a sample at the far plane (at the farther scene bound) if the ray did not terminate, do
+    // not check grid occupancy at this point as it's probably inaccurate.  This avoids "ringing"
+    // artifacts that typically occur in scenes with a large bound (> 1), where the ray marching
+    // step size is exponential w.r.t. current distance to ray origin.
+    if (ray_t >= ray_t_end) {
+        vec3f pos = o + ray_t_end * d;
+        float ds = calc_ds(ray_t_end, stepsize_portion, bound, inv_G, diagonal_n_steps);
+        std::uint32_t cascade;
+        float mip_bound;
+        vec3f const grid_posf = get_grid_pos_and_intermediates(pos, ds, bound, K, G, &cascade, &mip_bound);
+        vec3u const grid_pos = floor_grid_pos(grid_posf, G);
+        std::uint32_t const grid_index = cascade * G3 + __morton3D(grid_pos);
+        bool const occupied = occupancy_bitfield[grid_index >> 3] & (1 << (grid_index & 7u));  // (x>>3)==(int)(x/8), (x&7)==(x%8)
+        // only sample a point there if the grid is not marked (as untrainable or empty)
+        if (occupied) {
+            // if last written point before reaching scene bound is sampled right behind the scene bound,
+            // adjust its `ds` to avoid integrating over a same segment twice
+            if (steps > 0 && ray_dss[steps-1] + ray_z_vals[steps-1] >= ray_t_end) {
+                ray_dss[steps-1] = ray_t_end - ray_z_vals[steps-1];
+            }
+            if (steps < march_steps_cap) {  // if there's another slot for writing the last sample
+                ray_xyzs[steps * 3 + 0] = pos.x;
+                ray_xyzs[steps * 3 + 1] = pos.y;
+                ray_xyzs[steps * 3 + 2] = pos.z;
+                ray_dss[steps] = ds;
+                ray_z_vals[steps] = ray_t_end;
+                ++steps;
+            } else {  // otherwise, defer writing the last sample to the next iteration of ray marching
+                ray_t = ray_t_end;
+            }
+        }
     }
     n_samples[i] = steps;
     t_starts_out[i] = ray_t;
