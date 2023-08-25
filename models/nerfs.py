@@ -66,6 +66,7 @@ class NeRF(nn.Module):
         x = self.density_mlp(pos_enc)
         # [n_samples, 1], [n_samples, density_MLP_out-1]
         density, _ = jnp.split(x, [1], axis=-1)
+        density = self.density_activation(density)
 
         if dir is None:
             return density.reshape(*original_aux_shapes, 1), tv
@@ -80,8 +81,7 @@ class NeRF(nn.Module):
             dir_enc,
             jnp.broadcast_to(appearance_embeddings, (n_samples, appearance_embeddings.shape[-1])),
         ], axis=-1))
-
-        density, rgb = self.density_activation(density), self.rgb_activation(rgb)
+        rgb = self.rgb_activation(rgb)
 
         return jnp.concatenate([density, rgb], axis=-1).reshape(*original_aux_shapes, 4), tv
 
