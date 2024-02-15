@@ -660,7 +660,7 @@ class TransformJsonFrame:
 
     def scale_camera_positions(self, scale: float) -> "TransformJsonFrame":
         new_transform_matrix = self.transform_matrix_numpy
-        new_transform_matrix[:3, 3] *= scale * 2
+        new_transform_matrix[:3, 3] *= scale
         return self.replace(
             transform_matrix=new_transform_matrix.tolist(),
         )
