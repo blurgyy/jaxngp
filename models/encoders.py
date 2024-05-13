@@ -9,7 +9,7 @@ import jax.random as jran
 from jaxtcnn import HashGridMetadata, hashgrid_encode
 import shjax
 
-from utils.common import jit_jaxfn_with, vmap_jaxfn_with
+from utils.common import jit_jaxfn_with, vmap_jaxfn_with, next_multiple
 from utils.types import empty_impl
 
 
@@ -93,7 +93,7 @@ class HashGridEncoder(Encoder):
             res = math.ceil(scale) + 1
             resolutions.append(res)
 
-            n_entries = res ** dim
+            n_entries = next_multiple(res ** dim, 8)
 
             if n_entries <= self.T:
                 first_hash_level += 1

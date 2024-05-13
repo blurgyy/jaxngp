@@ -331,3 +331,7 @@ def set_deterministic(seed: int) -> jran.KeyArray:
     np.random.seed(seed)
     tf.random.set_seed(seed)
     return jran.PRNGKey(seed)
+
+
+def next_multiple(value: int, step: int) -> int:
+    return (value + step - 1) // step * step
