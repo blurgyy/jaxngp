@@ -92,16 +92,25 @@ class CoordinateBasedMLP(nn.Module):
     # hidden layer widths
     Ds: List[int]
     out_dim: int
-    skip_in_layers: List[int]
+    skip_in_layer_indices: List[int]
 
     # as described in the paper
     kernel_init: Initializer=nn.initializers.glorot_uniform()
 
     @nn.compact
     def __call__(self, x: jax.Array) -> jax.Array:
+        if len(self.skip_in_layer_indices) > 0:
+            if min(self.skip_in_layer_indices) <= 0:
+                raise ValueError("Concatenating the input with itself does not make much sense")
+            if max(self.skip_in_layer_indices) > len(self.Ds):
+                raise IndexError("Max layer index is {} while got max(skip_in_layer_indices)={}".format(
+                    len(self.Ds),
+                    max(self.skip_in_layer_indices),
+                ))
+
         in_x = x
         for i, d in enumerate(self.Ds):
-            if i in self.skip_in_layers:
+            if i in self.skip_in_layer_indices:
                 x = jnp.concatenate([in_x, x], axis=-1)
             x = nn.Dense(
                 d,
@@ -109,6 +118,8 @@ class CoordinateBasedMLP(nn.Module):
                 kernel_init=self.kernel_init,
             )(x)
             x = nn.relu(x)
+        if len(self.Ds) in self.skip_in_layer_indices:
+            x = jnp.concatenate([in_x, x], axis=-1)
         x = nn.Dense(
             self.out_dim,
             use_bias=False,
@@ -296,8 +307,8 @@ def make_nerf(
     rgb_out_dim: int,
 
     # skip connections
-    density_skip_in_layers: List[int],
-    rgb_skip_in_layers: List[int],
+    density_skip_in_layer_indices: List[int],
+    rgb_skip_in_layer_indices: List[int],
 
     # activations
     density_act: ActivationType,
@@ -342,12 +353,12 @@ def make_nerf(
     density_mlp = CoordinateBasedMLP(
         Ds=density_Ds,
         out_dim=density_out_dim,
-        skip_in_layers=density_skip_in_layers
+        skip_in_layer_indices=density_skip_in_layer_indices
     )
     rgb_mlp = CoordinateBasedMLP(
         Ds=rgb_Ds,
         out_dim=rgb_out_dim,
-        skip_in_layers=rgb_skip_in_layers
+        skip_in_layer_indices=rgb_skip_in_layer_indices
     )
 
     density_activation = make_activation(density_act)
@@ -376,7 +387,7 @@ def make_skysphere_background_model(
     dir_levels: int,
 
     Ds: List[int],
-    skip_in_layers: List[int],
+    skip_in_layer_indices: List[int],
 
     act: ActivationType,
 ) -> SkySphereBg:
@@ -385,7 +396,7 @@ def make_skysphere_background_model(
     rgb_mlp = CoordinateBasedMLP(
         Ds=Ds,
         out_dim=3,
-        skip_in_layers=skip_in_layers,
+        skip_in_layer_indices=skip_in_layer_indices,
     )
     activation = make_activation(act)
     return SkySphereBg(
@@ -403,7 +414,7 @@ def make_skysphere_background_model_ngp(bound: float) -> SkySphereBg:
         pos_levels=2,
         dir_levels=4,
         Ds=[32, 32],
-        skip_in_layers=[],
+        skip_in_layer_indices=[],
         act="sigmoid",
     )
 
@@ -433,12 +444,12 @@ def make_nerf_ngp(
 
         density_Ds=[64],
         density_out_dim=16,
-        density_skip_in_layers=[],
+        density_skip_in_layer_indices=[],
         density_act="truncated_exponential",
 
         rgb_Ds=[64, 64],
         rgb_out_dim=3,
-        rgb_skip_in_layers=[],
+        rgb_skip_in_layer_indices=[],
         rgb_act="sigmoid",
     )
 
@@ -451,12 +462,12 @@ def make_debug_nerf(bound: float) -> NeRF:
         density_mlp=CoordinateBasedMLP(
             Ds=[64],
             out_dim=16,
-            skip_in_layers=[],
+            skip_in_layer_indices=[],
         ),
         rgb_mlp=CoordinateBasedMLP(
             Ds=[64, 64],
             out_dim=3,
-            skip_in_layers=[],
+            skip_in_layer_indices=[],
         ),
         density_activation=lambda x: x,
         rgb_activation=lambda x: x,
